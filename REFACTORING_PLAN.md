@@ -144,6 +144,12 @@ rollchain/
 - Use `Decimal` everywhere for prices, amounts, and P&L; avoid floats in core/services
 - Normalize dates to `datetime.date` internally; accept `M/D/YYYY` input
 
+### Fees Policy
+- Robinhood CSV does not include regulatory options fees.
+- Apply a constant per‑contract‑leg fee of `$0.04` for now.
+- Fee calculation: `fees = 0.04 * quantity` for each option leg; chain fees are the sum across legs.
+- Future (deferred): allow overriding the fee via CLI flag or environment variable if broker changes.
+
 ## 📋 Phase 4: Extract Services
 
 ### Services to Create
@@ -221,6 +227,15 @@ def ingest(options, ticker, strategy, file, json):
 cli.add_command(ingest, name='injest')
 ```
 
+### JSON Output Schema (initial)
+- Serialization: decimals emitted as strings; dates as `M/D/YYYY`.
+- `chains`: list of chain objects with:
+  - `chain_id`, `ticker`, `status` (OPEN|CLOSED), `start_date`, `end_date`, `roll_count`,
+    `total_credits`, `total_debits`, `net_pnl`
+  - `transactions`: list of legs with `activity_date`, `trans_code`, `quantity`, `price`, `amount`, `description`
+  - `fees`: total chain fees (string decimal)
+  - (Optional) `realized_legs`: list of realized P&L per matched open/close
+
 ## 📋 Phase 6: Update Tests
 
 ### Test Updates
@@ -284,6 +299,7 @@ cli.add_command(ingest, name='injest')
  - **Backwards compatibility**: Maintain current CLI (`roll.py injest ...`) via a shim until migration completes
  - **Fees**: Keep `$0.04/contract` as default; make configurable later
  - **Performance**: Stream CSV parsing; avoid unnecessary large materializations
+ - **Scope (v1)**: Focus on single‑leg, same‑quantity rolls (BTC→STO or STC→BTO). Partial rolls and multi‑leg spreads are out of scope for now.
 
 ## 🔗 Resources
 
