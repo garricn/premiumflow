@@ -1,14 +1,17 @@
 # RollChain Project Refactoring Plan
 
-## ✅ Phase 1: Test Suite (COMPLETED)
+## ✅ Phase 1: Test Suite (BASELINE COMPLETE)
 
-**Status**: All 26 tests passing
+**Status**: Baseline tests pass; forward‑looking suite added (pending API)
 
 ### What We Accomplished
-- Created comprehensive test suite (`test_rollchain_comprehensive.py`)
-- Set up virtual environment with pytest
-- Created `requirements.txt` for dependency management
-- All current functionality is now tested and verified
+- Baseline tests covering current code paths are green
+  - Existing files: `test_roll.py`, `test_roll_simple.py`, `test_roll_comprehensive.py`, `test_roll_chain.py`
+- Added a forward‑looking comprehensive suite (`test_rollchain_comprehensive.py`) to define the target APIs and behaviors after refactor
+- Created `requirements.txt` and standardized local test running with `pytest`
+
+### Important Note
+- The forward‑looking suite references functions that do not yet exist in the current implementation (e.g., `format_position_spec`, `parse_lookup_input`, `find_chain_by_position`). These tests are intentionally failing/skipped until Phases 3–5 deliver the new structure and APIs.
 
 ### Test Coverage
 1. **CSV Parsing** (6 tests)
@@ -74,6 +77,8 @@ rollchain/
 │       └── formatters/
 │           ├── __init__.py
 │           └── output.py   # Display logic
+├── scripts/
+│   └── migrate_cli_shim.py  # Temporary: preserve old CLI behavior during migration
 ├── tests/
 │   ├── __init__.py
 │   ├── conftest.py
@@ -94,6 +99,7 @@ rollchain/
 - **Data Validation**: `pydantic`
 - **Terminal UI**: `rich`
 - **Testing**: `pytest` ✅
+ - **Numeric precision**: `decimal.Decimal` for prices/amounts/P&L
 
 ## 📋 Phase 3: Extract Core Models
 
@@ -125,6 +131,17 @@ rollchain/
    - option_type: Literal["CALL", "PUT"]
    - expiration: datetime
 
+4. (Optional) **OptionContract**
+   - ticker: str
+   - expiration: datetime
+   - option_type: Literal["CALL", "PUT"]
+   - strike: Decimal
+
+### Parsing & Money Policies
+- Centralize parsing of broker amounts/prices (parentheses for negatives, commas, `$`)
+- Use `Decimal` everywhere for prices, amounts, and P&L; avoid floats in core/services
+- Normalize dates to `datetime.date` internally; accept `M/D/YYYY` input
+
 ## 📋 Phase 4: Extract Services
 
 ### Services to Create
@@ -132,11 +149,17 @@ rollchain/
    - `parse_csv(file_path)` → List[Transaction]
    - `is_options_transaction(row)` → bool
    - Handles null values, duplicates
+   - `parse_description(desc)` → OptionContract (ticker, expiration, type, strike)
 
 2. **ChainBuilder** (`services/chain_builder.py`)
    - `detect_roll_chains(transactions)` → List[RollChain]
    - `build_chain(transactions)` → RollChain
    - Handles open/closed status
+   - Roll primitive: same‑day close+open pairs
+     - Short: `BTC → STO`; Long: `STC → BTO`
+     - Same quantity, same type (Call/Put), different strike OR expiration
+   - Link legs using structured contract fields, not raw `Description` strings
+   - Support deduplication and chronological ordering
 
 3. **PnLAnalyzer** (`services/analyzer.py`)
    - `calculate_credits(chain)` → Decimal
@@ -151,14 +174,25 @@ rollchain/
    - `display_chain(chain)` → None
    - `display_chain_summary(chain)` → None
 
+5. **Lookup** (`services/lookup.py`)
+   - `find_chain_by_position(file_path, PositionSpec)` → Optional[RollChain]
+
+### Deduplication Policy
+- Prefer broker‑supplied unique IDs when available
+- Fallback composite key (until IDs exist):
+  - `Activity Date`, `Instrument`, `Trans Code`, `Quantity`, `Price`, `Amount`, `Description`
+  - Keep `Process Date`/`Settle Date` available for troubleshooting; not part of the default key
+
 ## 📋 Phase 5: Refactor CLI
 
 ### Commands to Implement
-1. **`rollchain injest`**
+1. **`rollchain ingest`** (primary)
+   - Backward‑compatible alias: `injest` (deprecated; warn on use)
    - `--options` flag
    - `--ticker TICKER` filter
    - `--strategy {calls,puts}` filter
    - `--file FILE` input
+   - `--json` output for automation (serialize chains/rolls)
 
 2. **`rollchain lookup`**
    - Position argument: "TICKER $STRIKE TYPE DATE"
@@ -171,14 +205,18 @@ def cli():
     """RollChain - Options roll chain analysis tool"""
     pass
 
-@cli.command()
+@cli.command(name='ingest')
 @click.option('--options', is_flag=True)
 @click.option('--ticker')
 @click.option('--strategy', type=click.Choice(['calls', 'puts']))
 @click.option('--file', default='all_transactions.csv')
-def injest(options, ticker, strategy, file):
+@click.option('--json', is_flag=True, help='Output JSON')
+def ingest(options, ticker, strategy, file, json):
     """Analyze options transactions"""
     pass
+
+# Backward‑compat alias (deprecated)
+cli.add_command(ingest, name='injest')
 ```
 
 ## 📋 Phase 6: Update Tests
@@ -199,6 +237,13 @@ def injest(options, ticker, strategy, file):
 3. **Keep integration tests**
    - End-to-end CLI tests
    - Real CSV file tests
+   - JSON output validation
+
+4. **Forward‑Looking Suite Enablement**
+   - Implement missing APIs to satisfy `test_rollchain_comprehensive.py`:
+     - `format_position_spec`, `parse_lookup_input` (formatters)
+     - `find_chain_by_position` (services.lookup)
+   - Replace float asserts with `Decimal` comparisons (use `quantize` for rounding)
 
 ## 📋 Phase 7: Prepare for Extensions
 
@@ -220,12 +265,12 @@ def injest(options, ticker, strategy, file):
 
 ## 🎯 Next Steps
 
-1. ✅ Create comprehensive test suite
+1. ✅ Baseline tests passing; add forward‑looking suite (in repo)
 2. ⏭️ Create `pyproject.toml` and package structure
-3. ⏭️ Extract models using Pydantic
-4. ⏭️ Refactor one service at a time (keeping tests green)
-5. ⏭️ Update CLI to use Click
-6. ⏭️ Split and reorganize tests
+3. ⏭️ Implement models (Pydantic + Decimal)
+4. ⏭️ Extract services (parser, chain_builder, analyzer, lookup)
+5. ⏭️ Refactor CLI to Click; add `ingest` + alias, `--json`
+6. ⏭️ Split and reorganize tests; enable forward‑looking tests
 
 ## 📝 Notes
 
@@ -233,6 +278,9 @@ def injest(options, ticker, strategy, file):
 - **Keep tests passing**: Run tests after each change
 - **Version control**: Commit frequently with clear messages
 - **Dependencies**: Add to `pyproject.toml` as we go
+ - **Backwards compatibility**: Maintain current CLI (`roll.py injest ...`) via a shim until migration completes
+ - **Fees**: Keep `$0.04/contract` as default; make configurable later
+ - **Performance**: Stream CSV parsing; avoid unnecessary large materializations
 
 ## 🔗 Resources
 
@@ -241,4 +289,3 @@ def injest(options, ticker, strategy, file):
 - [Click Documentation](https://click.palletsprojects.com/)
 - [Pydantic Documentation](https://docs.pydantic.dev/)
 - [Rich Documentation](https://rich.readthedocs.io/)
-
