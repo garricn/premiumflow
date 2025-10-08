@@ -24,8 +24,8 @@ def is_options_transaction(row: Dict[str, str]) -> bool:
     - Trans codes like BTC, STO, OASGN
     - Descriptions containing Call/Put with strike prices
     """
-    trans_code = row.get('Trans Code', '').strip()
-    description = row.get('Description', '').strip()
+    trans_code = (row.get('Trans Code') or '').strip()
+    description = (row.get('Description') or '').strip()
     
     # Check for options-specific transaction codes
     options_codes = {'BTC', 'STO', 'OASGN'}
@@ -463,8 +463,13 @@ def print_ticker_group(ticker: str, transactions: List[Dict[str, str]]):
             # Calculate total fees for the chain
             total_fees = len(chain['transactions']) * 0.04  # $0.04 per contract leg
             
-            # Display header
-            print(f"\n    {chain_id} ({status_emoji} {status}): {chain['start_date']} → {chain['end_date']} | Rolls: {chain['roll_count']}")
+            # Get the current position (last transaction in the chain)
+            last_txn = chain['transactions'][-1]
+            current_position = format_position_spec(last_txn.get('Description', ''))
+            
+            # Display header with current position
+            print(f"\n    {chain_id} ({status_emoji} {status}): {current_position}")
+            print(f"    {chain['start_date']} → {chain['end_date']} | Rolls: {chain['roll_count']}")
             
             # Calculate realized P&L for each position leg (STO/BTO -> BTC/STC pairs)
             realized_legs = []
@@ -638,13 +643,210 @@ def injest_options(csv_file: str, ticker_filter: str = None, strategy_filter: st
     print(f"{'=' * 120}")
 
 
+def format_position_spec(description: str) -> str:
+    """
+    Format a transaction description into position specification format.
+    Example: "TSLA 11/21/2025 Call $550.00" -> "TSLA $550 CALL 11/21/2025"
+    """
+    import re
+    
+    # Extract components using regex
+    # Pattern: TICKER DATE Call/Put $STRIKE
+    pattern = r'(\w+)\s+(\d{1,2}/\d{1,2}/\d{4})\s+(Call|Put)\s+\$(\d+(?:\.\d+)?)'
+    match = re.match(pattern, description)
+    
+    if match:
+        ticker = match.group(1)
+        expiration = match.group(2)
+        option_type = match.group(3).upper()
+        strike = match.group(4)
+        
+        # Format strike to remove trailing zeros
+        strike_float = float(strike)
+        if strike_float == int(strike_float):
+            strike = str(int(strike_float))
+        else:
+            strike = strike
+        
+        return f"{ticker} ${strike} {option_type} {expiration}"
+    
+    return description
+
+
+def parse_lookup_input(lookup_str: str) -> Dict[str, str]:
+    """
+    Parse lookup input in format: "TICKER $STRIKE TYPE MM/DD/YY"
+    Example: "IREN $70 CALL 2/20/26"
+    """
+    parts = lookup_str.strip().split()
+    if len(parts) != 4:
+        raise ValueError("Lookup format must be: TICKER $STRIKE TYPE MM/DD/YY")
+    
+    ticker = parts[0].upper()
+    strike_str = parts[1]
+    option_type = parts[2].upper()
+    expiration = parts[3]
+    
+    # Validate strike format
+    if not strike_str.startswith('$'):
+        raise ValueError("Strike must start with $")
+    strike = strike_str[1:]  # Remove $ sign
+    
+    # Validate option type
+    if option_type not in ['CALL', 'PUT']:
+        raise ValueError("Option type must be CALL or PUT")
+    
+    return {
+        'ticker': ticker,
+        'strike': strike,
+        'option_type': option_type,
+        'expiration': expiration
+    }
+
+
+def find_chain_by_position(csv_file: str, lookup_spec: Dict[str, str]) -> Dict[str, Any]:
+    """
+    Find roll chain containing the specified position.
+    Returns chain info if found, None otherwise.
+    """
+    # Read all options transactions
+    options_txns = []
+    with open(csv_file, 'r', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            if is_options_transaction(row):
+                options_txns.append(row)
+    
+    # Group by ticker and strategy
+    calls_by_ticker = {}
+    puts_by_ticker = {}
+    
+    for txn in options_txns:
+        instrument = (txn.get('Instrument') or '').strip()
+        description = (txn.get('Description') or '').strip()
+        
+        if 'Call' in description:
+            if instrument not in calls_by_ticker:
+                calls_by_ticker[instrument] = []
+            calls_by_ticker[instrument].append(txn)
+        elif 'Put' in description:
+            if instrument not in puts_by_ticker:
+                puts_by_ticker[instrument] = []
+            puts_by_ticker[instrument].append(txn)
+    
+    # Check the appropriate ticker group
+    ticker = lookup_spec['ticker']
+    option_type = lookup_spec['option_type']
+    
+    if option_type == 'CALL':
+        ticker_txns = calls_by_ticker.get(ticker, [])
+    else:
+        ticker_txns = puts_by_ticker.get(ticker, [])
+    
+    if not ticker_txns:
+        return None
+    
+    # Detect roll chains for this ticker
+    chains = detect_roll_chains(ticker_txns)
+    
+    # Look for matching position in any chain
+    for chain in chains:
+        for txn in chain['transactions']:
+            description = txn.get('Description', '')
+            
+            # Check if this transaction matches our lookup criteria
+            if (lookup_spec['ticker'] in description and 
+                f"${lookup_spec['strike']}" in description and
+                lookup_spec['option_type'].title() in description and
+                lookup_spec['expiration'] in description):
+                return chain
+    
+    return None
+
+
+def lookup_chain(csv_file: str, lookup_str: str):
+    """Look up a roll chain by position specification."""
+    try:
+        lookup_spec = parse_lookup_input(lookup_str)
+    except ValueError as e:
+        print(f"Error: {e}")
+        print("Format: TICKER $STRIKE TYPE MM/DD/YY")
+        print("Example: IREN $70 CALL 2/20/26")
+        return
+    
+    chain = find_chain_by_position(csv_file, lookup_spec)
+    
+    if chain:
+        print(f"\n🔍 FOUND ROLL CHAIN for {lookup_str}")
+        print(f"{'=' * 80}")
+        
+        # Display chain summary
+        status = chain['status']
+        status_emoji = "🔒" if status == "CLOSED" else "🔓"
+        
+        print(f"\nChain: {chain['start_date']} → {chain['end_date']} | Status: {status_emoji} {status} | Rolls: {chain['roll_count']}")
+        
+        # Calculate fees
+        total_fees = sum(int(txn.get('Quantity', '0')) * 0.04 for txn in chain['transactions'])
+        
+        # Create summary table
+        print(f"\n{'Metric':25} | {'Value':>15}")
+        print(f"{'-' * 45}")
+        print(f"{'Credits Received':25} | ${chain['total_credits']:>14,.2f}")
+        print(f"{'Debits Paid':25} | ${chain['total_debits']:>14,.2f}")
+        print(f"{'Fees':25} | ${total_fees:>14.2f}")
+        
+        if status == "CLOSED":
+            net_pnl_after_fees = chain['net_pnl'] - total_fees
+            net_text = f"${net_pnl_after_fees:,.2f} profit" if net_pnl_after_fees > 0 else f"${abs(net_pnl_after_fees):,.2f} loss"
+            print(f"{'Net Realized P&L':25} | {net_text:>15}")
+        else:
+            net_so_far = chain['total_credits'] - chain['total_debits'] - total_fees
+            last_txn = chain['transactions'][-1]
+            qty = int(last_txn.get('Quantity', '1'))
+            last_txn_code = last_txn.get('Trans Code', '')
+            
+            breakeven_per_share = net_so_far / (qty * 100)
+            
+            if last_txn_code in ['STO', 'BTO']:
+                breakeven_text = f"${breakeven_per_share:.2f} or less"
+            elif last_txn_code in ['STC', 'BTC']:
+                breakeven_text = f"${breakeven_per_share:.2f} or more"
+            else:
+                breakeven_text = f"${breakeven_per_share:.2f}"
+            
+            print(f"{'Net So Far':25} | ${net_so_far:>14,.2f}")
+            print(f"{'Breakeven Price':25} | {breakeven_text:>15}")
+        
+        # Show transaction table
+        print(f"\n{'Transactions:'}")
+        print(f"{'-' * 130}")
+        print(f"{'#':3} | {'Date':12} | {'Action':6} | {'Qty':3} | {'Price':12} | {'Amount':15} | {'Fees':8} | Contract")
+        print(f"{'-' * 130}")
+        for i, txn in enumerate(chain['transactions'], 1):
+            desc = txn.get('Description', '')
+            date = txn.get('Activity Date', '')
+            code = txn.get('Trans Code', '')
+            qty = txn.get('Quantity', '')
+            price = txn.get('Price', '')
+            amount = txn.get('Amount', '')
+            qty_num = int(qty) if qty else 0
+            fees = qty_num * 0.04
+            print(f"{i:3} | {date:12} | {code:6} | {qty:3} | {price:12} | {amount:15} | ${fees:6.2f} | {desc}")
+        
+    else:
+        print(f"\n❌ NO ROLL CHAIN FOUND for {lookup_str}")
+        print("This position is not part of any detected roll chain.")
+
+
 def main():
     parser = argparse.ArgumentParser(description='Roll - Trading transaction analysis tool')
-    parser.add_argument('command', choices=['injest'], help='Command to execute')
+    parser.add_argument('command', choices=['injest', 'lookup'], help='Command to execute')
     parser.add_argument('--options', action='store_true', help='Show options transactions')
     parser.add_argument('--ticker', type=str, help='Filter by ticker symbol (e.g., TSLA)')
     parser.add_argument('--strategy', choices=['calls', 'puts'], help='Filter by strategy: calls or puts')
     parser.add_argument('--file', help='CSV file to process (default: all_transactions.csv)')
+    parser.add_argument('position', nargs='?', help='Position to lookup (e.g., "IREN $70 CALL 2/20/26")')
     
     args = parser.parse_args()
     
@@ -662,6 +864,13 @@ def main():
         else:
             print("Please specify --options flag")
             sys.exit(1)
+    elif args.command == 'lookup':
+        if not args.position:
+            print("Error: Position required for lookup command")
+            print("Usage: roll lookup \"TICKER $STRIKE TYPE MM/DD/YY\"")
+            print("Example: roll lookup \"IREN $70 CALL 2/20/26\"")
+            sys.exit(1)
+        lookup_chain(csv_file, args.position)
     else:
         print(f"Unknown command: {args.command}")
         sys.exit(1)
