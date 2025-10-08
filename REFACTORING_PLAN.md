@@ -1,17 +1,19 @@
 # RollChain Project Refactoring Plan
 
-## ✅ Phase 1: Test Suite (BASELINE COMPLETE)
+## ✅ Phase 1: Test Suite (COMPLETE)
 
-**Status**: Baseline tests pass; forward‑looking suite added (pending API)
+**Status**: 26 tests passing in `test_rollchain.py`
 
 ### What We Accomplished
-- Baseline tests covering current code paths are green
-  - Existing files: `test_roll.py`, `test_roll_simple.py`, `test_roll_comprehensive.py`, `test_roll_chain.py`
-- Added a forward‑looking comprehensive suite (`test_rollchain_comprehensive.py`) to define the target APIs and behaviors after refactor
-- Created `requirements.txt` and standardized local test running with `pytest`
-
-### Important Note
-- The forward‑looking suite references functions that do not yet exist in the current implementation (e.g., `format_position_spec`, `parse_lookup_input`, `find_chain_by_position`). These tests are intentionally failing/skipped until Phases 3–5 deliver the new structure and APIs.
+- Created comprehensive test suite (`test_rollchain.py`) with 26 passing tests
+- All core functions tested and working in `roll.py`:
+  - `format_position_spec` - Convert descriptions to lookup format
+  - `parse_lookup_input` - Parse position specifications
+  - `find_chain_by_position` - Lookup chains by position
+  - `detect_roll_chains` - Build roll chains from transactions
+- Set up virtual environment and pytest
+- Created `requirements.txt` for dependency management
+- Removed redundant old test files
 
 ### Test Coverage
 1. **CSV Parsing** (6 tests)
@@ -223,10 +225,13 @@ cli.add_command(ingest, name='injest')
 
 ### Test Updates
 1. **Split tests by module**
-   - `test_parser.py` - CSV parsing
-   - `test_chain_builder.py` - Chain detection
-   - `test_analyzer.py` - P&L calculations
-   - `test_formatters.py` - Output formatting
+   - Current: All 26 tests centralized in `test_rollchain.py`
+   - Split into:
+     - `test_parser.py` - CSV parsing
+     - `test_chain_builder.py` - Chain detection
+     - `test_analyzer.py` - P&L calculations
+     - `test_formatters.py` - Output formatting
+     - `test_lookup.py` - Lookup functionality
 
 2. **Add conftest.py with fixtures**
    - Sample transactions fixture
@@ -239,11 +244,9 @@ cli.add_command(ingest, name='injest')
    - Real CSV file tests
    - JSON output validation
 
-4. **Forward‑Looking Suite Enablement**
-   - Implement missing APIs to satisfy `test_rollchain_comprehensive.py`:
-     - `format_position_spec`, `parse_lookup_input` (formatters)
-     - `find_chain_by_position` (services.lookup)
+4. **Migrate to Decimal**
    - Replace float asserts with `Decimal` comparisons (use `quantize` for rounding)
+   - Update test data to use `Decimal` for prices/amounts
 
 ## 📋 Phase 7: Prepare for Extensions
 
@@ -265,12 +268,12 @@ cli.add_command(ingest, name='injest')
 
 ## 🎯 Next Steps
 
-1. ✅ Baseline tests passing; add forward‑looking suite (in repo)
+1. ✅ Complete test suite (26 tests passing in `test_rollchain.py`)
 2. ⏭️ Create `pyproject.toml` and package structure
 3. ⏭️ Implement models (Pydantic + Decimal)
 4. ⏭️ Extract services (parser, chain_builder, analyzer, lookup)
 5. ⏭️ Refactor CLI to Click; add `ingest` + alias, `--json`
-6. ⏭️ Split and reorganize tests; enable forward‑looking tests
+6. ⏭️ Split and reorganize tests by module; migrate to Decimal
 
 ## 📝 Notes
 
