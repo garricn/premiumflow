@@ -23,11 +23,11 @@ def is_options_transaction(row: Dict[str, str]) -> bool:
     - Trans codes like BTC, STO, OASGN
     - Descriptions containing Call/Put with strike prices
     """
-    trans_code = (row.get('Trans Code') or '').strip()
+    trans_code = (row.get('Trans Code') or '').strip().upper()
     description = (row.get('Description') or '').strip()
     
     # Check for options-specific transaction codes
-    options_codes = {'BTC', 'STO', 'OASGN'}
+    options_codes = {'BTC', 'BTO', 'STC', 'STO', 'OASGN'}
     if trans_code in options_codes:
         return True
     

@@ -31,6 +31,12 @@ def format_transaction_summary(transaction: Transaction) -> str:
 
 def format_roll_chain_summary(chain: RollChain) -> str:
     """Format a roll chain summary for display."""
+    breakeven_display = (
+        f"${chain.breakeven_price:,.2f}"
+        if chain.breakeven_price is not None
+        else "N/A"
+    )
+
     summary = f"""
 Roll Chain: {chain.symbol} ${chain.strike} {chain.option_type} {chain.expiration}
 Status: {'CLOSED' if chain.is_closed else 'OPEN'}
@@ -40,7 +46,7 @@ Total Debits: ${chain.total_debits:,.2f}
 Net P&L: ${chain.net_pnl:,.2f}
 Total Fees: ${chain.total_fees:,.2f}
 Net P&L (after fees): ${chain.net_pnl_after_fees:,.2f}
-Breakeven: ${chain.breakeven_price:,.2f if chain.breakeven_price else 'N/A'}
+Breakeven: {breakeven_display}
 Transactions: {len(chain.transactions)}
 """
     return summary.strip()
@@ -63,6 +69,12 @@ def create_roll_chain_table(chains: List[RollChain]) -> Table:
         status = "CLOSED" if chain.is_closed else "OPEN"
         pnl_color = "green" if chain.net_pnl_after_fees >= 0 else "red"
         
+        breakeven_value = (
+            f"${chain.breakeven_price:,.2f}"
+            if chain.breakeven_price is not None
+            else "N/A"
+        )
+
         table.add_row(
             chain.symbol,
             f"${chain.strike}",
@@ -70,7 +82,7 @@ def create_roll_chain_table(chains: List[RollChain]) -> Table:
             status,
             str(chain.net_quantity),
             f"[{pnl_color}]${chain.net_pnl_after_fees:,.2f}[/{pnl_color}]",
-            f"${chain.breakeven_price:,.2f}" if chain.breakeven_price else "N/A",
+            breakeven_value,
             str(len(chain.transactions))
         )
     

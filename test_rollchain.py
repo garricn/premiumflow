@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 import rollchain
 
-from src.roll import (
+from roll import (
     is_options_transaction,
     detect_roll_chains,
     format_position_spec,
