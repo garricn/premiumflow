@@ -68,10 +68,14 @@ def parse_transaction_row(row: Dict[str, str]) -> Transaction:
     # Determine option type
     option_type = 'C' if is_call_option(description) else 'P'
     
-    # Extract expiration date (this is a simplified approach)
-    # In a real implementation, you'd need more sophisticated parsing
-    # For now, we'll use a placeholder
-    expiration = "2024-01-19"  # This should be parsed from the description
+    # Extract expiration date from the description. Most brokerage CSV exports
+    # format the option description as "TICKER MM/DD/YYYY Call $STRIKE" (or Put).
+    exp_match = re.search(r'(\d{1,2}/\d{1,2}/\d{4})', description)
+    if not exp_match:
+        raise ValueError(f"Could not extract expiration from: {description}")
+
+    expiration_date = datetime.strptime(exp_match.group(1), "%m/%d/%Y")
+    expiration = expiration_date.strftime("%Y-%m-%d")
     
     # Parse quantity and price
     quantity = int(row.get('Quantity', '0'))
@@ -79,11 +83,19 @@ def parse_transaction_row(row: Dict[str, str]) -> Transaction:
     price = Decimal(price_str)
     
     # Determine action based on transaction code
-    trans_code = row.get('Trans Code', '').strip()
-    if trans_code in ['STO', 'BTO']:
-        action = 'SELL' if trans_code == 'STO' else 'BUY'
-    else:
-        action = 'BUY'  # Default assumption
+    trans_code = row.get('Trans Code', '').strip().upper()
+    action_map = {
+        'STO': 'SELL',
+        'BTO': 'BUY',
+        'STC': 'SELL',
+        'BTC': 'BUY',
+        'OASGN': 'SELL',
+    }
+    action = action_map.get(trans_code)
+    if action is None:
+        # Default to BUY to maintain previous behaviour for unknown codes while
+        # still providing a sensible fallback.
+        action = 'BUY'
     
     # Parse date
     date = parse_date(row.get('Activity Date', ''))
