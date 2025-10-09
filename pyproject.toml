@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=65", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rollchain"
+version = "0.1.0"
+description = "Options roll chain analysis tool."
+readme = {text = "RollChain project refactor staging package.", content-type = "text/markdown"}
+requires-python = ">=3.9"
+authors = [{name = "RollChain Maintainers"}]
+license = {text = "MIT"}
+dependencies = []
+
+[project.optional-dependencies]
+cli = [
+    "click>=8.1",
+    "rich>=13.7",
+]
+models = [
+    "pydantic>=2.6",
+]
+
+dev = [
+    "pytest>=8.0",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["test_rollchain.py"]
+pythonpath = ["src"]
+addopts = "-q"
