@@ -119,7 +119,10 @@ class RollChain(BaseModel):
         """Breakeven price for the position."""
         if self.net_quantity == 0:
             return None
-        return self.strike + (self.net_pnl_after_fees / abs(self.net_quantity))
+        contract_multiplier = Decimal("100")
+        quantity = Decimal(abs(self.net_quantity))
+        per_share_offset = self.net_pnl_after_fees / (quantity * contract_multiplier)
+        return self.strike + per_share_offset
     
     @property
     def is_closed(self) -> bool:

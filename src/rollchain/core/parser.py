@@ -151,21 +151,115 @@ def get_options_transactions(csv_file: str) -> List[Dict[str, str]]:
     return options_txns
 
 
-def format_position_spec(symbol: str, strike: float, option_type: str, expiration: str) -> str:
-    """Format position specification for lookup (legacy compatibility)."""
-    return f"{symbol} ${strike} {option_type} {expiration}"
+def format_position_spec(
+    symbol: str,
+    strike: float = None,
+    option_type: str = None,
+    expiration: str = None
+) -> str:
+    """Format position specification for lookup (legacy compatibility).
 
-
-def parse_lookup_input(lookup_input: str) -> tuple:
-    """Parse lookup input string (legacy compatibility)."""
+    This function supports both the legacy single-argument form where a full
+    description string is provided (e.g. "TSLA 11/21/2025 Call $550.00") and
+    the newer explicit component form. In either case, the output matches the
+    lookup specification expected by ``parse_lookup_input``.
+    """
     import re
-    
-    # Pattern: TICKER $STRIKE TYPE DATE
-    pattern = r'(\w+)\s+\$(\d+(?:\.\d+)?)\s+([CP])\s+(\d{4}-\d{2}-\d{2})'
-    match = re.match(pattern, lookup_input.strip())
-    
+
+    # Legacy form: a single description string containing all the details.
+    if strike is None and option_type is None and expiration is None:
+        description = symbol
+        pattern = (
+            r"^(?P<symbol>\w+)\s+"
+            r"(?P<expiration>\d{1,2}/\d{1,2}/\d{4}|\d{4}-\d{2}-\d{2})\s+"
+            r"(?P<option_type>Call|Put|C|P)\s+"
+            r"\$(?P<strike>\d+(?:\.\d+)?)"
+        )
+        match = re.match(pattern, description.strip(), re.IGNORECASE)
+        if not match:
+            raise ValueError(f"Invalid position description: {description}")
+
+        symbol = match.group('symbol').upper()
+        option_type_match = match.group('option_type').upper()[0]
+        option_type_formatted = 'CALL' if option_type_match == 'C' else 'PUT'
+        expiration = match.group('expiration')
+        strike_value = match.group('strike')
+        try:
+            strike_float = float(strike_value)
+        except ValueError:
+            pass
+        else:
+            if strike_float.is_integer():
+                strike_value = str(int(strike_float))
+    else:
+        if strike is None or option_type is None or expiration is None:
+            raise ValueError("format_position_spec requires strike, option_type, and expiration")
+
+        symbol = symbol.upper()
+        option_type_input = str(option_type).strip().upper()
+        if option_type_input not in {'C', 'P', 'CALL', 'PUT'}:
+            raise ValueError("option_type must be 'C' or 'P'")
+        option_type_formatted = 'CALL' if option_type_input.startswith('C') else 'PUT'
+
+        expiration = str(expiration).strip()
+        strike_str = str(strike).strip()
+        try:
+            strike_float = float(strike_str)
+        except ValueError:
+            strike_value = strike_str
+        else:
+            strike_value = str(int(strike_float)) if strike_float.is_integer() else strike_str
+
+    return f"{symbol} ${strike_value} {option_type_formatted} {expiration}"
+
+
+def parse_lookup_input(lookup_input: str) -> Dict[str, Any]:
+    """Parse lookup input string (legacy compatibility).
+
+    The parser accepts either ``C``/``P`` or ``CALL``/``PUT`` (case-insensitive)
+    and supports both ``YYYY-MM-DD`` and ``MM/DD/YYYY`` expiration formats.
+    A dictionary matching the legacy return signature is returned for backwards
+    compatibility with existing consumers.
+    """
+    import re
+
+    pattern = (
+        r"^(?P<ticker>\w+)\s+"
+        r"\$(?P<strike>\d+(?:\.\d+)?)\s+"
+        r"(?P<option_type>CALL|PUT|C|P)\s+"
+        r"(?P<expiration>\d{4}-\d{2}-\d{2}|\d{1,2}/\d{1,2}/\d{4})$"
+    )
+
+    match = re.match(pattern, lookup_input.strip(), re.IGNORECASE)
     if not match:
         raise ValueError(f"Invalid lookup format: {lookup_input}")
-    
-    symbol, strike, option_type, expiration = match.groups()
-    return symbol, float(strike), option_type, expiration
+
+    from datetime import datetime
+    from decimal import Decimal
+
+    ticker = match.group('ticker').upper()
+    strike_value = match.group('strike')
+    strike_decimal = Decimal(strike_value)
+    if strike_decimal == strike_decimal.to_integral():
+        strike_value = str(int(strike_decimal))
+    option_type_input = match.group('option_type').upper()
+    option_type = 'CALL' if option_type_input.startswith('C') else 'PUT'
+    expiration_input = match.group('expiration')
+    expiration_display = expiration_input
+    expiration_iso = None
+    if '-' in expiration_input:
+        dt = datetime.strptime(expiration_input, "%Y-%m-%d")
+        expiration_display = f"{dt.month}/{dt.day}/{dt.year}"
+        expiration_iso = expiration_input
+    else:
+        expiration_iso = datetime.strptime(expiration_input, "%m/%d/%Y").strftime("%Y-%m-%d")
+
+    return {
+        'ticker': ticker,
+        'symbol': ticker,
+        'strike': strike_value,
+        'option_type': option_type,
+        'option_type_code': option_type[0],
+        'expiration': expiration_display,
+        'expiration_iso': expiration_iso,
+    }
