@@ -49,7 +49,8 @@ def calculate_breakeven(transactions: List[Transaction], strike: Decimal) -> Opt
         return None
     
     pnl = calculate_pnl(transactions)
-    return strike + (pnl / abs(net_quantity))
+    contract_size = Decimal(100)
+    return strike + (pnl / (abs(net_quantity) * contract_size))
 
 
 def analyze_roll_chain(chain: RollChain) -> Dict[str, Any]:

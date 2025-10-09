@@ -149,10 +149,16 @@ def build_chain(initial_open, all_txns, rolls, used_txns):
         import re
         strike_match = re.search(r'\$(\d+(?:\.\d+)?)', first_desc)
         strike = Decimal(strike_match.group(1)) if strike_match else Decimal('0')
-        
+
         option_type = 'C' if 'Call' in first_desc else 'P'
-        expiration = "2024-01-19"  # Simplified - should be parsed from description
-        
+
+        expiration_match = re.search(r'(\d{1,2}/\d{1,2}/\d{4})', first_desc)
+        if expiration_match:
+            expiration_date = parse_date(expiration_match.group(1))
+            expiration = expiration_date.strftime("%Y-%m-%d")
+        else:
+            expiration = ""
+
         return {
             'transactions': chain_txns,
             'symbol': ticker,
