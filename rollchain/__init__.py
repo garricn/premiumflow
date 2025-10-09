@@ -32,7 +32,12 @@ def _load_impl() -> ModuleType:
     module = module_from_spec(spec)
     loader = spec.loader
     assert loader is not None
-    loader.exec_module(module)
+    sys.modules[spec.name] = module
+    try:
+        loader.exec_module(module)
+    except Exception:
+        sys.modules.pop(spec.name, None)
+        raise
     return module
 
 

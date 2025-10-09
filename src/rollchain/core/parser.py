@@ -50,7 +50,7 @@ def is_put_option(description: str) -> bool:
 
 def parse_transaction_row(row: Dict[str, str]) -> Transaction:
     """Parse a CSV row into a Transaction object."""
-    from decimal import Decimal
+    from decimal import Decimal, InvalidOperation
     import re
     
     # Extract symbol from Instrument field
@@ -74,9 +74,16 @@ def parse_transaction_row(row: Dict[str, str]) -> Transaction:
     expiration = "2024-01-19"  # This should be parsed from the description
     
     # Parse quantity and price
-    quantity = int(row.get('Quantity', '0'))
-    price_str = row.get('Price', '0').replace('$', '').replace(',', '')
-    price = Decimal(price_str)
+    quantity_str = (row.get('Quantity') or '0').replace(',', '')
+    quantity = int(quantity_str or '0')
+    price_raw = (row.get('Price') or '0').strip()
+    price_str = price_raw.replace('$', '').replace(',', '')
+    if not price_str:
+        price_str = '0'
+    try:
+        price = Decimal(price_str)
+    except InvalidOperation:
+        price = Decimal('0')
     
     # Determine action based on transaction code
     trans_code = row.get('Trans Code', '').strip()
