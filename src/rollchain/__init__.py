@@ -1,42 +1,47 @@
+"""RollChain package shim.
+
+This package provides a forward-looking namespace while continuing to expose
+existing roll module functionality for downstream callers.
 """
-RollChain - Options trading roll chain analysis tool.
 
-A Python package for analyzing options trading roll chains from transaction data.
-"""
+from __future__ import annotations
 
-__version__ = "0.1.0"
-__author__ = "Garric Nahapetian"
-__email__ = "garricn@users.noreply.github.com"
+from importlib import import_module
+from typing import Any
 
-# Import main components for easy access
-from .core.models import Transaction, RollChain
-from .core.parser import parse_csv_file, is_options_transaction, is_call_option, is_put_option, format_position_spec, parse_lookup_input
-from .services.chain_builder import detect_roll_chains
-from .services.analyzer import calculate_pnl, calculate_breakeven
-from .formatters.output import format_roll_chain_summary
-
-# Legacy function compatibility - need to implement find_chain_by_position
-def find_chain_by_position(position_spec, chains):
-    """Find a chain by position specification (legacy compatibility)."""
-    for chain in chains:
-        if chain.get('symbol') and chain.get('strike'):
-            chain_spec = f"{chain['symbol']} ${chain['strike']} {chain.get('option_type', 'C')}"
-            if position_spec.lower() in chain_spec.lower():
-                return chain
-    return None
+_roll = import_module("roll")
 
 __all__ = [
-    "Transaction",
-    "RollChain", 
-    "parse_csv_file",
+    "__version__",
     "detect_roll_chains",
-    "calculate_pnl",
-    "calculate_breakeven",
-    "format_roll_chain_summary",
-    "is_options_transaction",
-    "is_call_option", 
-    "is_put_option",
-    "format_position_spec",
-    "parse_lookup_input",
     "find_chain_by_position",
+    "format_position_spec",
+    "is_call_option",
+    "is_options_transaction",
+    "is_put_option",
+    "parse_lookup_input",
 ]
+
+__version__ = "0.1.0"
+
+
+def __getattr__(name: str) -> Any:
+    """Forward attribute lookups to the legacy :mod:`roll` module."""
+    try:
+        return getattr(_roll, name)
+    except AttributeError as exc:  # pragma: no cover - mirrors AttributeError
+        raise AttributeError(name) from exc
+
+
+def __dir__() -> list[str]:
+    """Combine rollchain exports with the legacy module attributes."""
+    return sorted(set(__all__) | set(dir(_roll)))
+
+
+detect_roll_chains = _roll.detect_roll_chains
+find_chain_by_position = _roll.find_chain_by_position
+format_position_spec = _roll.format_position_spec
+is_call_option = _roll.is_call_option
+is_options_transaction = _roll.is_options_transaction
+is_put_option = _roll.is_put_option
+parse_lookup_input = _roll.parse_lookup_input

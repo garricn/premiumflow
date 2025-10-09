@@ -9,13 +9,9 @@ import tempfile
 import os
 from typing import List, Dict
 
-import sys
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent / "src"))
-
 import rollchain
 
-from src.roll import (
+from roll import (
     is_options_transaction,
     detect_roll_chains,
     format_position_spec,
@@ -402,9 +398,7 @@ class TestRollchainPackage(unittest.TestCase):
 
         for name, reference in expected.items():
             with self.subTest(name=name):
-                # Check that the function exists and is callable
-                self.assertTrue(hasattr(rollchain, name), f"Function {name} not found in rollchain package")
-                self.assertTrue(callable(getattr(rollchain, name)), f"Attribute {name} is not callable")
+                self.assertIs(getattr(rollchain, name), reference)
 
     def test_package_version(self):
         self.assertEqual(rollchain.__version__, '0.1.0')
