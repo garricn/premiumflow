@@ -1,6 +1,10 @@
-"""Enable ``python -m rollchain`` to invoke the legacy CLI."""
+"""
+CLI entry point for the rollchain package.
 
-from roll import main
+This allows running the package with: python -m rollchain
+"""
 
-if __name__ == "__main__":  # pragma: no cover - thin wrapper
+from .cli import main
+
+if __name__ == "__main__":
     main()
