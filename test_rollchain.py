@@ -9,6 +9,8 @@ import tempfile
 import os
 from typing import List, Dict
 
+import rollchain
+
 from roll import (
     is_options_transaction,
     detect_roll_chains,
@@ -378,6 +380,28 @@ class TestMultiRollChains(unittest.TestCase):
         # Total debits: 265.08 + 807.08 + 1185.08 = 2257.24
         expected_debits = 265.08 + 807.08 + 1185.08
         self.assertAlmostEqual(chain['total_debits'], expected_debits, places=2)
+
+
+class TestRollchainPackage(unittest.TestCase):
+    """Ensure the new rollchain package mirrors the legacy API."""
+
+    def test_reexports_legacy_functions(self):
+        expected = {
+            'detect_roll_chains': detect_roll_chains,
+            'find_chain_by_position': find_chain_by_position,
+            'format_position_spec': format_position_spec,
+            'is_call_option': is_call_option,
+            'is_options_transaction': is_options_transaction,
+            'is_put_option': is_put_option,
+            'parse_lookup_input': parse_lookup_input,
+        }
+
+        for name, reference in expected.items():
+            with self.subTest(name=name):
+                self.assertIs(getattr(rollchain, name), reference)
+
+    def test_package_version(self):
+        self.assertEqual(rollchain.__version__, '0.1.0')
 
 
 if __name__ == '__main__':
