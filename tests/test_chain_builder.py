@@ -1,5 +1,7 @@
 """Unit tests for rollchain.services.chain_builder helpers."""
 
+from decimal import Decimal
+
 from rollchain.services.chain_builder import (
     deduplicate_transactions,
     detect_roll_chains,
@@ -273,3 +275,42 @@ def test_detect_roll_chains_does_not_flag_simple_open_close_as_roll():
 
     # BUG: currently returns two chains (one false). Expect only the real roll.
     assert len(chains) == 1
+
+
+def _make_tsla_txn(date, desc, code, qty, price, amount):
+    return {
+        "Activity Date": date,
+        "Process Date": date,
+        "Settle Date": date,
+        "Instrument": "TSLA",
+        "Description": desc,
+        "Trans Code": code,
+        "Quantity": str(qty),
+        "Price": price,
+        "Amount": amount,
+    }
+
+
+def test_detect_roll_chains_handles_fully_closed_partial_fill_chain():
+    """Aggregated closes should still leave a flat position marked as closed."""
+
+    transactions = [
+        _make_tsla_txn("8/27/2025", "TSLA 08/29/2025 Put $350.00", "STO", 1, "$9.50", "$950.00"),
+        _make_tsla_txn("8/28/2025", "TSLA 08/29/2025 Put $350.00", "BTC", 1, "$5.00", "($500.00)"),
+        _make_tsla_txn("8/28/2025", "TSLA 10/10/2025 Put $320.00", "STO", 1, "$10.25", "$1,024.95"),
+        _make_tsla_txn("8/28/2025", "TSLA 10/10/2025 Put $320.00", "STO", 1, "$11.21", "$1,120.95"),
+        _make_tsla_txn("8/29/2025", "TSLA 10/10/2025 Put $320.00", "STO", 1, "$12.15", "$1,214.95"),
+        _make_tsla_txn("9/11/2025", "TSLA 10/10/2025 Put $320.00", "BTC", 1, "$4.80", "($480.04)"),
+        _make_tsla_txn("9/11/2025", "TSLA 10/10/2025 Put $320.00", "BTC", 1, "$4.80", "($480.04)"),
+        _make_tsla_txn("9/11/2025", "TSLA 10/10/2025 Put $320.00", "BTC", 1, "$4.80", "($480.04)"),
+    ]
+
+    chains = detect_roll_chains(transactions)
+    tsla_chain = next(
+        chain for chain in chains
+        if chain.get("symbol") == "TSLA" and chain.get("strike") == Decimal("320")
+    )
+
+    # Expectation for a fully closed position.
+    assert tsla_chain["status"] == "CLOSED"
+    assert tsla_chain["net_contracts"] == 0

@@ -8,7 +8,7 @@ from collections import defaultdict, deque
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 import re
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from ..core.parser import parse_date
 
@@ -244,6 +244,53 @@ def get_txn_by_desc_date(txns: List[Dict[str, str]], desc: str, date: str, trans
     return None
 
 
+def _expand_chain_with_related_transactions(
+    chain_txns: List[Dict[str, str]],
+    all_txns: List[Dict[str, str]],
+    used_txns: set,
+) -> None:
+    """Attach additional partial fills that belong to the positions in the chain."""
+    if not chain_txns:
+        return
+
+    chain_ids = {id(txn) for txn in chain_txns}
+    date_bounds: Dict[str, Tuple[datetime, datetime]] = {}
+
+    for txn in chain_txns:
+        desc = txn.get("Description", "")
+        if not desc:
+            continue
+        txn_date = parse_date(txn.get("Activity Date", ""))
+        if desc not in date_bounds:
+            date_bounds[desc] = (txn_date, txn_date)
+        else:
+            start, end = date_bounds[desc]
+            date_bounds[desc] = (min(start, txn_date), max(end, txn_date))
+
+    extras: List[Dict[str, str]] = []
+
+    for txn in all_txns:
+        txn_id = id(txn)
+        if txn_id in chain_ids:
+            continue
+
+        desc = txn.get("Description", "")
+        if desc not in date_bounds:
+            continue
+
+        txn_date = parse_date(txn.get("Activity Date", ""))
+        start, end = date_bounds[desc]
+        if start <= txn_date <= end:
+            extras.append(txn)
+            chain_ids.add(txn_id)
+            used_txns.add(txn_id)
+
+    if extras:
+        extras.sort(key=lambda t: parse_date(t.get("Activity Date", "")))
+        chain_txns.extend(extras)
+        chain_txns.sort(key=lambda t: parse_date(t.get("Activity Date", "")))
+
+
 def build_chain(initial_open, all_txns, rolls, used_txns):
     """Build a roll chain starting from an initial opening position."""
     chain_txns = [initial_open]
@@ -286,6 +333,8 @@ def build_chain(initial_open, all_txns, rolls, used_txns):
 
     if len(chain_txns) < 2:
         return None
+
+    _expand_chain_with_related_transactions(chain_txns, all_txns, used_txns)
 
     total_credits = Decimal("0")
     total_debits = Decimal("0")
