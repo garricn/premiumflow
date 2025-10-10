@@ -5,7 +5,7 @@ This module provides the CLI commands using Click.
 """
 
 from decimal import Decimal, ROUND_HALF_UP
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import click
 from rich.console import Console
@@ -14,6 +14,13 @@ from rich.table import Table
 
 from ..core.parser import get_options_transactions, parse_csv_file
 from ..services.chain_builder import detect_roll_chains
+from ..services.options import OptionDescriptor, parse_option_description
+from ..services.targets import calculate_target_percents, compute_target_close_prices
+from ..services.transactions import (
+    filter_open_positions,
+    filter_transactions_by_option_type,
+    filter_transactions_by_ticker,
+)
 
 
 def _is_open_chain(chain: Dict[str, Any]) -> bool:
@@ -125,6 +132,12 @@ def _format_price_range(value_pair: Optional[Tuple[Decimal, Decimal]]) -> str:
     return f"{_format_currency(low)} - {_format_currency(high)}"
 
 
+def _format_target_close_prices(price_list: Optional[List[Decimal]]) -> str:
+    if not price_list:
+        return "--"
+    return ", ".join(_format_currency(value) for value in price_list)
+
+
 def _ensure_display_name(chain: Dict[str, Any]) -> str:
     display = chain.get("display_name")
     if display:
@@ -140,6 +153,68 @@ def _ensure_display_name(chain: Dict[str, Any]) -> str:
     else:
         strike_text = str(strike or "")
     return " ".join(filter(None, [symbol, f"${strike_text}", option_label])).strip() or symbol
+
+
+def _parse_option_description(description: str) -> Optional[Tuple[str, str, str, Decimal]]:
+    if not description:
+        return None
+    import re
+
+    pattern = re.compile(
+        r'^\s*(?P<symbol>[A-Za-z]+)\s+'
+        r'(?P<expiration>\d{1,2}/\d{1,2}/\d{4})\s+'
+        r'(?P<option_type>Call|Put)\s+\$?(?P<strike>[\d,]+(?:\.\d+)?)\s*$'
+    )
+    match = pattern.match(description)
+    if not match:
+        return None
+
+    symbol = match.group('symbol').upper()
+    expiration = match.group('expiration')
+    option_type = match.group('option_type').capitalize()
+    strike_text = match.group('strike').replace(',', '')
+    try:
+        strike = Decimal(strike_text)
+    except InvalidOperation:
+        return None
+    return symbol, expiration, option_type, strike
+
+
+def _format_option_display(parsed: Optional[OptionDescriptor], fallback: str) -> Tuple[str, str]:
+    if not parsed:
+        return fallback, ""
+    strike_text = f"{parsed.strike.quantize(Decimal('0.01')):,.2f}"
+    return f"{parsed.symbol} ${strike_text} {parsed.option_type}", parsed.expiration
+
+
+def prepare_transactions_for_display(
+    transactions: Iterable[Dict[str, Any]],
+    target_percents: List[Decimal],
+) -> List[Dict[str, str]]:
+    rows: List[Dict[str, str]] = []
+    for txn in transactions:
+        parsed_option = parse_option_description(txn.get('Description', ''))
+        formatted_desc, expiration = _format_option_display(parsed_option, txn.get('Description', ''))
+        target_prices = compute_target_close_prices(
+            txn.get('Trans Code'),
+            txn.get('Price'),
+            target_percents,
+        )
+
+        rows.append(
+            {
+                "date": txn.get('Activity Date', ''),
+                "symbol": (txn.get('Instrument') or '').strip(),
+                "expiration": expiration,
+                "code": txn.get('Trans Code', ''),
+                "quantity": txn.get('Quantity', ''),
+                "price": txn.get('Price', ''),
+                "description": formatted_desc,
+                "target_close": _format_target_close_prices(target_prices),
+            }
+        )
+
+    return rows
 
 
 @click.group()
@@ -182,7 +257,8 @@ def analyze(csv_file, output_format, open_only, target):
             console.print(f"[cyan]Open chains: {len(chains)}[/cyan]")
 
         target_bounds = _parse_target_range(target)
-        target_label = f"Target ({_format_percent(target_bounds[0])} - {_format_percent(target_bounds[1])})"
+        target_percents = calculate_target_percents(target_bounds)
+        target_label = "Target (" + ", ".join(_format_percent(value) for value in target_percents) + ")"
         
         # Display results
         if output_format == 'table':
@@ -254,66 +330,74 @@ def analyze(csv_file, output_format, open_only, target):
 @click.option('--ticker', 'ticker_symbol', help='Filter transactions by ticker symbol')
 @click.option('--calls-only', is_flag=True, default=False, help='Show only call option transactions')
 @click.option('--puts-only', is_flag=True, default=False, help='Show only put option transactions')
+@click.option('--open-only', is_flag=True,
+              help='Show only open option positions (no closing trades)')
+@click.option('--target', default='0.5-0.7', show_default=True,
+              help='Target profit range as fraction of entry price / credit (e.g. 0.5-0.7)')
 @click.pass_context
-def ingest(ctx, csv_file, ticker_symbol, calls_only, puts_only):
+def ingest(ctx, csv_file, ticker_symbol, calls_only, puts_only, open_only, target):
     """Ingest and display raw options transactions from CSV."""
     console = Console()
     
     try:
         console.print(f"[blue]Ingesting {csv_file}...[/blue]")
         transactions = get_options_transactions(csv_file)
+        target_bounds = _parse_target_range(target)
+        target_percents = calculate_target_percents(target_bounds)
+        target_label = "Target (" + ", ".join(_format_percent(value) for value in target_percents) + ")"
 
-        if calls_only and puts_only:
-            ctx.fail("Cannot combine --calls-only and --puts-only")
+        try:
+            filtered_by_ticker = filter_transactions_by_ticker(transactions, ticker_symbol)
+            filtered_transactions = filter_transactions_by_option_type(
+                filtered_by_ticker,
+                calls_only=calls_only,
+                puts_only=puts_only,
+            )
+        except ValueError as exc:
+            ctx.fail(str(exc))
 
         if ticker_symbol:
             ticker_key = ticker_symbol.strip().upper()
-            transactions = [
-                txn
-                for txn in transactions
-                if (txn.get('Instrument') or '').strip().upper() == ticker_key
-            ]
-            if not transactions:
+            if not filtered_by_ticker:
                 console.print(f"[yellow]No options transactions found for ticker {ticker_key}[/yellow]")
                 return
-            console.print(f"[green]Filtered to {len(transactions)} {ticker_key} options transactions[/green]")
+            console.print(f"[green]Filtered to {len(filtered_by_ticker)} {ticker_key} options transactions[/green]")
         else:
-            console.print(f"[green]Found {len(transactions)} options transactions[/green]")
+            console.print(f"[green]Found {len(filtered_transactions)} options transactions[/green]")
 
-        if calls_only:
-            transactions = [
-                txn for txn in transactions
-                if 'call' in (txn.get('Description') or '').lower()
-            ]
-        elif puts_only:
-            transactions = [
-                txn for txn in transactions
-                if 'put' in (txn.get('Description') or '').lower()
-            ]
+        if open_only:
+            filtered_transactions = filter_open_positions(filtered_transactions)
+            console.print(f"[cyan]Open positions: {len(filtered_transactions)}[/cyan]")
 
-        if not transactions:
+        if not filtered_transactions:
             console.print("[yellow]No transactions match the provided filters.[/yellow]")
             return
         
+        display_rows = prepare_transactions_for_display(filtered_transactions, target_percents)
+
         # Display transactions in a table
         from rich.table import Table
-        table = Table(title="Options Transactions")
-        
+        table = Table(title="Options Transactions", expand=True)
+
         table.add_column("Date", style="cyan")
         table.add_column("Symbol", style="magenta")
+        table.add_column("Expiration", style="magenta")
         table.add_column("Code", style="green")
         table.add_column("Quantity", justify="right")
         table.add_column("Price", justify="right")
+        table.add_column(target_label, justify="right")
         table.add_column("Description", style="yellow")
         
-        for txn in transactions:
+        for row in display_rows:
             table.add_row(
-                txn.get('Activity Date', ''),
-                txn.get('Instrument', ''),
-                txn.get('Trans Code', ''),
-                txn.get('Quantity', ''),
-                txn.get('Price', ''),
-                txn.get('Description', '')
+                row["date"],
+                row["symbol"],
+                row["expiration"],
+                row["code"],
+                row["quantity"],
+                row["price"],
+                row["target_close"],
+                row["description"],
             )
         
         console.print(table)
