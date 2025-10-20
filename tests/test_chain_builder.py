@@ -314,3 +314,128 @@ def test_detect_roll_chains_handles_fully_closed_partial_fill_chain():
     # Expectation for a fully closed position.
     assert tsla_chain["status"] == "CLOSED"
     assert tsla_chain["net_contracts"] == 0
+
+
+def test_roll_chain_pnl_calculation_treats_bto_as_debit_and_stc_as_credit():
+    """
+    Test that roll chain P&L calculation correctly treats BTO as debit and STC as credit.
+    
+    This test verifies that:
+    - BTO (Buy-to-Open) is correctly treated as a debit (cash outflow)
+    - STC (Sell-to-Close) is correctly treated as a credit (cash inflow)
+    
+    This test uses a roll chain with long positions: BTO -> BTC+STO -> STC
+    Expected P&L: (STO + STC) - (BTO + BTC) = ($300 + $800) - ($500 + $200) = $400 profit
+    """
+    transactions = [
+        # Initial long position: Buy-to-Open
+        build_txn({
+            "Activity Date": "9/1/2025",
+            "Instrument": "TSLA",
+            "Description": "TSLA 10/17/2025 Call $200.00",
+            "Trans Code": "BTO",
+            "Quantity": "1",
+            "Price": "$5.00",
+            "Amount": "($500.00)",
+        }),
+        # Roll: Buy-to-Close old position + Sell-to-Open new position
+        build_txn({
+            "Activity Date": "9/10/2025",
+            "Instrument": "TSLA",
+            "Description": "TSLA 10/17/2025 Call $200.00",
+            "Trans Code": "BTC",
+            "Quantity": "1",
+            "Price": "$2.00",
+            "Amount": "($200.00)",
+        }),
+        build_txn({
+            "Activity Date": "9/10/2025",
+            "Instrument": "TSLA",
+            "Description": "TSLA 11/21/2025 Call $210.00",
+            "Trans Code": "STO",
+            "Quantity": "1",
+            "Price": "$3.00",
+            "Amount": "$300.00",
+        }),
+        # Final close: Sell-to-Close
+        build_txn({
+            "Activity Date": "9/20/2025",
+            "Instrument": "TSLA", 
+            "Description": "TSLA 11/21/2025 Call $210.00",
+            "Trans Code": "STC",
+            "Quantity": "1",
+            "Price": "$8.00",
+            "Amount": "$800.00",
+        }),
+    ]
+    
+    chains = detect_roll_chains(transactions)
+    
+    # Should find one chain
+    assert len(chains) == 1
+    chain = chains[0]
+    
+    # Chain should be closed (net contracts = 0)
+    assert chain["status"] == "CLOSED"
+    assert chain["net_contracts"] == 0
+    
+    # P&L should be $400 profit: (STO $300 + STC $800) - (BTO $500 + BTC $200) = $400
+    # Current bug: treats BTO as credit, STC as debit = ($500 + $300) - ($200 + $800) = -$200
+    expected_pnl = Decimal("400.00")  # ($300 + $800) - ($500 + $200)
+    assert chain["net_pnl"] == expected_pnl, f"Expected P&L {expected_pnl}, got {chain['net_pnl']}"
+    
+    # Verify the individual credit/debit calculations
+    # Credits should be: STO $300 + STC $800 = $1100
+    # Debits should be: BTO $500 + BTC $200 = $700
+    assert chain["total_credits"] == Decimal("1100.00"), f"Expected credits $1100, got {chain['total_credits']}"
+    assert chain["total_debits"] == Decimal("700.00"), f"Expected debits $700, got {chain['total_debits']}"
+
+
+def test_build_chain_pnl_calculation_treats_bto_as_debit_and_stc_as_credit():
+    """
+    Test that build_chain P&L calculation correctly treats BTO as debit and STC as credit.
+    
+    This test directly calls the build_chain function to verify correct P&L calculation.
+    Verifies that BTO (Buy-to-Open) is treated as a debit and STC (Sell-to-Close) 
+    is treated as a credit, ensuring accurate P&L calculations.
+    """
+    from rollchain.services.chain_builder import build_chain
+    
+    # Create a simple chain: BTO -> STC (long position)
+    transactions = [
+        build_txn({
+            "Activity Date": "9/1/2025",
+            "Instrument": "TSLA",
+            "Description": "TSLA 10/17/2025 Call $200.00",
+            "Trans Code": "BTO",
+            "Quantity": "1",
+            "Price": "$5.00",
+            "Amount": "($500.00)",
+        }),
+        build_txn({
+            "Activity Date": "9/15/2025",
+            "Instrument": "TSLA", 
+            "Description": "TSLA 10/17/2025 Call $200.00",
+            "Trans Code": "STC",
+            "Quantity": "1",
+            "Price": "$8.00",
+            "Amount": "$800.00",
+        }),
+    ]
+    
+    # Call build_chain directly with the first transaction as initial_open
+    chain = build_chain(transactions[0], transactions, [], set())
+    
+    # Should find a chain
+    assert chain is not None
+    
+    # P&L should be $300 profit (STC $800 - BTO $500)
+    # Current bug: treats BTO as credit, STC as debit = $500 - $800 = -$300
+    expected_pnl = Decimal("300.00")  # $800 - $500
+    assert chain["net_pnl"] == expected_pnl, f"Expected P&L {expected_pnl}, got {chain['net_pnl']}"
+    
+    # Verify the individual credit/debit calculations
+    # BTO should be counted as debit (cash outflow)
+    # STC should be counted as credit (cash inflow)
+    assert chain["total_credits"] == Decimal("800.00"), f"Expected credits $800, got {chain['total_credits']}"
+    assert chain["total_debits"] == Decimal("500.00"), f"Expected debits $500, got {chain['total_debits']}"
