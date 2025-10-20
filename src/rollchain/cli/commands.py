@@ -4,6 +4,8 @@ Command-line interface for rollchain.
 This module provides the CLI commands using Click.
 """
 
+from __future__ import annotations
+
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
