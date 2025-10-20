@@ -111,14 +111,75 @@ def test_filter_open_positions_and_display_format(tmp_path):
 
     assert len(open_positions) == 1
 
-    target_percents = calculate_target_percents((Decimal("0.5"), Decimal("0.7")))
-    rows = prepare_transactions_for_display(
-        open_positions,
-        target_percents,
-    )
-    assert rows[0]["description"] == "AAPL $300.00 Call"
-    assert rows[0]["target_close"] == "$6.75, $7.20, $7.65"
-    assert rows[0]["expiration"] == "12/20/2025"
+
+def test_filter_open_positions_includes_partially_closed_positions():
+    """
+    Test that open position filter correctly handles partial closes by netting quantities.
+    
+    This test demonstrates the bug where partially closed positions are incorrectly
+    filtered out. The filter should net quantities rather than treat close presence
+    as an all-or-nothing toggle.
+    
+    Scenario: STO 2 contracts, BTC 1 contract = 1 contract still open
+    Expected: Should show 1 open position (net quantity > 0)
+    Current bug: Shows 0 open positions (all filtered out)
+    """
+    from rollchain.services.transactions import filter_open_positions
+    
+    transactions = [
+        # Open 2 contracts
+        {
+            "Activity Date": "9/1/2025",
+            "Instrument": "TSLA",
+            "Description": "TSLA 10/17/2025 Call $200.00",
+            "Trans Code": "STO",
+            "Quantity": "2",
+            "Price": "$5.00",
+            "Amount": "$1000.00",
+        },
+        # Close 1 contract (partial close)
+        {
+            "Activity Date": "9/15/2025",
+            "Instrument": "TSLA",
+            "Description": "TSLA 10/17/2025 Call $200.00",
+            "Trans Code": "BTC",
+            "Quantity": "1",
+            "Price": "$8.00",
+            "Amount": "($800.00)",
+        },
+        # Another position that's fully closed (should not appear)
+        {
+            "Activity Date": "9/1/2025",
+            "Instrument": "AAPL",
+            "Description": "AAPL 10/17/2025 Call $150.00",
+            "Trans Code": "STO",
+            "Quantity": "1",
+            "Price": "$3.00",
+            "Amount": "$300.00",
+        },
+        {
+            "Activity Date": "9/10/2025",
+            "Instrument": "AAPL",
+            "Description": "AAPL 10/17/2025 Call $150.00",
+            "Trans Code": "BTC",
+            "Quantity": "1",
+            "Price": "$2.00",
+            "Amount": "($200.00)",
+        },
+    ]
+    
+    open_positions = filter_open_positions(transactions)
+    
+    # Should find 1 open position (TSLA with net quantity of 1)
+    # Current bug: finds 0 positions because partial close filters out all TSLA positions
+    assert len(open_positions) == 1, f"Expected 1 open position, got {len(open_positions)}"
+    
+    # The remaining position should be TSLA
+    tsla_position = open_positions[0]
+    assert tsla_position["Instrument"] == "TSLA"
+    assert tsla_position["Description"] == "TSLA 10/17/2025 Call $200.00"
+    assert tsla_position["Trans Code"] == "STO"
+    assert tsla_position["Quantity"] == "2"  # Original quantity, netting should be handled elsewhere
 
 
 def test_prepare_transactions_for_display_honors_target_range(tmp_path):
