@@ -346,9 +346,9 @@ def build_chain(initial_open, all_txns, rolls, used_txns):
         qty = _parse_quantity(txn.get("Quantity"))
         code = (txn.get("Trans Code") or "").strip().upper()
 
-        if code in {"STO", "BTO"}:
+        if code in {"STO", "STC"}:
             total_credits += abs(amount)
-        elif code in {"BTC", "STC", "OASGN"}:
+        elif code in {"BTO", "BTC", "OASGN"}:
             total_debits += abs(amount)
 
         total_fees += abs(qty) * FEE_PER_CONTRACT
