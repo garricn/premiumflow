@@ -42,6 +42,7 @@ def filter_transactions_by_option_type(
 
 
 def filter_open_positions(transactions: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Filter transactions to show only positions that are still open (net quantity > 0)."""
     transactions = list(transactions)
     closing_codes = {"STC", "BTC"}
     opening_codes = {"STO", "BTO"}
@@ -52,14 +53,46 @@ def filter_open_positions(transactions: Iterable[Dict[str, Any]]) -> List[Dict[s
             (txn.get('Description') or '').strip(),
         )
 
-    closing_positions = {
-        _txn_key(txn)
-        for txn in transactions
-        if (txn.get('Trans Code') or '').strip().upper() in closing_codes
-    }
+    def _parse_quantity(quantity_str: str) -> int:
+        """Parse quantity string, handling negative values in parentheses."""
+        if not quantity_str:
+            return 0
+        cleaned = quantity_str.replace(',', '').strip()
+        if cleaned.startswith('(') and cleaned.endswith(')'):
+            cleaned = f"-{cleaned[1:-1]}"
+        try:
+            return int(float(cleaned))
+        except (ValueError, TypeError):
+            return 0
 
-    return [
-        txn for txn in transactions
-        if (txn.get('Trans Code') or '').strip().upper() in opening_codes
-        and _txn_key(txn) not in closing_positions
-    ]
+    # Group transactions by position (instrument + description)
+    position_quantities = {}
+    
+    for txn in transactions:
+        trans_code = (txn.get('Trans Code') or '').strip().upper()
+        if trans_code not in opening_codes and trans_code not in closing_codes:
+            continue
+            
+        key = _txn_key(txn)
+        quantity = _parse_quantity(txn.get('Quantity', '0'))
+        
+        if key not in position_quantities:
+            position_quantities[key] = 0
+            
+        if trans_code in opening_codes:
+            # Opening transactions increase position quantity
+            position_quantities[key] += quantity
+        elif trans_code in closing_codes:
+            # Closing transactions decrease position quantity
+            position_quantities[key] -= quantity
+
+    # Return opening transactions for positions that are still open (net quantity > 0)
+    open_positions = []
+    for txn in transactions:
+        trans_code = (txn.get('Trans Code') or '').strip().upper()
+        if trans_code in opening_codes:
+            key = _txn_key(txn)
+            if position_quantities.get(key, 0) > 0:
+                open_positions.append(txn)
+    
+    return open_positions
