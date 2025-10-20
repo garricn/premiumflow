@@ -163,3 +163,4 @@ Desktop.ini
 # Logs
 *.log
 logs/
+uv.lock
