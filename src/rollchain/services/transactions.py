@@ -80,13 +80,19 @@ def filter_open_positions(transactions: Iterable[Dict[str, Any]]) -> List[Dict[s
             position_quantities[key] = 0
             
         if trans_code in opening_codes:
-            # Opening transactions increase position quantity
-            position_quantities[key] += quantity
+            # Opening transactions: BTO adds positive quantity (long), STO adds negative quantity (short)
+            if trans_code == 'BTO':
+                position_quantities[key] += quantity  # Long position: positive quantity
+            elif trans_code == 'STO':
+                position_quantities[key] -= quantity  # Short position: negative quantity
         elif trans_code in closing_codes:
-            # Closing transactions decrease position quantity
-            position_quantities[key] -= quantity
+            # Closing transactions: STC subtracts quantity (closes long), BTC adds quantity (closes short)
+            if trans_code == 'STC':
+                position_quantities[key] -= quantity  # Close long: subtract quantity
+            elif trans_code == 'BTC':
+                position_quantities[key] += quantity  # Close short: add quantity
 
-    # Return aggregated opening transactions for positions that are still open (net quantity > 0)
+    # Return aggregated opening transactions for positions that are still open (net quantity != 0)
     open_positions = []
     processed_positions = set()
     
@@ -96,7 +102,7 @@ def filter_open_positions(transactions: Iterable[Dict[str, Any]]) -> List[Dict[s
             key = _txn_key(txn)
             net_quantity = position_quantities.get(key, 0)
             
-            if net_quantity > 0 and key not in processed_positions:
+            if net_quantity != 0 and key not in processed_positions:
                 # Create aggregated entry for this position
                 aggregated_txn = dict(txn)  # Copy the transaction
                 aggregated_txn['Quantity'] = str(net_quantity)  # Set net quantity

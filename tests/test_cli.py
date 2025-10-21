@@ -127,25 +127,25 @@ def test_filter_open_positions_includes_partially_closed_positions():
     from rollchain.services.transactions import filter_open_positions
     
     transactions = [
-        # Open 2 contracts
+        # Open 2 long contracts (BTO)
         {
             "Activity Date": "9/1/2025",
             "Instrument": "TSLA",
             "Description": "TSLA 10/17/2025 Call $200.00",
-            "Trans Code": "STO",
+            "Trans Code": "BTO",
             "Quantity": "2",
             "Price": "$5.00",
-            "Amount": "$1000.00",
+            "Amount": "($1000.00)",
         },
-        # Close 1 contract (partial close)
+        # Close 1 contract (partial close with STC)
         {
             "Activity Date": "9/15/2025",
             "Instrument": "TSLA",
             "Description": "TSLA 10/17/2025 Call $200.00",
-            "Trans Code": "BTC",
+            "Trans Code": "STC",
             "Quantity": "1",
             "Price": "$8.00",
-            "Amount": "($800.00)",
+            "Amount": "$800.00",
         },
         # Another position that's fully closed (should not appear)
         {
@@ -178,7 +178,7 @@ def test_filter_open_positions_includes_partially_closed_positions():
     tsla_position = open_positions[0]
     assert tsla_position["Instrument"] == "TSLA"
     assert tsla_position["Description"] == "TSLA 10/17/2025 Call $200.00"
-    assert tsla_position["Trans Code"] == "STO"
+    assert tsla_position["Trans Code"] == "BTO"
     assert tsla_position["Quantity"] == "1"  # Net quantity after partial close (2 - 1 = 1)
 
 
@@ -348,3 +348,97 @@ def test_trace_custom_target(tmp_path):
     assert result.exit_code == 0
     output = result.output
     assert "Target Price: $0.60 - $0.80" in output
+
+
+def test_filter_open_positions_includes_short_positions():
+    """
+    Test that open position filter includes short positions (negative quantities).
+    
+    This test demonstrates the bug where short positions are filtered out because
+    the quantity calculation logic doesn't properly handle short positions as negative quantities.
+    
+    Scenario: STO 1 contract (short position) should have net quantity = -1
+    Expected: Should show the open short position
+    Current bug: STO is treated as positive quantity, so net_quantity = +1 (incorrect)
+    """
+    from rollchain.services.transactions import filter_open_positions
+    
+    transactions = [
+        # Open 1 short contract (STO) - should contribute negative quantity
+        {
+            "Activity Date": "9/1/2025",
+            "Instrument": "TSLA",
+            "Description": "TSLA 10/17/2025 Call $200.00",
+            "Trans Code": "STO",
+            "Quantity": "1",
+            "Price": "$5.00",
+            "Amount": "$500.00",
+        },
+        # No closing transaction - position should still be open
+    ]
+    
+    open_positions = filter_open_positions(transactions)
+    
+    # Should find 1 open short position (net quantity = -1)
+    # Current bug: STO is treated as positive, so net_quantity = +1, but this is conceptually wrong
+    # The real issue is that short positions should have negative net quantities
+    assert len(open_positions) == 1, f"Expected 1 open short position, got {len(open_positions)}"
+    
+    # The short position should be included with correct quantity sign
+    short_position = open_positions[0]
+    assert short_position["Instrument"] == "TSLA"
+    assert short_position["Description"] == "TSLA 10/17/2025 Call $200.00"
+    assert short_position["Trans Code"] == "STO"
+    # For short positions, the quantity should be negative to represent the short position
+    assert short_position["Quantity"] == "-1", f"Expected negative quantity for short position, got {short_position['Quantity']}"
+
+
+def test_filter_open_positions_includes_partially_closed_short_positions():
+    """
+    Test that open position filter includes partially closed short positions.
+    
+    This test demonstrates the bug where short position quantity calculation
+    doesn't properly handle the sign convention for short positions.
+    
+    Scenario: STO 2 contracts + BTC 1 contract = net quantity = -1 (still open)
+    Expected: Should show 1 open short position with negative quantity
+    Current bug: STO treated as positive, so net_quantity = +1 (incorrect)
+    """
+    from rollchain.services.transactions import filter_open_positions
+    
+    transactions = [
+        # Open 2 short contracts (STO) - should contribute -2 to net quantity
+        {
+            "Activity Date": "9/1/2025",
+            "Instrument": "TSLA",
+            "Description": "TSLA 10/17/2025 Call $200.00",
+            "Trans Code": "STO",
+            "Quantity": "2",
+            "Price": "$5.00",
+            "Amount": "$1000.00",
+        },
+        # Close 1 short contract (BTC) - should add +1 to net quantity
+        {
+            "Activity Date": "9/15/2025",
+            "Instrument": "TSLA",
+            "Description": "TSLA 10/17/2025 Call $200.00",
+            "Trans Code": "BTC",
+            "Quantity": "1",
+            "Price": "$3.00",
+            "Amount": "($300.00)",
+        },
+    ]
+    
+    open_positions = filter_open_positions(transactions)
+    
+    # Should find 1 open short position (net quantity = -1)
+    # Current bug: STO treated as positive, so net_quantity = +1 (incorrect)
+    assert len(open_positions) == 1, f"Expected 1 open short position, got {len(open_positions)}"
+    
+    # The remaining short position should be included with correct quantity sign
+    short_position = open_positions[0]
+    assert short_position["Instrument"] == "TSLA"
+    assert short_position["Description"] == "TSLA 10/17/2025 Call $200.00"
+    assert short_position["Trans Code"] == "STO"
+    # For short positions, the quantity should be negative to represent the short position
+    assert short_position["Quantity"] == "-1", f"Expected negative quantity for short position, got {short_position['Quantity']}"
