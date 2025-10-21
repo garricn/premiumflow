@@ -31,6 +31,9 @@ def format_transaction_summary(transaction: Transaction) -> str:
 
 def format_roll_chain_summary(chain: RollChain) -> str:
     """Format a roll chain summary for display."""
+    # Handle breakeven price formatting safely
+    breakeven = 'N/A' if chain.breakeven_price is None else f"${chain.breakeven_price:,.2f}"
+    
     summary = f"""
 Roll Chain: {chain.symbol} ${chain.strike} {chain.option_type} {chain.expiration}
 Status: {'CLOSED' if chain.is_closed else 'OPEN'}
@@ -40,7 +43,7 @@ Total Debits: ${chain.total_debits:,.2f}
 Net P&L: ${chain.net_pnl:,.2f}
 Total Fees: ${chain.total_fees:,.2f}
 Net P&L (after fees): ${chain.net_pnl_after_fees:,.2f}
-Breakeven: ${chain.breakeven_price:,.2f if chain.breakeven_price else 'N/A'}
+Breakeven: {breakeven}
 Transactions: {len(chain.transactions)}
 """
     return summary.strip()

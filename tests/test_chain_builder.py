@@ -567,3 +567,114 @@ def test_parse_transaction_row_extracts_expiration_from_description():
     
     # Should parse yet another expiration date
     assert dec_transaction.expiration == "2025-12-19", f"Expected 2025-12-19, got {dec_transaction.expiration}"
+
+
+def test_format_roll_chain_summary_handles_none_breakeven_price():
+    """
+    Test that format_roll_chain_summary handles None breakeven_price without crashing.
+    
+    This test demonstrates the bug where f-string formatting with conditional
+    inside format specifier causes ValueError: invalid format string.
+    
+    Scenario: Chain with breakeven_price = None
+    Expected: Should format summary without crashing
+    Current bug: Raises ValueError: invalid format string
+    """
+    from rollchain.formatters.output import format_roll_chain_summary
+    from rollchain.core.models import RollChain, Transaction
+    from decimal import Decimal
+    
+    # Create a chain with None breakeven_price
+    chain = RollChain(
+        symbol="TSLA",
+        option_type="C",
+        strike=Decimal("200.00"),
+        expiration="2025-10-17",
+        net_pnl=Decimal("100.00"),
+        total_fees=Decimal("5.00"),
+        net_pnl_after_fees=Decimal("95.00"),
+        breakeven_price=None,  # This should not crash the formatter
+        transactions=[
+            Transaction(
+                symbol="TSLA",
+                option_type="C",
+                strike=Decimal("200.00"),
+                expiration="2025-10-17",
+                action="BUY",
+                quantity=1,
+                price=Decimal("5.00"),
+                date="2025-09-01"
+            ),
+            Transaction(
+                symbol="TSLA",
+                option_type="C",
+                strike=Decimal("200.00"),
+                expiration="2025-10-17",
+                action="SELL",
+                quantity=1,
+                price=Decimal("6.00"),
+                date="2025-09-15"
+            )
+        ]
+    )
+    
+    # This should not raise ValueError: invalid format string
+    summary = format_roll_chain_summary(chain)
+    
+    # Should contain the formatted summary with 'N/A' for breakeven
+    assert "Breakeven: N/A" in summary
+    assert "Net P&L: $1.00" in summary  # Actual calculated P&L from the transactions
+    assert "Transactions: 2" in summary
+
+
+def test_format_roll_chain_summary_handles_valid_breakeven_price():
+    """
+    Test that format_roll_chain_summary handles valid breakeven_price correctly.
+    
+    This test ensures the formatter works correctly when breakeven_price has a value.
+    
+    Scenario: Chain with breakeven_price = 205.50
+    Expected: Should format summary with proper breakeven price
+    """
+    from rollchain.formatters.output import format_roll_chain_summary
+    from rollchain.core.models import RollChain, Transaction
+    from decimal import Decimal
+    
+    # Create a chain with valid breakeven_price (open position)
+    chain = RollChain(
+        symbol="TSLA",
+        option_type="C",
+        strike=Decimal("200.00"),
+        expiration="2025-10-17",
+        transactions=[
+            Transaction(
+                symbol="TSLA",
+                option_type="C",
+                strike=Decimal("200.00"),
+                expiration="2025-10-17",
+                action="BUY",
+                quantity=2,  # Buy 2 contracts
+                price=Decimal("5.00"),
+                date="2025-09-01"
+            ),
+            Transaction(
+                symbol="TSLA",
+                option_type="C",
+                strike=Decimal("200.00"),
+                expiration="2025-10-17",
+                action="SELL",
+                quantity=1,  # Sell 1 contract (net quantity = 1, open position)
+                price=Decimal("6.00"),
+                date="2025-09-15"
+            )
+        ]
+    )
+    
+    # This should format correctly
+    summary = format_roll_chain_summary(chain)
+    
+    # Should contain the formatted summary with proper breakeven price
+    # Net quantity = 1, net P&L = 6 - 10 = -4, breakeven = 200 + (-4.12/1) = 195.88
+    assert "Breakeven: $195.88" in summary
+    assert "Net P&L: $-4.00" in summary
+    assert "Transactions: 2" in summary
