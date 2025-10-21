@@ -174,12 +174,73 @@ def test_filter_open_positions_includes_partially_closed_positions():
     # Current bug: finds 0 positions because partial close filters out all TSLA positions
     assert len(open_positions) == 1, f"Expected 1 open position, got {len(open_positions)}"
     
-    # The remaining position should be TSLA
+    # The remaining position should be TSLA with net quantity
     tsla_position = open_positions[0]
     assert tsla_position["Instrument"] == "TSLA"
     assert tsla_position["Description"] == "TSLA 10/17/2025 Call $200.00"
     assert tsla_position["Trans Code"] == "STO"
-    assert tsla_position["Quantity"] == "2"  # Original quantity, netting should be handled elsewhere
+    assert tsla_position["Quantity"] == "1"  # Net quantity after partial close (2 - 1 = 1)
+
+
+def test_filter_open_positions_aggregates_partial_fills():
+    """
+    Test that open position filter aggregates partial fills instead of returning duplicates.
+    
+    This test demonstrates the bug where partially closed positions return all
+    original opening transactions instead of aggregating them into net quantities.
+    
+    Scenario: BTO 1 + BTO 1 + STC 1 = 1 contract still open
+    Expected: Should return 1 aggregated entry with net quantity
+    Current bug: Returns 2 separate BTO entries (double-counting)
+    """
+    from rollchain.services.transactions import filter_open_positions
+    
+    transactions = [
+        # Open 1 contract (first fill)
+        {
+            "Activity Date": "9/1/2025",
+            "Instrument": "TSLA",
+            "Description": "TSLA 10/17/2025 Call $200.00",
+            "Trans Code": "BTO",
+            "Quantity": "1",
+            "Price": "$5.00",
+            "Amount": "($500.00)",
+        },
+        # Open 1 contract (second fill)
+        {
+            "Activity Date": "9/1/2025",
+            "Instrument": "TSLA",
+            "Description": "TSLA 10/17/2025 Call $200.00",
+            "Trans Code": "BTO",
+            "Quantity": "1",
+            "Price": "$5.00",
+            "Amount": "($500.00)",
+        },
+        # Close 1 contract (partial close)
+        {
+            "Activity Date": "9/15/2025",
+            "Instrument": "TSLA",
+            "Description": "TSLA 10/17/2025 Call $200.00",
+            "Trans Code": "STC",
+            "Quantity": "1",
+            "Price": "$8.00",
+            "Amount": "$800.00",
+        },
+    ]
+    
+    open_positions = filter_open_positions(transactions)
+    
+    # Should find 1 aggregated position (net quantity = 1)
+    # Current bug: finds 2 separate BTO entries (double-counting)
+    assert len(open_positions) == 1, f"Expected 1 aggregated position, got {len(open_positions)} separate entries"
+    
+    # The aggregated position should have net quantity of 1
+    aggregated_position = open_positions[0]
+    assert aggregated_position["Instrument"] == "TSLA"
+    assert aggregated_position["Description"] == "TSLA 10/17/2025 Call $200.00"
+    assert aggregated_position["Trans Code"] == "BTO"
+    # Note: The exact quantity handling depends on implementation approach
+    # This test verifies we get 1 entry instead of 2
 
 
 def test_prepare_transactions_for_display_honors_target_range(tmp_path):

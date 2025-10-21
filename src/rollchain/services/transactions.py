@@ -86,13 +86,34 @@ def filter_open_positions(transactions: Iterable[Dict[str, Any]]) -> List[Dict[s
             # Closing transactions decrease position quantity
             position_quantities[key] -= quantity
 
-    # Return opening transactions for positions that are still open (net quantity > 0)
+    # Return aggregated opening transactions for positions that are still open (net quantity > 0)
     open_positions = []
+    processed_positions = set()
+    
     for txn in transactions:
         trans_code = (txn.get('Trans Code') or '').strip().upper()
         if trans_code in opening_codes:
             key = _txn_key(txn)
-            if position_quantities.get(key, 0) > 0:
-                open_positions.append(txn)
+            net_quantity = position_quantities.get(key, 0)
+            
+            if net_quantity > 0 and key not in processed_positions:
+                # Create aggregated entry for this position
+                aggregated_txn = dict(txn)  # Copy the transaction
+                aggregated_txn['Quantity'] = str(net_quantity)  # Set net quantity
+                
+                # Recalculate amount based on net quantity and average price
+                # For simplicity, we'll use the last transaction's price
+                # In a more sophisticated implementation, you might want to calculate weighted average
+                price_str = txn.get('Price', '0').replace('$', '').replace(',', '')
+                try:
+                    price = float(price_str)
+                    if price > 0:
+                        total_amount = net_quantity * price
+                        aggregated_txn['Amount'] = f"(${total_amount:.2f})" if trans_code == 'BTO' else f"${total_amount:.2f}"
+                except (ValueError, TypeError):
+                    pass  # Keep original amount if price parsing fails
+                
+                open_positions.append(aggregated_txn)
+                processed_positions.add(key)
     
     return open_positions
