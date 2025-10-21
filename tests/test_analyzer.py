@@ -2,6 +2,7 @@
 
 import unittest
 import sys
+from decimal import Decimal
 from pathlib import Path
 
 # Add src to path for imports
@@ -38,8 +39,8 @@ class TestPnLCalculations(unittest.TestCase):
         chain = chains[0]
         
         # Credits: 299.95 + 1574.95 = 1874.90
-        expected_credits = 299.95 + 1574.95
-        self.assertAlmostEqual(chain['total_credits'], expected_credits, places=2)
+        expected_credits = Decimal('299.95') + Decimal('1574.95')
+        self.assertEqual(Decimal(str(chain['total_credits'])), expected_credits)
     
     def test_debits_calculation(self):
         """Test total debits calculation."""
@@ -47,8 +48,8 @@ class TestPnLCalculations(unittest.TestCase):
         chain = chains[0]
         
         # Debits: 730.04 + 875.04 = 1605.08
-        expected_debits = 730.04 + 875.04
-        self.assertAlmostEqual(chain['total_debits'], expected_debits, places=2)
+        expected_debits = Decimal('730.04') + Decimal('875.04')
+        self.assertEqual(Decimal(str(chain['total_debits'])), expected_debits)
     
     def test_net_pnl_calculation(self):
         """Test net P&L calculation for closed chain."""
@@ -56,8 +57,9 @@ class TestPnLCalculations(unittest.TestCase):
         chain = chains[0]
         
         # Net P&L: 1874.90 - 1605.08 = 269.82
-        expected_pnl = 1874.90 - 1605.08
-        self.assertAlmostEqual(chain['net_pnl'], expected_pnl, places=2)
+        expected_pnl = Decimal('1874.90') - Decimal('1605.08')
+        actual_pnl = Decimal(str(chain['net_pnl'])).quantize(Decimal('0.01'))
+        self.assertEqual(actual_pnl, expected_pnl)
     
     def test_fees_calculation(self):
         """Test fees calculation ($0.04 per contract)."""
@@ -65,8 +67,8 @@ class TestPnLCalculations(unittest.TestCase):
         chain = chains[0]
         
         # Fees: 4 transactions * 1 contract * $0.04 = $0.16
-        total_fees = len(chain['transactions']) * 0.04
-        self.assertAlmostEqual(total_fees, 0.16, places=2)
+        total_fees = len(chain['transactions']) * Decimal('0.04')
+        self.assertEqual(total_fees, Decimal('0.16'))
     
     def test_breakeven_calculation_open_chain(self):
         """Test breakeven price calculation for open chain."""
@@ -78,13 +80,13 @@ class TestPnLCalculations(unittest.TestCase):
         # Net after fees: 1144.86 - 0.12 = 1144.74
         # Breakeven per share: 1144.74 / 100 = $11.4474
         
-        total_credits = chain['total_credits']
-        total_debits = chain['total_debits']
-        fees = len(chain['transactions']) * 0.04
+        total_credits = Decimal(str(chain['total_credits']))
+        total_debits = Decimal(str(chain['total_debits']))
+        fees = len(chain['transactions']) * Decimal('0.04')
         net_so_far = total_credits - total_debits - fees
-        breakeven = net_so_far / 100
+        breakeven = net_so_far / Decimal('100')
         
-        self.assertAlmostEqual(breakeven, 11.45, places=2)
+        self.assertEqual(breakeven, Decimal('11.4474'))
 
 
 if __name__ == '__main__':
