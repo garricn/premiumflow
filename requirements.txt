@@ -1,5 +1,8 @@
-iniconfig==2.1.0
-packaging==25.0
-pluggy==1.6.0
-Pygments==2.19.2
-pytest==8.4.2
+click>=8.1.0
+pydantic>=2.0.0
+rich>=13.0.0
+yfinance>=0.2.0
+pytest>=7.0.0
+pytest-cov>=4.0.0
+black>=23.0.0
+ruff>=0.1.0
