@@ -424,7 +424,7 @@ def analyze(csv_file, output_format, open_only, target):
 
 
 @main.command()
-@click.option('--options', 'options_only', is_flag=True, help='Filter to options transactions (default behaviour)')
+@click.option('--options/--no-options', 'options_only', default=True, help='Filter to options transactions (default behaviour)')
 @click.option('--ticker', 'ticker_symbol', help='Filter transactions by ticker symbol')
 @click.option('--strategy', type=click.Choice(['calls', 'puts']), help='Filter transactions by strategy')
 @click.option('--file', 'csv_file', type=click.Path(exists=True), default='all_transactions.csv', show_default=True,
@@ -439,10 +439,6 @@ def ingest(ctx, options_only, ticker_symbol, strategy, csv_file, open_only, targ
     console = Console()
     
     try:
-        if not options_only:
-            console.print("[yellow]Use --options to ingest options transactions.[/yellow]")
-            return
-
         emit_text = not json_output
 
         if emit_text:

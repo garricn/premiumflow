@@ -57,7 +57,7 @@ def test_ingest_reports_missing_ticker(tmp_path):
 
     result = runner.invoke(
         rollchain_cli,
-        ['ingest', '--options', '--ticker', 'ZZZ', '--file', str(sample_csv)],
+        ['ingest', '--ticker', 'ZZZ', '--file', str(sample_csv)],
     )
 
     assert result.exit_code == 0
@@ -470,14 +470,7 @@ def test_ingest_strategy_calls_only(tmp_path):
 
     result = runner.invoke(
         rollchain_cli,
-        [
-            'ingest',
-            '--options',
-            '--file',
-            str(sample_csv),
-            '--strategy',
-            'calls',
-        ],
+        ['ingest', '--file', str(sample_csv), '--strategy', 'calls'],
     )
 
     assert result.exit_code == 0
