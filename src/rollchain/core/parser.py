@@ -68,10 +68,16 @@ def parse_transaction_row(row: Dict[str, str]) -> Transaction:
     # Determine option type
     option_type = 'C' if is_call_option(description) else 'P'
     
-    # Extract expiration date (this is a simplified approach)
-    # In a real implementation, you'd need more sophisticated parsing
-    # For now, we'll use a placeholder
-    expiration = "2024-01-19"  # This should be parsed from the description
+    # Extract expiration date from description
+    # Format: "SYMBOL MM/DD/YYYY Call/Put $STRIKE"
+    # Example: "TSLA 10/17/2025 Call $200.00" -> "2025-10-17"
+    expiration_match = re.search(r'(\d{1,2})/(\d{1,2})/(\d{4})', description)
+    if not expiration_match:
+        raise ValueError(f"Could not extract expiration date from: {description}")
+    
+    month, day, year = expiration_match.groups()
+    # Format as YYYY-MM-DD
+    expiration = f"{year}-{month.zfill(2)}-{day.zfill(2)}"
     
     # Parse quantity and price
     quantity_str = (row.get('Quantity') or '0').replace(',', '')

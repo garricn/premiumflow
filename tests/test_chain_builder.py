@@ -505,3 +505,65 @@ def test_parse_transaction_row_treats_bto_as_buy_action():
     assert transaction.symbol == 'TSLA'
     assert transaction.quantity == 1
     assert transaction.price == Decimal('5.00')
+
+
+def test_parse_transaction_row_extracts_expiration_from_description():
+    """
+    Test that expiration date is parsed from description instead of being hard-coded.
+    
+    This test demonstrates the bug where all transactions get expiration = "2024-01-19"
+    regardless of the actual expiration date in the description.
+    
+    Scenario: Parse transactions with different expiration dates
+    Expected: Each transaction should have its correct expiration date
+    Current bug: All transactions get hard-coded "2024-01-19"
+    """
+    from rollchain.core.parser import parse_transaction_row
+    
+    # Test case 1: October 2025 expiration
+    oct_row = {
+        'Instrument': 'TSLA',
+        'Description': 'TSLA 10/17/2025 Call $200.00',
+        'Trans Code': 'BTO',
+        'Quantity': '1',
+        'Price': '$5.00',
+        'Amount': '($500.00)',
+        'Activity Date': '9/1/2025'
+    }
+    
+    oct_transaction = parse_transaction_row(oct_row)
+    
+    # Should parse expiration from description, not use hard-coded "2024-01-19"
+    assert oct_transaction.expiration == "2025-10-17", f"Expected 2025-10-17, got {oct_transaction.expiration}"
+    
+    # Test case 2: November 2025 expiration  
+    nov_row = {
+        'Instrument': 'AAPL',
+        'Description': 'AAPL 11/21/2025 Put $150.00',
+        'Trans Code': 'STO',
+        'Quantity': '2',
+        'Price': '$3.00',
+        'Amount': '$600.00',
+        'Activity Date': '9/1/2025'
+    }
+    
+    nov_transaction = parse_transaction_row(nov_row)
+    
+    # Should parse different expiration date
+    assert nov_transaction.expiration == "2025-11-21", f"Expected 2025-11-21, got {nov_transaction.expiration}"
+    
+    # Test case 3: December 2025 expiration
+    dec_row = {
+        'Instrument': 'SPY',
+        'Description': 'SPY 12/19/2025 Call $500.00',
+        'Trans Code': 'BTO',
+        'Quantity': '1',
+        'Price': '$10.00',
+        'Amount': '($1000.00)',
+        'Activity Date': '9/1/2025'
+    }
+    
+    dec_transaction = parse_transaction_row(dec_row)
+    
+    # Should parse yet another expiration date
+    assert dec_transaction.expiration == "2025-12-19", f"Expected 2025-12-19, got {dec_transaction.expiration}"
