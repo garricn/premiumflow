@@ -14,7 +14,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from ..core.parser import get_options_transactions, parse_csv_file
+from ..core.parser import get_options_transactions, parse_csv_file, parse_lookup_input
 from ..services.chain_builder import detect_roll_chains
 from ..services.options import OptionDescriptor, parse_option_description
 from ..services.targets import calculate_target_percents, compute_target_close_prices
@@ -189,6 +189,102 @@ def _format_option_display(parsed: Optional[OptionDescriptor], fallback: str) ->
     return f"{parsed.symbol} ${strike_text} {parsed.option_type}", parsed.expiration
 
 
+def _serialize_decimal(value: Any) -> Any:
+    if isinstance(value, Decimal):
+        normalized = value.normalize()
+        return format(normalized, 'f')
+    return value
+
+
+def _serialize_transaction(txn: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "activity_date": txn.get("Activity Date", ""),
+        "instrument": (txn.get("Instrument") or "").strip(),
+        "description": txn.get("Description", ""),
+        "trans_code": (txn.get("Trans Code") or "").strip(),
+        "quantity": txn.get("Quantity", ""),
+        "price": txn.get("Price", ""),
+        "amount": txn.get("Amount", ""),
+    }
+
+
+def _serialize_chain(chain: Dict[str, Any], chain_id: str) -> Dict[str, Any]:
+    serialized_transactions = [
+        {
+            "activity_date": leg.get("Activity Date", ""),
+            "trans_code": (leg.get("Trans Code") or "").strip(),
+            "quantity": leg.get("Quantity", ""),
+            "price": leg.get("Price", ""),
+            "amount": leg.get("Amount", ""),
+            "description": leg.get("Description", ""),
+        }
+        for leg in chain.get("transactions", [])
+    ]
+
+    return {
+        "chain_id": chain_id,
+        "display_name": _ensure_display_name(chain),
+        "symbol": chain.get("symbol"),
+        "status": chain.get("status"),
+        "start_date": chain.get("start_date"),
+        "end_date": chain.get("end_date"),
+        "roll_count": chain.get("roll_count"),
+        "strike": _serialize_decimal(chain.get("strike")),
+        "option_type": chain.get("option_type"),
+        "expiration": chain.get("expiration"),
+        "total_credits": _serialize_decimal(chain.get("total_credits")),
+        "total_debits": _serialize_decimal(chain.get("total_debits")),
+        "total_fees": _serialize_decimal(chain.get("total_fees")),
+        "net_pnl": _serialize_decimal(chain.get("net_pnl")),
+        "net_pnl_after_fees": _serialize_decimal(chain.get("net_pnl_after_fees")),
+        "breakeven_price": _serialize_decimal(chain.get("breakeven_price")),
+        "breakeven_direction": chain.get("breakeven_direction"),
+        "net_contracts": chain.get("net_contracts"),
+        "transactions": serialized_transactions,
+    }
+
+
+def build_ingest_payload(
+    *,
+    csv_file: str,
+    transactions: List[Dict[str, Any]],
+    display_rows: List[Dict[str, str]],
+    chains: List[Dict[str, Any]],
+    target_percents: List[Decimal],
+    options_only: bool,
+    ticker: Optional[str],
+    strategy: Optional[str],
+    open_only: bool,
+) -> Dict[str, Any]:
+    serialized_transactions: List[Dict[str, Any]] = [
+        {
+            **_serialize_transaction(txn),
+            "targets": display_rows[idx]["target_close"],
+        }
+        for idx, txn in enumerate(transactions)
+    ]
+
+    if open_only:
+        chains = [chain for chain in chains if _is_open_chain(chain)]
+
+    filtered_chains: List[Dict[str, Any]] = []
+    for idx, chain in enumerate(chains, start=1):
+        filtered_chains.append(_serialize_chain(chain, f"chain-{idx}"))
+
+    return {
+        "source_file": csv_file,
+        "filters": {
+            "options_only": options_only,
+            "ticker": ticker,
+            "strategy": strategy,
+            "open_only": open_only,
+        },
+        "target_percents": [str(value) for value in target_percents],
+        "transactions": serialized_transactions,
+        "chains": filtered_chains,
+    }
+
+
 def prepare_transactions_for_display(
     transactions: Iterable[Dict[str, Any]],
     target_percents: List[Decimal],
@@ -328,25 +424,36 @@ def analyze(csv_file, output_format, open_only, target):
 
 
 @main.command()
-@click.argument('csv_file', type=click.Path(exists=True))
+@click.option('--options', 'options_only', is_flag=True, help='Filter to options transactions (default behaviour)')
 @click.option('--ticker', 'ticker_symbol', help='Filter transactions by ticker symbol')
-@click.option('--calls-only', is_flag=True, default=False, help='Show only call option transactions')
-@click.option('--puts-only', is_flag=True, default=False, help='Show only put option transactions')
-@click.option('--open-only', is_flag=True,
-              help='Show only open option positions (no closing trades)')
+@click.option('--strategy', type=click.Choice(['calls', 'puts']), help='Filter transactions by strategy')
+@click.option('--file', 'csv_file', type=click.Path(exists=True), default='all_transactions.csv', show_default=True,
+              help='CSV file to ingest')
+@click.option('--open-only', is_flag=True, help='Show only open option positions (no closing trades)')
 @click.option('--target', default='0.5-0.7', show_default=True,
               help='Target profit range as fraction of entry price / credit (e.g. 0.5-0.7)')
+@click.option('--json-output', 'json_output', is_flag=True, help='Emit JSON instead of table output')
 @click.pass_context
-def ingest(ctx, csv_file, ticker_symbol, calls_only, puts_only, open_only, target):
+def ingest(ctx, options_only, ticker_symbol, strategy, csv_file, open_only, target, json_output):
     """Ingest and display raw options transactions from CSV."""
     console = Console()
     
     try:
-        console.print(f"[blue]Ingesting {csv_file}...[/blue]")
+        if not options_only:
+            console.print("[yellow]Use --options to ingest options transactions.[/yellow]")
+            return
+
+        emit_text = not json_output
+
+        if emit_text:
+            console.print(f"[blue]Ingesting {csv_file}...[/blue]")
         transactions = get_options_transactions(csv_file)
         target_bounds = _parse_target_range(target)
         target_percents = calculate_target_percents(target_bounds)
         target_label = "Target (" + ", ".join(_format_percent(value) for value in target_percents) + ")"
+
+        calls_only = strategy == 'calls'
+        puts_only = strategy == 'puts'
 
         try:
             filtered_by_ticker = filter_transactions_by_ticker(transactions, ticker_symbol)
@@ -358,24 +465,59 @@ def ingest(ctx, csv_file, ticker_symbol, calls_only, puts_only, open_only, targe
         except ValueError as exc:
             ctx.fail(str(exc))
 
+        chain_source_transactions = list(filtered_transactions)
+
         if ticker_symbol:
             ticker_key = ticker_symbol.strip().upper()
             if not filtered_by_ticker:
-                console.print(f"[yellow]No options transactions found for ticker {ticker_key}[/yellow]")
+                if json_output:
+                    empty_payload = build_ingest_payload(
+                        csv_file=csv_file,
+                        transactions=[],
+                        display_rows=[],
+                        chains=[],
+                        target_percents=target_percents,
+                        options_only=options_only,
+                        ticker=ticker_symbol,
+                        strategy=strategy,
+                        open_only=open_only,
+                    )
+                    console.print_json(data=empty_payload)
+                else:
+                    console.print(f"[yellow]No options transactions found for ticker {ticker_key}[/yellow]")
                 return
-            console.print(f"[green]Filtered to {len(filtered_by_ticker)} {ticker_key} options transactions[/green]")
+            if emit_text:
+                console.print(f"[green]Filtered to {len(filtered_by_ticker)} {ticker_key} options transactions[/green]")
         else:
-            console.print(f"[green]Found {len(filtered_transactions)} options transactions[/green]")
+            if emit_text:
+                console.print(f"[green]Found {len(filtered_transactions)} options transactions[/green]")
 
         if open_only:
             filtered_transactions = filter_open_positions(filtered_transactions)
-            console.print(f"[cyan]Open positions: {len(filtered_transactions)}[/cyan]")
+            if emit_text:
+                console.print(f"[cyan]Open positions: {len(filtered_transactions)}[/cyan]")
 
-        if not filtered_transactions:
+        display_rows = prepare_transactions_for_display(filtered_transactions, target_percents)
+
+        if not filtered_transactions and emit_text:
             console.print("[yellow]No transactions match the provided filters.[/yellow]")
             return
-        
-        display_rows = prepare_transactions_for_display(filtered_transactions, target_percents)
+
+        if json_output:
+            chains_for_json = detect_roll_chains(chain_source_transactions)
+            payload = build_ingest_payload(
+                csv_file=csv_file,
+                transactions=filtered_transactions,
+                display_rows=display_rows,
+                chains=chains_for_json,
+                target_percents=target_percents,
+                options_only=options_only,
+                ticker=ticker_symbol,
+                strategy=strategy,
+                open_only=open_only,
+            )
+            console.print_json(data=payload)
+            return
 
         # Display transactions in a table
         from rich.table import Table
@@ -413,23 +555,41 @@ def ingest(ctx, csv_file, ticker_symbol, calls_only, puts_only, open_only, targe
 
 @main.command()
 @click.argument('position_spec')
-@click.argument('csv_file', type=click.Path(exists=True))
+@click.option('--file', 'csv_file', type=click.Path(exists=True), default='all_transactions.csv', show_default=True,
+              help='CSV file to search')
 def lookup(position_spec, csv_file):
     """Look up a specific position in the CSV data."""
     console = Console()
     
     try:
         console.print(f"[blue]Looking up position: {position_spec}[/blue]")
-        
-        # This is a simplified lookup - in a real implementation,
-        # you'd parse the position spec and find matching transactions
+        try:
+            symbol, strike, option_type, expiration = parse_lookup_input(position_spec)
+        except ValueError as exc:
+            raise click.BadParameter(str(exc)) from exc
+
         transactions = get_options_transactions(csv_file)
-        
-        # Simple text search for now
+        target_symbol = symbol.upper()
+        target_option = 'Call' if option_type.upper() == 'C' else 'Put'
+        strike_decimal = Decimal(str(strike))
+        expiration_parts = expiration.split('-')
+        year_text, month_text, day_text = expiration_parts
+        expiration_display = f"{int(month_text):02d}/{int(day_text):02d}/{year_text}"
+
         matches = []
         for txn in transactions:
-            if position_spec.lower() in txn.get('Description', '').lower():
-                matches.append(txn)
+            descriptor = parse_option_description(txn.get('Description', ''))
+            if not descriptor:
+                continue
+            if descriptor.symbol != target_symbol:
+                continue
+            if descriptor.option_type != target_option:
+                continue
+            if descriptor.strike != strike_decimal:
+                continue
+            if descriptor.expiration != expiration_display:
+                continue
+            matches.append(txn)
         
         if matches:
             console.print(f"[green]Found {len(matches)} matching transactions[/green]")

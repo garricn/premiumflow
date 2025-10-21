@@ -1,5 +1,6 @@
 """CLI integration-related tests for rollchain commands."""
 
+import json
 from decimal import Decimal
 
 from click.testing import CliRunner
@@ -31,6 +32,7 @@ def _write_trace_csv(tmp_path):
 9/22/2025,9/22/2025,9/24/2025,TSLA,TSLA 10/17/2025 Call $515.00,BTC,1,$7.00,($700.00)
 9/22/2025,9/22/2025,9/24/2025,TSLA,TSLA 11/21/2025 Call $550.00,STO,1,$5.00,$500.00
 10/8/2025,10/8/2025,10/10/2025,TSLA,TSLA 11/21/2025 Call $550.00,BTC,1,$6.00,($600.00)
+1/3/2026,1/3/2026,1/5/2026,AAPL,AAPL 01/17/2026 Put $120.00,STO,1,$4.00,$400.00
 """
     sample_csv = tmp_path / "trace.csv"
     sample_csv.write_text(csv_content, encoding="utf-8")
@@ -53,7 +55,10 @@ def test_ingest_reports_missing_ticker(tmp_path):
     sample_csv = _write_sample_csv(tmp_path)
     runner = CliRunner()
 
-    result = runner.invoke(rollchain_cli, ['ingest', '--ticker', 'ZZZ', str(sample_csv)])
+    result = runner.invoke(
+        rollchain_cli,
+        ['ingest', '--options', '--ticker', 'ZZZ', '--file', str(sample_csv)],
+    )
 
     assert result.exit_code == 0
     assert "No options transactions found for ticker ZZZ" in result.output
@@ -273,7 +278,10 @@ def test_ingest_cli_open_only_message(tmp_path):
     csv_path.write_text(csv_content, encoding="utf-8")
 
     runner = CliRunner()
-    result = runner.invoke(rollchain_cli, ['ingest', '--open-only', str(csv_path)])
+    result = runner.invoke(
+        rollchain_cli,
+        ['ingest', '--options', '--open-only', '--file', str(csv_path)],
+    )
 
     assert result.exit_code == 0
     assert "Open positions: 1" in result.output
@@ -350,6 +358,40 @@ def test_trace_custom_target(tmp_path):
     assert "Target Price: $0.60 - $0.80" in output
 
 
+def test_lookup_matches_position_spec(tmp_path):
+    csv_path = _write_trace_csv(tmp_path)
+    runner = CliRunner()
+
+    result = runner.invoke(
+        rollchain_cli,
+        ['lookup', 'TSLA $515 C 2025-10-17', '--file', str(csv_path)],
+    )
+
+    assert result.exit_code == 0
+    assert "Found 2 matching transactions" in result.output
+
+    result_padded = runner.invoke(
+        rollchain_cli,
+        ['lookup', 'AAPL $120 P 2026-01-17', '--file', str(csv_path)],
+    )
+
+    assert result_padded.exit_code == 0
+    assert "Found 1 matching transactions" in result_padded.output
+
+
+def test_lookup_invalid_spec(tmp_path):
+    csv_path = _write_trace_csv(tmp_path)
+    runner = CliRunner()
+
+    result = runner.invoke(
+        rollchain_cli,
+        ['lookup', 'INVALID SPEC', '--file', str(csv_path)],
+    )
+
+    assert result.exit_code != 0
+    assert "Invalid lookup format" in result.output
+
+
 def test_filter_open_positions_includes_short_positions():
     """
     Test that open position filter includes short positions (negative quantities).
@@ -391,6 +433,55 @@ def test_filter_open_positions_includes_short_positions():
     assert short_position["Trans Code"] == "STO"
     # For short positions, the quantity should be negative to represent the short position
     assert short_position["Quantity"] == "-1", f"Expected negative quantity for short position, got {short_position['Quantity']}"
+
+
+def test_ingest_json_output(tmp_path):
+    """JSON output should be machine-friendly with stringified decimals."""
+    sample_csv = _write_sample_csv(tmp_path)
+    runner = CliRunner()
+
+    result = runner.invoke(
+        rollchain_cli,
+        [
+            'ingest',
+            '--options',
+            '--file',
+            str(sample_csv),
+            '--ticker',
+            'PLTR',
+            '--json-output',
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["filters"]["ticker"] == "PLTR"
+    assert payload["filters"]["options_only"] is True
+    assert isinstance(payload["target_percents"][0], str)
+    assert payload["transactions"]
+    first_txn = payload["transactions"][0]
+    assert "targets" in first_txn
+
+
+def test_ingest_strategy_calls_only(tmp_path):
+    """Strategy flag should filter to matching option legs."""
+    sample_csv = _write_sample_csv(tmp_path)
+    runner = CliRunner()
+
+    result = runner.invoke(
+        rollchain_cli,
+        [
+            'ingest',
+            '--options',
+            '--file',
+            str(sample_csv),
+            '--strategy',
+            'calls',
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Put" not in result.output
 
 
 def test_filter_open_positions_includes_partially_closed_short_positions():
