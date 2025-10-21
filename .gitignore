@@ -164,3 +164,6 @@ Desktop.ini
 *.log
 logs/
 uv.lock
+
+# MCP Configuration (contains tokens)
+.mcp.json
