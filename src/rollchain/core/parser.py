@@ -87,10 +87,12 @@ def parse_transaction_row(row: Dict[str, str]) -> Transaction:
     
     # Determine action based on transaction code
     trans_code = row.get('Trans Code', '').strip()
-    if trans_code in ['STO', 'BTO']:
-        action = 'SELL' if trans_code == 'STO' else 'BUY'
+    if trans_code in ['STO', 'STC']:
+        action = 'SELL'  # Both are sell transactions
+    elif trans_code in ['BTO', 'BTC']:
+        action = 'BUY'   # Both are buy transactions
     else:
-        action = 'BUY'  # Default assumption
+        action = 'BUY'  # Default assumption for unknown codes
     
     # Parse date
     date = parse_date(row.get('Activity Date', ''))
