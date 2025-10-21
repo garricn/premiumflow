@@ -7,6 +7,7 @@ from rollchain.services.chain_builder import (
     detect_roll_chains,
     detect_rolls,
 )
+from rollchain.core.parser import parse_transaction_row
 
 
 def build_txn(overrides: dict) -> dict:
@@ -439,3 +440,68 @@ def test_build_chain_pnl_calculation_treats_bto_as_debit_and_stc_as_credit():
     # STC should be counted as credit (cash inflow)
     assert chain["total_credits"] == Decimal("800.00"), f"Expected credits $800, got {chain['total_credits']}"
     assert chain["total_debits"] == Decimal("500.00"), f"Expected debits $500, got {chain['total_debits']}"
+
+
+def test_parse_transaction_row_treats_stc_as_sell_action():
+    """
+    Test that parse_transaction_row correctly treats STC as SELL action.
+    
+    This test demonstrates the bug where STC (Sell-to-Close) transactions
+    are incorrectly parsed as BUY actions instead of SELL actions.
+    
+    Expected: STC should be parsed as action='SELL'
+    Current bug: STC defaults to action='BUY'
+    """
+    # Create a CSV row for STC transaction
+    stc_row = {
+        'Instrument': 'TSLA',
+        'Description': 'TSLA 10/17/2025 Call $200.00',
+        'Trans Code': 'STC',
+        'Quantity': '1',
+        'Price': '$8.00',
+        'Amount': '$800.00',
+        'Activity Date': '9/15/2025'
+    }
+    
+    # Parse the transaction
+    transaction = parse_transaction_row(stc_row)
+    
+    # STC should be parsed as SELL action
+    # Current bug: defaults to BUY action
+    assert transaction.action == 'SELL', f"Expected action='SELL', got action='{transaction.action}'"
+    
+    # Verify other fields are parsed correctly
+    assert transaction.symbol == 'TSLA'
+    assert transaction.quantity == 1
+    assert transaction.price == Decimal('8.00')
+
+
+def test_parse_transaction_row_treats_bto_as_buy_action():
+    """
+    Test that parse_transaction_row correctly treats BTO as BUY action.
+    
+    This test verifies that BTO (Buy-to-Open) is correctly parsed as BUY action.
+    This should already work correctly, but we test it to ensure our fix
+    doesn't break existing functionality.
+    """
+    # Create a CSV row for BTO transaction
+    bto_row = {
+        'Instrument': 'TSLA',
+        'Description': 'TSLA 10/17/2025 Call $200.00',
+        'Trans Code': 'BTO',
+        'Quantity': '1',
+        'Price': '$5.00',
+        'Amount': '($500.00)',
+        'Activity Date': '9/1/2025'
+    }
+    
+    # Parse the transaction
+    transaction = parse_transaction_row(bto_row)
+    
+    # BTO should be parsed as BUY action
+    assert transaction.action == 'BUY', f"Expected action='BUY', got action='{transaction.action}'"
+    
+    # Verify other fields are parsed correctly
+    assert transaction.symbol == 'TSLA'
+    assert transaction.quantity == 1
+    assert transaction.price == Decimal('5.00')
