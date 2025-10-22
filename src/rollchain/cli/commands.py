@@ -27,9 +27,7 @@ from ..services.display import (
     format_breakeven,
     format_percent,
     format_price_range,
-    format_target_close_prices,
     ensure_display_name,
-    format_option_display,
 )
 from ..services.json_serializer import (
     serialize_decimal,
