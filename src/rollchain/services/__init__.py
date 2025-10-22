@@ -16,6 +16,12 @@ from .display import (
     format_realized_pnl,
     calculate_target_price_range,
 )
+from .json_serializer import (
+    serialize_decimal,
+    serialize_transaction,
+    serialize_chain,
+    build_ingest_payload,
+)
 
 __all__ = [
     "detect_roll_chains", 
@@ -33,4 +39,8 @@ __all__ = [
     "format_net_pnl",
     "format_realized_pnl",
     "calculate_target_price_range",
+    "serialize_decimal",
+    "serialize_transaction",
+    "serialize_chain",
+    "build_ingest_payload",
 ]
