@@ -127,13 +127,48 @@ def prepare_transactions_for_display(
     return rows
 
 
+def calculate_target_price_range(chain: Dict[str, Any], bounds: Tuple[Decimal, Decimal]) -> Optional[Tuple[Decimal, Decimal]]:
+    """Calculate the target price range for an open chain."""
+    breakeven = chain.get('breakeven_price')
+    net_contracts = chain.get('net_contracts', 0)
+    if breakeven is None or not net_contracts:
+        return None
+
+    # Calculate realized P&L
+    total_credits = chain.get("total_credits") or Decimal("0")
+    total_debits = chain.get("total_debits") or Decimal("0")
+    total_fees = chain.get("total_fees") or Decimal("0")
+    realized = total_credits - total_debits - total_fees
+    
+    contracts = abs(net_contracts)
+    if contracts == 0:
+        return None
+
+    per_share_realized = realized / (Decimal(contracts) * Decimal('100'))
+    per_share_realized = per_share_realized.quantize(Decimal('0.0001'))
+    if per_share_realized <= Decimal('0'):
+        return None
+
+    lower_shift = (per_share_realized * bounds[0]).quantize(Decimal('0.01'))
+    upper_shift = (per_share_realized * bounds[1]).quantize(Decimal('0.01'))
+
+    breakeven = Decimal(breakeven)
+    if net_contracts < 0:
+        low_price = breakeven - upper_shift
+        high_price = breakeven - lower_shift
+    else:
+        low_price = breakeven + lower_shift
+        high_price = breakeven + upper_shift
+
+    return low_price, high_price
+
+
 def prepare_chain_display(
     chain: Dict[str, Any], 
     target_bounds: Tuple[Decimal, Decimal]
 ) -> Dict[str, str]:
     """Prepare chain data for display formatting."""
-    # Note: calculate_target_price_range will be available after analysis service is merged
-    target_price = None  # Will be implemented when analysis service is available
+    target_price = calculate_target_price_range(chain, target_bounds)
     
     return {
         "display_name": ensure_display_name(chain),

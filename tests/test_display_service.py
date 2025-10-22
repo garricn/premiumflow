@@ -16,6 +16,7 @@ from src.rollchain.services.display import (
     prepare_chain_display,
     format_net_pnl,
     format_realized_pnl,
+    calculate_target_price_range,
 )
 
 
@@ -177,7 +178,9 @@ class TestDisplayService(unittest.TestCase):
             'total_credits': Decimal('500.00'),
             'total_debits': Decimal('400.00'),
             'total_fees': Decimal('0.16'),
-            'net_pnl_after_fees': Decimal('99.84')
+            'net_pnl_after_fees': Decimal('99.84'),
+            'breakeven_price': Decimal('450.00'),
+            'net_contracts': 1
         }
         target_bounds = (Decimal('0.5'), Decimal('0.7'))
         
@@ -189,7 +192,8 @@ class TestDisplayService(unittest.TestCase):
         self.assertEqual(result['credits'], '$500.00')
         self.assertEqual(result['debits'], '$400.00')
         self.assertEqual(result['fees'], '$0.16')
-        self.assertEqual(result['target_price'], '--')  # Will be None since target_price is not implemented yet
+        # Target price should now be calculated: $450.00 + ($99.84/100 * 0.5) to ($450.00 + $99.84/100 * 0.7)
+        self.assertEqual(result['target_price'], '$450.50 - $450.70')
 
     def test_format_net_pnl_closed_chain(self):
         """Test net P&L formatting for closed chain."""
@@ -217,6 +221,84 @@ class TestDisplayService(unittest.TestCase):
             'total_fees': Decimal('0.16')
         }
         self.assertEqual(format_realized_pnl(chain), '$74.84')
+
+    def test_calculate_target_price_range_valid(self):
+        """Test target price range calculation with valid data."""
+        chain = {
+            'breakeven_price': Decimal('100.00'),
+            'net_contracts': 1,
+            'total_credits': Decimal('1000.00'),
+            'total_debits': Decimal('500.00'),
+            'total_fees': Decimal('10.00')
+        }
+        bounds = (Decimal('0.5'), Decimal('0.7'))
+        result = calculate_target_price_range(chain, bounds)
+        
+        # Expected: realized = 1000 - 500 - 10 = 490
+        # per_share = 490 / (1 * 100) = 4.9
+        # lower_shift = 4.9 * 0.5 = 2.45
+        # upper_shift = 4.9 * 0.7 = 3.43
+        # Since net_contracts > 0: low = 100 + 2.45 = 102.45, high = 100 + 3.43 = 103.43
+        expected = (Decimal('102.45'), Decimal('103.43'))
+        self.assertEqual(result, expected)
+
+    def test_calculate_target_price_range_negative_contracts(self):
+        """Test target price range calculation with negative contracts."""
+        chain = {
+            'breakeven_price': Decimal('100.00'),
+            'net_contracts': -1,
+            'total_credits': Decimal('1000.00'),
+            'total_debits': Decimal('500.00'),
+            'total_fees': Decimal('10.00')
+        }
+        bounds = (Decimal('0.5'), Decimal('0.7'))
+        result = calculate_target_price_range(chain, bounds)
+        
+        # Expected: realized = 1000 - 500 - 10 = 490
+        # per_share = 490 / (1 * 100) = 4.9
+        # lower_shift = 4.9 * 0.5 = 2.45
+        # upper_shift = 4.9 * 0.7 = 3.43
+        # Since net_contracts < 0: low = 100 - 3.43 = 96.57, high = 100 - 2.45 = 97.55
+        expected = (Decimal('96.57'), Decimal('97.55'))
+        self.assertEqual(result, expected)
+
+    def test_calculate_target_price_range_no_breakeven(self):
+        """Test target price range calculation with no breakeven."""
+        chain = {
+            'net_contracts': 1,
+            'total_credits': Decimal('1000.00'),
+            'total_debits': Decimal('500.00'),
+            'total_fees': Decimal('10.00')
+        }
+        bounds = (Decimal('0.5'), Decimal('0.7'))
+        result = calculate_target_price_range(chain, bounds)
+        self.assertIsNone(result)
+
+    def test_calculate_target_price_range_no_contracts(self):
+        """Test target price range calculation with no contracts."""
+        chain = {
+            'breakeven_price': Decimal('100.00'),
+            'net_contracts': 0,
+            'total_credits': Decimal('1000.00'),
+            'total_debits': Decimal('500.00'),
+            'total_fees': Decimal('10.00')
+        }
+        bounds = (Decimal('0.5'), Decimal('0.7'))
+        result = calculate_target_price_range(chain, bounds)
+        self.assertIsNone(result)
+
+    def test_calculate_target_price_range_negative_realized(self):
+        """Test target price range calculation with negative realized P&L."""
+        chain = {
+            'breakeven_price': Decimal('100.00'),
+            'net_contracts': 1,
+            'total_credits': Decimal('400.00'),
+            'total_debits': Decimal('500.00'),
+            'total_fees': Decimal('10.00')
+        }
+        bounds = (Decimal('0.5'), Decimal('0.7'))
+        result = calculate_target_price_range(chain, bounds)
+        self.assertIsNone(result)
 
 
 if __name__ == '__main__':
