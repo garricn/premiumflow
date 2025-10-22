@@ -22,6 +22,14 @@ from .json_serializer import (
     serialize_chain,
     build_ingest_payload,
 )
+from .cli_helpers import (
+    is_open_chain,
+    parse_target_range,
+    format_percent,
+    filter_open_chains,
+    format_expiration_date,
+    create_target_label,
+)
 
 __all__ = [
     "detect_roll_chains", 
@@ -43,4 +51,10 @@ __all__ = [
     "serialize_transaction",
     "serialize_chain",
     "build_ingest_payload",
+    "is_open_chain",
+    "parse_target_range",
+    "format_percent",
+    "filter_open_chains",
+    "format_expiration_date",
+    "create_target_label",
 ]
