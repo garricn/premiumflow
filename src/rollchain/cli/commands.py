@@ -16,7 +16,9 @@ from rich.table import Table
 
 from ..core.parser import get_options_transactions, parse_csv_file, parse_lookup_input
 from ..services.chain_builder import detect_roll_chains
+from ..services.options import parse_option_description
 from ..services.targets import calculate_target_percents, compute_target_close_prices
+from ..services.analysis import calculate_target_price_range
 from ..services.transactions import (
     filter_open_positions,
     filter_transactions_by_option_type,
@@ -28,6 +30,8 @@ from ..services.display import (
     format_percent,
     format_price_range,
     ensure_display_name,
+    format_net_pnl,
+    format_realized_pnl,
 )
 from ..services.json_serializer import (
     serialize_decimal,
