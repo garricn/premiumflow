@@ -45,7 +45,7 @@ from ..services.json_serializer import (
     serialize_chain,
     build_ingest_payload,
 )
-from ..services.cli_helpers import parse_target_range
+from ..services.cli_helpers import parse_target_range as _parse_target_range
 
 
 
@@ -58,6 +58,14 @@ from ..services.cli_helpers import parse_target_range
 
 
 
+
+
+def parse_target_range(target: str) -> Tuple[Decimal, Decimal]:
+    """Parse target range string with Click error handling."""
+    try:
+        return _parse_target_range(target)
+    except ValueError as e:
+        raise click.BadParameter(str(e)) from e
 
 
 def prepare_transactions_for_display(
@@ -111,6 +119,9 @@ def analyze(csv_file, output_format, open_only, target):
     """Analyze roll chains from a CSV file."""
     console = Console()
     
+    # Parse target range first to get proper Click error handling
+    target_bounds = parse_target_range(target)
+    
     try:
         # Parse CSV file
         console.print(f"[blue]Parsing {csv_file}...[/blue]")
@@ -128,8 +139,6 @@ def analyze(csv_file, output_format, open_only, target):
         if open_only:
             chains = [chain for chain in chains if is_open_chain(chain)]
             console.print(f"[cyan]Open chains: {len(chains)}[/cyan]")
-
-        target_bounds = parse_target_range(target)
         target_percents = calculate_target_percents(target_bounds)
         target_label = "Target (" + ", ".join(format_percent(value) for value in target_percents) + ")"
         
@@ -213,13 +222,15 @@ def ingest(ctx, options_only, ticker_symbol, strategy, csv_file, open_only, targ
     """Ingest and display raw options transactions from CSV."""
     console = Console()
     
+    # Parse target range first to get proper Click error handling
+    target_bounds = parse_target_range(target)
+    
     try:
         emit_text = not json_output
 
         if emit_text:
             console.print(f"[blue]Ingesting {csv_file}...[/blue]")
         transactions = get_options_transactions(csv_file)
-        target_bounds = parse_target_range(target)
         target_percents = calculate_target_percents(target_bounds)
         target_label = "Target (" + ", ".join(format_percent(value) for value in target_percents) + ")"
 
@@ -403,13 +414,15 @@ def trace(display_name, csv_file, target):
     """Trace the full history of a roll chain by display name."""
     console = Console()
 
+    # Parse target range first to get proper Click error handling
+    target_bounds = parse_target_range(target)
+
     try:
         console.print(f"[blue]Tracing {display_name} in {csv_file}[/blue]")
         raw_transactions = get_options_transactions(csv_file)
         chains = detect_roll_chains(raw_transactions)
 
         display_key = display_name.strip().lower()
-        target_bounds = parse_target_range(target)
 
         matched = [
             chain for chain in chains
