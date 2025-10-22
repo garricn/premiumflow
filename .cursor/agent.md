@@ -21,6 +21,8 @@ When asked to "address code review comment" or similar:
 - Use `gh pr view {PR} --json reviews,comments` for comprehensive data
 - Always check both general comments AND review comments on specific lines
 - Look for Codex, human reviewers, and automated feedback
+- **Repository**: `garricn/rollchain` (not `garric/rollchain`)
+- **Owner**: `garricn` (correct GitHub username)
 
 ## Project Context
 - This is a Python financial options trading analysis tool
