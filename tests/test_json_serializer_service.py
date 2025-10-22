@@ -8,6 +8,7 @@ from src.rollchain.services.json_serializer import (
     serialize_transaction,
     serialize_chain,
     build_ingest_payload,
+    is_open_chain,
 )
 
 
@@ -46,6 +47,56 @@ class TestJsonSerializer(unittest.TestCase):
         """Test serializing integer values."""
         result = serialize_decimal(42)
         self.assertEqual(result, 42)
+
+    def test_is_open_chain_by_status_open(self):
+        """Test is_open_chain with OPEN status."""
+        chain = {'status': 'OPEN'}
+        self.assertTrue(is_open_chain(chain))
+
+    def test_is_open_chain_by_status_closed(self):
+        """Test is_open_chain with CLOSED status."""
+        chain = {'status': 'CLOSED'}
+        self.assertFalse(is_open_chain(chain))
+
+    def test_is_open_chain_by_last_transaction_sto(self):
+        """Test is_open_chain with STO as last transaction."""
+        chain = {
+            'transactions': [
+                {'Trans Code': 'BTO'},
+                {'Trans Code': 'STO'}
+            ]
+        }
+        self.assertTrue(is_open_chain(chain))
+
+    def test_is_open_chain_by_last_transaction_bto(self):
+        """Test is_open_chain with BTO as last transaction."""
+        chain = {
+            'transactions': [
+                {'Trans Code': 'STO'},
+                {'Trans Code': 'BTO'}
+            ]
+        }
+        self.assertTrue(is_open_chain(chain))
+
+    def test_is_open_chain_by_last_transaction_close(self):
+        """Test is_open_chain with closing transaction."""
+        chain = {
+            'transactions': [
+                {'Trans Code': 'STO'},
+                {'Trans Code': 'BTC'}
+            ]
+        }
+        self.assertFalse(is_open_chain(chain))
+
+    def test_is_open_chain_no_transactions(self):
+        """Test is_open_chain with no transactions."""
+        chain = {'transactions': []}
+        self.assertFalse(is_open_chain(chain))
+
+    def test_is_open_chain_no_status_no_transactions(self):
+        """Test is_open_chain with no status and no transactions."""
+        chain = {}
+        self.assertFalse(is_open_chain(chain))
 
     def test_serialize_transaction_complete(self):
         """Test serializing a complete transaction."""

@@ -6,6 +6,19 @@ from typing import Any, Dict, List, Optional
 from .display import ensure_display_name
 
 
+def is_open_chain(chain: Dict[str, Any]) -> bool:
+    """Determine whether a detected chain is still open."""
+    status = (chain.get("status") or "").upper()
+    if status in {"OPEN", "CLOSED"}:
+        return status == "OPEN"
+
+    transactions: List[Dict[str, Any]] = chain.get("transactions") or []
+    if not transactions:
+        return False
+    last_code = (transactions[-1].get("Trans Code") or "").strip().upper()
+    return last_code in {"STO", "BTO"}
+
+
 def serialize_decimal(value: Any) -> Any:
     """Serialize Decimal values to JSON-compatible format."""
     if isinstance(value, Decimal):
@@ -87,7 +100,7 @@ def build_ingest_payload(
 
     if open_only:
         # Filter chains to only include open ones
-        chains = [chain for chain in chains if chain.get("status") == "OPEN"]
+        chains = [chain for chain in chains if is_open_chain(chain)]
 
     filtered_chains: List[Dict[str, Any]] = []
     for idx, chain in enumerate(chains, start=1):
