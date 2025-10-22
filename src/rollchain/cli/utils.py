@@ -12,7 +12,7 @@ from typing import Any, Dict, Iterable, List
 import click
 from rich.table import Table
 
-from ..services.options import OptionDescriptor, parse_option_description
+from ..services.options import parse_option_description
 from ..services.targets import compute_target_close_prices
 from ..services.display import format_option_display, format_target_close_prices
 from ..services.cli_helpers import parse_target_range as _parse_target_range
