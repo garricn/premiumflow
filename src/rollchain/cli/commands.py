@@ -23,266 +23,37 @@ from ..services.transactions import (
     filter_transactions_by_option_type,
     filter_transactions_by_ticker,
 )
+from ..services.analysis import (
+    is_open_chain,
+    calculate_realized_pnl,
+    calculate_target_price_range,
+)
+from ..services.display import (
+    format_currency,
+    format_breakeven,
+    format_percent,
+    format_price_range,
+    format_target_close_prices,
+    ensure_display_name,
+    format_option_display,
+    format_net_pnl,
+    format_realized_pnl,
+)
+from ..services.json_serializer import (
+    serialize_decimal,
+    serialize_transaction,
+    serialize_chain,
+    build_ingest_payload,
+)
+from ..services.cli_helpers import parse_target_range as _parse_target_range
 
 
-def _is_open_chain(chain: Dict[str, Any]) -> bool:
-    """Determine whether a detected chain is still open."""
-    status = (chain.get("status") or "").upper()
-    if status in {"OPEN", "CLOSED"}:
-        return status == "OPEN"
-
-    transactions: List[Dict[str, Any]] = chain.get("transactions") or []
-    if not transactions:
-        return False
-    last_code = (transactions[-1].get("Trans Code") or "").strip().upper()
-    return last_code in {"STO", "BTO"}
-
-
-def _format_currency(value: Decimal | None) -> str:
-    if value is None:
-        return "--"
-    quantized = value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-    sign = "-" if quantized < 0 else ""
-    quantized = abs(quantized)
-    return f"{sign}${quantized:,.2f}"
-
-
-def _format_breakeven(chain: Dict[str, Any]) -> str:
-    if chain.get("status") != "OPEN":
-        return "--"
-    breakeven = chain.get("breakeven_price")
-    if breakeven is None:
-        return "--"
-    direction = chain.get("breakeven_direction") or ""
-    return f"{_format_currency(breakeven)} {direction}".strip()
-
-
-def _calculate_realized_pnl(chain: Dict[str, Any]) -> Decimal:
-    total_credits = chain.get("total_credits") or Decimal("0")
-    total_debits = chain.get("total_debits") or Decimal("0")
-    total_fees = chain.get("total_fees") or Decimal("0")
-    return total_credits - total_debits - total_fees
-
-
-def _format_realized_pnl(chain: Dict[str, Any]) -> str:
-    return _format_currency(_calculate_realized_pnl(chain))
-
-
-def _format_net_pnl(chain: Dict[str, Any]) -> str:
-    if chain.get("status") != "CLOSED":
-        return _format_realized_pnl(chain)
-    return _format_currency(chain.get("net_pnl_after_fees"))
-
-
-def _parse_target_range(target: str) -> Tuple[Decimal, Decimal]:
+def parse_target_range(target: str) -> Tuple[Decimal, Decimal]:
+    """Parse target range string with Click error handling."""
     try:
-        lower_str, upper_str = target.split('-', 1)
-        lower = Decimal(lower_str.strip())
-        upper = Decimal(upper_str.strip())
-    except (ValueError, ArithmeticError):  # split or Decimal conversion
-        raise click.BadParameter("Target range must be in the form LOWER-UPPER, e.g. 0.5-0.7")
-
-    if lower < Decimal('0') or upper > Decimal('1') or lower > upper:
-        raise click.BadParameter("Target bounds must satisfy 0 <= lower <= upper <= 1")
-    return lower, upper
-
-
-def _format_percent(value: Decimal) -> str:
-    percent = (value * Decimal('100')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-    text = f"{percent:,.2f}"
-    if text.endswith(".00"):
-        text = text[:-3]
-    elif text.endswith("0"):
-        text = text[:-1]
-    return f"{text}%"
-
-
-def _calculate_target_price_range(chain: Dict[str, Any], bounds: Tuple[Decimal, Decimal]) -> Optional[Tuple[Decimal, Decimal]]:
-    breakeven = chain.get('breakeven_price')
-    net_contracts = chain.get('net_contracts', 0)
-    if breakeven is None or not net_contracts:
-        return None
-
-    realized = _calculate_realized_pnl(chain)
-    contracts = abs(net_contracts)
-    if contracts == 0:
-        return None
-
-    per_share_realized = realized / (Decimal(contracts) * Decimal('100'))
-    per_share_realized = per_share_realized.quantize(Decimal('0.0001'), rounding=ROUND_HALF_UP)
-    if per_share_realized <= Decimal('0'):
-        return None
-
-    lower_shift = (per_share_realized * bounds[0]).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-    upper_shift = (per_share_realized * bounds[1]).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-
-    breakeven = Decimal(breakeven)
-    if net_contracts < 0:
-        low_price = breakeven - upper_shift
-        high_price = breakeven - lower_shift
-    else:
-        low_price = breakeven + lower_shift
-        high_price = breakeven + upper_shift
-
-    return low_price, high_price
-
-
-def _format_price_range(value_pair: Optional[Tuple[Decimal, Decimal]]) -> str:
-    if not value_pair:
-        return "--"
-    low, high = value_pair
-    return f"{_format_currency(low)} - {_format_currency(high)}"
-
-
-def _format_target_close_prices(price_list: Optional[List[Decimal]]) -> str:
-    if not price_list:
-        return "--"
-    return ", ".join(_format_currency(value) for value in price_list)
-
-
-def _ensure_display_name(chain: Dict[str, Any]) -> str:
-    display = chain.get("display_name")
-    if display:
-        return display
-    symbol = chain.get("symbol") or ""
-    strike = chain.get("strike")
-    option_label = chain.get("option_label") or ""
-    if isinstance(strike, Decimal):
-        if strike == strike.to_integral_value():
-            strike_text = f"{int(strike)}"
-        else:
-            strike_text = f"{strike.normalize()}"
-    else:
-        strike_text = str(strike or "")
-    return " ".join(filter(None, [symbol, f"${strike_text}", option_label])).strip() or symbol
-
-
-def _parse_option_description(description: str) -> Optional[Tuple[str, str, str, Decimal]]:
-    if not description:
-        return None
-    import re
-
-    pattern = re.compile(
-        r'^\s*(?P<symbol>[A-Za-z]+)\s+'
-        r'(?P<expiration>\d{1,2}/\d{1,2}/\d{4})\s+'
-        r'(?P<option_type>Call|Put)\s+\$?(?P<strike>[\d,]+(?:\.\d+)?)\s*$'
-    )
-    match = pattern.match(description)
-    if not match:
-        return None
-
-    symbol = match.group('symbol').upper()
-    expiration = match.group('expiration')
-    option_type = match.group('option_type').capitalize()
-    strike_text = match.group('strike').replace(',', '')
-    try:
-        strike = Decimal(strike_text)
-    except InvalidOperation:
-        return None
-    return symbol, expiration, option_type, strike
-
-
-def _format_option_display(parsed: Optional[OptionDescriptor], fallback: str) -> Tuple[str, str]:
-    if not parsed:
-        return fallback, ""
-    strike_text = f"{parsed.strike.quantize(Decimal('0.01')):,.2f}"
-    return f"{parsed.symbol} ${strike_text} {parsed.option_type}", parsed.expiration
-
-
-def _serialize_decimal(value: Any) -> Any:
-    if isinstance(value, Decimal):
-        normalized = value.normalize()
-        return format(normalized, 'f')
-    return value
-
-
-def _serialize_transaction(txn: Dict[str, Any]) -> Dict[str, Any]:
-    return {
-        "activity_date": txn.get("Activity Date", ""),
-        "instrument": (txn.get("Instrument") or "").strip(),
-        "description": txn.get("Description", ""),
-        "trans_code": (txn.get("Trans Code") or "").strip(),
-        "quantity": txn.get("Quantity", ""),
-        "price": txn.get("Price", ""),
-        "amount": txn.get("Amount", ""),
-    }
-
-
-def _serialize_chain(chain: Dict[str, Any], chain_id: str) -> Dict[str, Any]:
-    serialized_transactions = [
-        {
-            "activity_date": leg.get("Activity Date", ""),
-            "trans_code": (leg.get("Trans Code") or "").strip(),
-            "quantity": leg.get("Quantity", ""),
-            "price": leg.get("Price", ""),
-            "amount": leg.get("Amount", ""),
-            "description": leg.get("Description", ""),
-        }
-        for leg in chain.get("transactions", [])
-    ]
-
-    return {
-        "chain_id": chain_id,
-        "display_name": _ensure_display_name(chain),
-        "symbol": chain.get("symbol"),
-        "status": chain.get("status"),
-        "start_date": chain.get("start_date"),
-        "end_date": chain.get("end_date"),
-        "roll_count": chain.get("roll_count"),
-        "strike": _serialize_decimal(chain.get("strike")),
-        "option_type": chain.get("option_type"),
-        "expiration": chain.get("expiration"),
-        "total_credits": _serialize_decimal(chain.get("total_credits")),
-        "total_debits": _serialize_decimal(chain.get("total_debits")),
-        "total_fees": _serialize_decimal(chain.get("total_fees")),
-        "net_pnl": _serialize_decimal(chain.get("net_pnl")),
-        "net_pnl_after_fees": _serialize_decimal(chain.get("net_pnl_after_fees")),
-        "breakeven_price": _serialize_decimal(chain.get("breakeven_price")),
-        "breakeven_direction": chain.get("breakeven_direction"),
-        "net_contracts": chain.get("net_contracts"),
-        "transactions": serialized_transactions,
-    }
-
-
-def build_ingest_payload(
-    *,
-    csv_file: str,
-    transactions: List[Dict[str, Any]],
-    display_rows: List[Dict[str, str]],
-    chains: List[Dict[str, Any]],
-    target_percents: List[Decimal],
-    options_only: bool,
-    ticker: Optional[str],
-    strategy: Optional[str],
-    open_only: bool,
-) -> Dict[str, Any]:
-    serialized_transactions: List[Dict[str, Any]] = [
-        {
-            **_serialize_transaction(txn),
-            "targets": display_rows[idx]["target_close"],
-        }
-        for idx, txn in enumerate(transactions)
-    ]
-
-    if open_only:
-        chains = [chain for chain in chains if _is_open_chain(chain)]
-
-    filtered_chains: List[Dict[str, Any]] = []
-    for idx, chain in enumerate(chains, start=1):
-        filtered_chains.append(_serialize_chain(chain, f"chain-{idx}"))
-
-    return {
-        "source_file": csv_file,
-        "filters": {
-            "options_only": options_only,
-            "ticker": ticker,
-            "strategy": strategy,
-            "open_only": open_only,
-        },
-        "target_percents": [str(value) for value in target_percents],
-        "transactions": serialized_transactions,
-        "chains": filtered_chains,
-    }
+        return _parse_target_range(target)
+    except ValueError as e:
+        raise click.BadParameter(str(e)) from e
 
 
 def prepare_transactions_for_display(
@@ -292,7 +63,7 @@ def prepare_transactions_for_display(
     rows: List[Dict[str, str]] = []
     for txn in transactions:
         parsed_option = parse_option_description(txn.get('Description', ''))
-        formatted_desc, expiration = _format_option_display(parsed_option, txn.get('Description', ''))
+        formatted_desc, expiration = format_option_display(parsed_option, txn.get('Description', ''))
         target_prices = compute_target_close_prices(
             txn.get('Trans Code'),
             txn.get('Price'),
@@ -308,7 +79,7 @@ def prepare_transactions_for_display(
                 "quantity": txn.get('Quantity', ''),
                 "price": txn.get('Price', ''),
                 "description": formatted_desc,
-                "target_close": _format_target_close_prices(target_prices),
+                "target_close": format_target_close_prices(target_prices),
             }
         )
 
@@ -336,6 +107,9 @@ def analyze(csv_file, output_format, open_only, target):
     """Analyze roll chains from a CSV file."""
     console = Console()
     
+    # Parse target range first to get proper Click error handling
+    target_bounds = parse_target_range(target)
+    
     try:
         # Parse CSV file
         console.print(f"[blue]Parsing {csv_file}...[/blue]")
@@ -351,12 +125,10 @@ def analyze(csv_file, output_format, open_only, target):
         console.print(f"[green]Found {len(chains)} roll chains[/green]")
 
         if open_only:
-            chains = [chain for chain in chains if _is_open_chain(chain)]
+            chains = [chain for chain in chains if is_open_chain(chain)]
             console.print(f"[cyan]Open chains: {len(chains)}[/cyan]")
-
-        target_bounds = _parse_target_range(target)
         target_percents = calculate_target_percents(target_bounds)
-        target_label = "Target (" + ", ".join(_format_percent(value) for value in target_percents) + ")"
+        target_label = "Target (" + ", ".join(format_percent(value) for value in target_percents) + ")"
         
         # Display results
         if output_format == 'table':
@@ -373,25 +145,25 @@ def analyze(csv_file, output_format, open_only, target):
 
             for idx, chain in enumerate(chains, 1):
                 table.add_row(
-                    _ensure_display_name(chain),
+                    ensure_display_name(chain),
                     chain.get("expiration", "") or "N/A",
                     chain.get("status", "UNKNOWN"),
-                    _format_currency(chain.get("total_credits")),
-                    _format_currency(chain.get("total_debits")),
-                    _format_net_pnl(chain),
-                    _format_breakeven(chain),
-                    _format_price_range(_calculate_target_price_range(chain, target_bounds)),
+                    format_currency(chain.get("total_credits")),
+                    format_currency(chain.get("total_debits")),
+                    format_net_pnl(chain),
+                    format_breakeven(chain),
+                    format_price_range(calculate_target_price_range(chain, target_bounds)),
                 )
 
             console.print(table)
         elif output_format == 'summary':
             for i, chain in enumerate(chains, 1):
                 console.print(f"\n[bold]Chain {i}:[/bold]")
-                credits = _format_currency(chain.get("total_credits"))
-                debits = _format_currency(chain.get("total_debits"))
-                fees = _format_currency(chain.get("total_fees"))
+                credits = format_currency(chain.get("total_credits"))
+                debits = format_currency(chain.get("total_debits"))
+                fees = format_currency(chain.get("total_fees"))
                 body_lines = [
-                    f"Display: {_ensure_display_name(chain)}",
+                    f"Display: {ensure_display_name(chain)}",
                     f"Expiration: {chain.get('expiration', '') or 'N/A'}",
                     f"Status: {chain.get('status', 'UNKNOWN')} (Rolls: {chain.get('roll_count', 0)})",
                     f"Period: {chain.get('start_date', 'N/A')} → {chain.get('end_date', 'N/A')}",
@@ -401,16 +173,16 @@ def analyze(csv_file, output_format, open_only, target):
                 ]
 
                 if chain.get("status") == "CLOSED":
-                    body_lines.append(f"Net P&L (after fees): {_format_net_pnl(chain)}")
+                    body_lines.append(f"Net P&L (after fees): {format_net_pnl(chain)}")
                 else:
-                    body_lines.append(f"Realized P&L (after fees): {_format_realized_pnl(chain)}")
-                    body_lines.append(f"Breakeven to close: {_format_breakeven(chain)}")
-                    body_lines.append(f"Target Price: {_format_price_range(_calculate_target_price_range(chain, target_bounds))}")
+                    body_lines.append(f"Realized P&L (after fees): {format_realized_pnl(chain)}")
+                    body_lines.append(f"Breakeven to close: {format_breakeven(chain)}")
+                    body_lines.append(f"Target Price: {format_price_range(calculate_target_price_range(chain, target_bounds))}")
 
                 console.print(
                     Panel(
                         "\n".join(body_lines),
-                        title=_ensure_display_name(chain),
+                        title=ensure_display_name(chain),
                         border_style="blue",
                     )
                 )
@@ -438,15 +210,17 @@ def ingest(ctx, options_only, ticker_symbol, strategy, csv_file, open_only, targ
     """Ingest and display raw options transactions from CSV."""
     console = Console()
     
+    # Parse target range first to get proper Click error handling
+    target_bounds = parse_target_range(target)
+    
     try:
         emit_text = not json_output
 
         if emit_text:
             console.print(f"[blue]Ingesting {csv_file}...[/blue]")
         transactions = get_options_transactions(csv_file)
-        target_bounds = _parse_target_range(target)
         target_percents = calculate_target_percents(target_bounds)
-        target_label = "Target (" + ", ".join(_format_percent(value) for value in target_percents) + ")"
+        target_label = "Target (" + ", ".join(format_percent(value) for value in target_percents) + ")"
 
         calls_only = strategy == 'calls'
         puts_only = strategy == 'puts'
@@ -628,17 +402,19 @@ def trace(display_name, csv_file, target):
     """Trace the full history of a roll chain by display name."""
     console = Console()
 
+    # Parse target range first to get proper Click error handling
+    target_bounds = parse_target_range(target)
+
     try:
         console.print(f"[blue]Tracing {display_name} in {csv_file}[/blue]")
         raw_transactions = get_options_transactions(csv_file)
         chains = detect_roll_chains(raw_transactions)
 
         display_key = display_name.strip().lower()
-        target_bounds = _parse_target_range(target)
 
         matched = [
             chain for chain in chains
-            if _ensure_display_name(chain).lower() == display_key
+            if ensure_display_name(chain).lower() == display_key
         ]
 
         if not matched:
@@ -648,20 +424,20 @@ def trace(display_name, csv_file, target):
         matched.sort(key=lambda chain: chain.get("start_date", ""))
 
         for index, chain in enumerate(matched, start=1):
-            title = f"{_ensure_display_name(chain)} ({chain.get('status', 'UNKNOWN')})"
+            title = f"{ensure_display_name(chain)} ({chain.get('status', 'UNKNOWN')})"
             summary_lines = [
                 f"Rolls: {chain.get('roll_count', 0)}",
                 f"Start: {chain.get('start_date', 'N/A')} → End: {chain.get('end_date', 'N/A')}",
-                f"Total Credits: {_format_currency(chain.get('total_credits'))}",
-                f"Total Debits: {_format_currency(chain.get('total_debits'))}",
+                f"Total Credits: {format_currency(chain.get('total_credits'))}",
+                f"Total Debits: {format_currency(chain.get('total_debits'))}",
             ]
 
             if chain.get("status") == "CLOSED":
-                summary_lines.append(f"Net P&L (after fees): {_format_net_pnl(chain)}")
+                summary_lines.append(f"Net P&L (after fees): {format_net_pnl(chain)}")
             else:
-                summary_lines.append(f"Realized P&L (after fees): {_format_realized_pnl(chain)}")
-                summary_lines.append(f"Breakeven to close: {_format_breakeven(chain)}")
-                summary_lines.append(f"Target Price: {_format_price_range(_calculate_target_price_range(chain, target_bounds))}")
+                summary_lines.append(f"Realized P&L (after fees): {format_realized_pnl(chain)}")
+                summary_lines.append(f"Breakeven to close: {format_breakeven(chain)}")
+                summary_lines.append(f"Target Price: {format_price_range(calculate_target_price_range(chain, target_bounds))}")
 
             console.print(
                 Panel(
