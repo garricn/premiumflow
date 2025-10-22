@@ -6,7 +6,7 @@ This module provides the CLI commands using Click.
 
 from __future__ import annotations
 
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import click
@@ -16,7 +16,6 @@ from rich.table import Table
 
 from ..core.parser import get_options_transactions, parse_csv_file, parse_lookup_input
 from ..services.chain_builder import detect_roll_chains
-from ..services.options import OptionDescriptor, parse_option_description
 from ..services.targets import calculate_target_percents, compute_target_close_prices
 from ..services.transactions import (
     filter_open_positions,
@@ -38,46 +37,10 @@ from ..services.json_serializer import (
     serialize_chain,
     build_ingest_payload,
 )
-from ..services.cli_helpers import parse_target_range as _parse_target_range
 from .analyze import analyze
+from .utils import parse_target_range, prepare_transactions_for_display
 
 
-def parse_target_range(target: str) -> Tuple[Decimal, Decimal]:
-    """Parse target range string with Click error handling."""
-    try:
-        return _parse_target_range(target)
-    except ValueError as e:
-        raise click.BadParameter(str(e)) from e
-
-
-def prepare_transactions_for_display(
-    transactions: Iterable[Dict[str, Any]],
-    target_percents: List[Decimal],
-) -> List[Dict[str, str]]:
-    rows: List[Dict[str, str]] = []
-    for txn in transactions:
-        parsed_option = parse_option_description(txn.get('Description', ''))
-        formatted_desc, expiration = format_option_display(parsed_option, txn.get('Description', ''))
-        target_prices = compute_target_close_prices(
-            txn.get('Trans Code'),
-            txn.get('Price'),
-            target_percents,
-        )
-
-        rows.append(
-            {
-                "date": txn.get('Activity Date', ''),
-                "symbol": (txn.get('Instrument') or '').strip(),
-                "expiration": expiration,
-                "code": txn.get('Trans Code', ''),
-                "quantity": txn.get('Quantity', ''),
-                "price": txn.get('Price', ''),
-                "description": formatted_desc,
-                "target_close": format_target_close_prices(target_prices),
-            }
-        )
-
-    return rows
 
 
 @click.group()
