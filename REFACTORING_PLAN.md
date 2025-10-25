@@ -12,7 +12,7 @@
   - `find_chain_by_position` - Lookup chains by position
   - `detect_roll_chains` - Build roll chains from transactions
 - Set up virtual environment and pytest
-- Created `requirements.txt` for dependency management
+- Adopted `uv` for dependency management with a committed `uv.lock`
 - Removed redundant old test files
 
 ### Test Coverage
@@ -60,7 +60,7 @@ rollchain/
 ├── pyproject.toml          # Project config & dependencies
 ├── README.md
 ├── .gitignore
-├── requirements.txt        # ✅ Already created
+├── uv.lock                 # uv dependency lockfile (committed)
 ├── src/
 │   └── rollchain/
 │       ├── __init__.py
