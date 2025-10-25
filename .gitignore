@@ -163,7 +163,6 @@ Desktop.ini
 # Logs
 *.log
 logs/
-uv.lock
 
 # MCP Configuration (contains tokens)
 .mcp.json
