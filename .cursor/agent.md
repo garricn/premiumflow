@@ -29,9 +29,9 @@ When asked to "address code review comment" or similar:
 - **Required steps**:
   1. Create appropriate labels: `gh label create "label-name" --description "Description" --color "color"`
   2. Add labels to issues: `gh issue edit {ISSUE_NUMBER} --add-label "label-name"`
-  3. **CRITICAL**: Explicitly add issues to project: `gh project item-add {PROJECT_ID} --owner garricn --url https://github.com/garricn/rollchain/issues/{ISSUE_NUMBER}`
-  4. Add PRs to project: `gh project item-add {PROJECT_ID} --owner garricn --url https://github.com/garricn/rollchain/pull/{PR_NUMBER}`
-- **List project items**: `gh project item-list {PROJECT_ID} --owner garricn`
+  3. **CRITICAL**: Explicitly add issues to project: `gh project item-add {PROJECT_NUMBER} --owner garricn --url https://github.com/garricn/rollchain/issues/{ISSUE_NUMBER}`
+  4. Add PRs to project: `gh project item-add {PROJECT_NUMBER} --owner garricn --url https://github.com/garricn/rollchain/pull/{PR_NUMBER}`
+- **List project items**: `gh project item-list {PROJECT_NUMBER} --owner garricn`
 - **List projects**: `gh project list`
 - **Project ID for RollChain Refactoring**: 2 (use `gh project list` to verify)
 
