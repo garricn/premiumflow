@@ -46,17 +46,36 @@ gh api repos/garricn/rollchain/pulls/{PR}/reviews/{REVIEW_ID}/comments
 - Test coverage is critical for financial calculations
 - Always preserve fallback logic when refactoring
 
-## Installation
+## Environment Setup
+
+Rollchain uses [uv](https://github.com/astral-sh/uv) for Python and dependency management.
+
+1. [Install `uv`](https://github.com/astral-sh/uv?tab=readme-ov-file#installation) (single static binary).
+2. Sync the project environment (installs dependencies and the package in editable mode):
+
+   ```bash
+   uv sync --extra dev
+   ```
+
+   The repository includes a committed `uv.lock`; use `uv sync --locked --extra dev` in CI or when you want to ensure the lockfile stays unchanged.
+3. Run commands inside the project environment with `uv run`, for example:
+
+   ```bash
+   uv run pytest
+   ```
+
+To add or upgrade dependencies, edit `pyproject.toml` and regenerate the lockfile:
 
 ```bash
-pip install -e .
+uv lock --upgrade-package <package-name>     # upgrade specific packages
+uv lock                                      # refresh everything after edits
 ```
 
 ## Usage
 
 ```bash
-python -m rollchain analyze transactions.csv
-python -m rollchain ingest --json-output
-python -m rollchain lookup "TSLA 500C 2025-02-21"
-python -m rollchain trace "TSLA $550 Call" all_transactions.csv
+uv run rollchain analyze transactions.csv
+uv run rollchain ingest --json-output
+uv run rollchain lookup "TSLA 500C 2025-02-21"
+uv run rollchain trace "TSLA $550 Call" all_transactions.csv
 ```
