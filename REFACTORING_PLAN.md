@@ -67,7 +67,11 @@ rollchain/
 │       ├── __main__.py     # CLI entry point
 │       ├── cli/
 │       │   ├── __init__.py
-│       │   └── commands.py # injest, lookup commands
+│       │   ├── commands.py  # registers subcommands
+│       │   ├── analyze.py
+│       │   ├── ingest.py
+│       │   ├── lookup.py
+│       │   └── trace.py
 │       ├── core/
 │       │   ├── __init__.py
 │       │   ├── models.py   # Transaction, RollChain models
@@ -287,8 +291,8 @@ cli.add_command(ingest, name='injest')
 2. ⏭️ Create `pyproject.toml` and package structure
 3. ⏭️ Implement models (Pydantic + Decimal)
 4. ⏭️ Extract services (parser, chain_builder, analyzer, lookup)
-5. ⏭️ Refactor CLI to Click; add `ingest` + alias, `--json`
-6. ⏭️ Split and reorganize tests by module; migrate to Decimal
+5. ✅ Refactor CLI to Click and split commands into dedicated modules (analyze/ingest/lookup/trace)
+6. ✅ Split and reorganize tests by module; migrate to Decimal
 
 ## 📝 Notes
 

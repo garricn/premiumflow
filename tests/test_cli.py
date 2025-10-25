@@ -16,6 +16,28 @@ from rollchain.services.transactions import (
 from rollchain.core.parser import get_options_transactions
 
 
+def test_cli_help_lists_all_commands():
+    """Root CLI help should list all registered subcommands."""
+    runner = CliRunner()
+
+    result = runner.invoke(rollchain_cli, ['--help'])
+
+    assert result.exit_code == 0
+    output = result.output
+    for command in ("analyze", "ingest", "lookup", "trace"):
+        assert command in output
+
+
+def test_cli_unknown_command_reports_error():
+    """Unknown commands should produce a helpful error message."""
+    runner = CliRunner()
+
+    result = runner.invoke(rollchain_cli, ['unknown'])
+
+    assert result.exit_code != 0
+    assert "No such command" in result.output
+
+
 def _write_sample_csv(tmp_path):
     csv_content = """Activity Date,Process Date,Settle Date,Instrument,Description,Trans Code,Quantity,Price,Amount
 9/1/2025,9/1/2025,9/3/2025,TMC,TMC 11/21/2025 Call $11.00,STO,1,$0.40,$40.00
