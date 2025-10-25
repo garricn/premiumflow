@@ -6,7 +6,6 @@ This module provides the CLI commands using Click.
 
 from __future__ import annotations
 
-from decimal import Decimal
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import click
@@ -14,9 +13,8 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from ..core.parser import get_options_transactions, parse_csv_file, parse_lookup_input
+from ..core.parser import get_options_transactions, parse_csv_file
 from ..services.chain_builder import detect_roll_chains
-from ..services.options import parse_option_description
 from ..services.targets import calculate_target_percents, compute_target_close_prices
 from ..services.analysis import calculate_target_price_range
 from ..services.transactions import (
@@ -40,6 +38,7 @@ from ..services.json_serializer import (
     build_ingest_payload,
 )
 from .analyze import analyze
+from .lookup import lookup
 from .utils import parse_target_range, prepare_transactions_for_display
 
 
@@ -52,8 +51,9 @@ def main():
     pass
 
 
-# Register the analyze command
+# Register CLI subcommands
 main.add_command(analyze)
+main.add_command(lookup)
 
 
 
@@ -181,76 +181,6 @@ def ingest(ctx, options_only, ticker_symbol, strategy, csv_file, open_only, targ
         
     except click.ClickException:
         raise
-    except Exception as e:
-        console.print(f"[red]Error: {e}[/red]")
-        raise click.Abort()
-
-
-@main.command()
-@click.argument('position_spec')
-@click.option('--file', 'csv_file', type=click.Path(exists=True), default='all_transactions.csv', show_default=True,
-              help='CSV file to search')
-def lookup(position_spec, csv_file):
-    """Look up a specific position in the CSV data."""
-    console = Console()
-    
-    try:
-        console.print(f"[blue]Looking up position: {position_spec}[/blue]")
-        try:
-            symbol, strike, option_type, expiration = parse_lookup_input(position_spec)
-        except ValueError as exc:
-            raise click.BadParameter(str(exc)) from exc
-
-        transactions = get_options_transactions(csv_file)
-        target_symbol = symbol.upper()
-        target_option = 'Call' if option_type.upper() == 'C' else 'Put'
-        strike_decimal = Decimal(str(strike))
-        expiration_parts = expiration.split('-')
-        year_text, month_text, day_text = expiration_parts
-        expiration_display = f"{int(month_text):02d}/{int(day_text):02d}/{year_text}"
-
-        matches = []
-        for txn in transactions:
-            descriptor = parse_option_description(txn.get('Description', ''))
-            if not descriptor:
-                continue
-            if descriptor.symbol != target_symbol:
-                continue
-            if descriptor.option_type != target_option:
-                continue
-            if descriptor.strike != strike_decimal:
-                continue
-            if descriptor.expiration != expiration_display:
-                continue
-            matches.append(txn)
-        
-        if matches:
-            console.print(f"[green]Found {len(matches)} matching transactions[/green]")
-            
-            from rich.table import Table
-            table = Table(title=f"Position: {position_spec}")
-            
-            table.add_column("Date", style="cyan")
-            table.add_column("Symbol", style="magenta")
-            table.add_column("Code", style="green")
-            table.add_column("Quantity", justify="right")
-            table.add_column("Price", justify="right")
-            table.add_column("Description", style="yellow")
-            
-            for txn in matches:
-                table.add_row(
-                    txn.get('Activity Date', ''),
-                    txn.get('Instrument', ''),
-                    txn.get('Trans Code', ''),
-                    txn.get('Quantity', ''),
-                    txn.get('Price', ''),
-                    txn.get('Description', '')
-                )
-            
-            console.print(table)
-        else:
-            console.print(f"[yellow]No transactions found for position: {position_spec}[/yellow]")
-        
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
         raise click.Abort()
