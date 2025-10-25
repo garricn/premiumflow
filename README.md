@@ -58,4 +58,5 @@ pip install -e .
 python -m rollchain analyze transactions.csv
 python -m rollchain ingest --json-output
 python -m rollchain lookup "TSLA 500C 2025-02-21"
+python -m rollchain trace "TSLA $550 Call" all_transactions.csv
 ```
