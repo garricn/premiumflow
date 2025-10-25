@@ -5,7 +5,8 @@ from decimal import Decimal
 
 from click.testing import CliRunner
 
-from rollchain.cli.commands import main as rollchain_cli, prepare_transactions_for_display
+from rollchain.cli.commands import main as rollchain_cli
+from rollchain.cli.utils import prepare_transactions_for_display
 from rollchain.services.targets import calculate_target_percents
 from rollchain.services.transactions import (
     filter_open_positions,
