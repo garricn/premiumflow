@@ -2,10 +2,10 @@
 
 ## ✅ Phase 1: Test Suite (COMPLETE)
 
-**Status**: 26 tests passing in `test_rollchain.py`
+**Status**: 26 tests passing in `test_premiumflow.py`
 
 ### What We Accomplished
-- Created comprehensive test suite (`test_rollchain.py`) with 26 passing tests
+- Created comprehensive test suite (`test_premiumflow.py`) with 26 passing tests
 - All core functions tested and working in `roll.py`:
   - `format_position_spec` - Convert descriptions to lookup format
   - `parse_lookup_input` - Parse position specifications
@@ -56,13 +56,13 @@
 
 ### Proposed Structure
 ```
-rollchain/
+premiumflow/
 ├── pyproject.toml          # Project config & dependencies
 ├── README.md
 ├── .gitignore
 ├── uv.lock                 # uv dependency lockfile (committed)
 ├── src/
-│   └── rollchain/
+│   └── premiumflow/
 │       ├── __init__.py
 │       ├── __main__.py     # CLI entry point
 │       ├── cli/
@@ -198,7 +198,7 @@ rollchain/
 ## 📋 Phase 5: Refactor CLI
 
 ### Commands to Implement
-1. **`rollchain ingest`** (primary)
+1. **`premiumflow ingest`** (primary)
    - Backward‑compatible alias: `injest` (deprecated; warn on use)
    - `--options` flag
    - `--ticker TICKER` filter
@@ -206,7 +206,7 @@ rollchain/
    - `--file FILE` input
    - `--json` output for automation (serialize chains/rolls)
 
-2. **`rollchain lookup`**
+2. **`premiumflow lookup`**
    - Position argument: "TICKER $STRIKE TYPE DATE"
    - `--file FILE` input
 
@@ -244,7 +244,7 @@ cli.add_command(ingest, name='injest')
 
 ### Test Updates
 1. **Split tests by module**
-   - Current: All 26 tests centralized in `test_rollchain.py`
+   - Current: All 26 tests centralized in `test_premiumflow.py`
    - Split into:
      - `test_parser.py` - CSV parsing
      - `test_chain_builder.py` - Chain detection
@@ -287,7 +287,7 @@ cli.add_command(ingest, name='injest')
 
 ## 🎯 Next Steps
 
-1. ✅ Complete test suite (26 tests passing in `test_rollchain.py`)
+1. ✅ Complete test suite (26 tests passing in `test_premiumflow.py`)
 2. ⏭️ Create `pyproject.toml` and package structure
 3. ⏭️ Implement models (Pydantic + Decimal)
 4. ⏭️ Extract services (parser, chain_builder, analyzer, lookup)

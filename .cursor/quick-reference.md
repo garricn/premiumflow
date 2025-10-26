@@ -9,8 +9,8 @@
 
 2. **Or manually check:**
    ```bash
-   gh api repos/garricn/rollchain/pulls/{PR}/reviews
-   gh api repos/garricn/rollchain/pulls/{PR}/reviews/{REVIEW_ID}/comments
+   gh api repos/garricn/premiumflow/pulls/{PR}/reviews
+   gh api repos/garricn/premiumflow/pulls/{PR}/reviews/{REVIEW_ID}/comments
    ```
 
 3. **Look for priority badges:**
@@ -26,14 +26,14 @@
 gh pr view {PR} --json reviews,comments
 
 # Get all reviews
-gh api repos/garricn/rollchain/pulls/{PR}/reviews
+gh api repos/garricn/premiumflow/pulls/{PR}/reviews
 
 # Get review comments
-gh api repos/garricn/rollchain/pulls/{PR}/reviews/{REVIEW_ID}/comments
+gh api repos/garricn/premiumflow/pulls/{PR}/reviews/{REVIEW_ID}/comments
 
 # Check for priority issues
-gh api repos/garricn/rollchain/pulls/{PR}/reviews --jq '.[].id' | while read review_id; do
-  gh api repos/garricn/rollchain/pulls/{PR}/reviews/$review_id/comments --jq '.[] | select(.body | contains("P1") or contains("P2") or contains("P3"))'
+gh api repos/garricn/premiumflow/pulls/{PR}/reviews --jq '.[].id' | while read review_id; do
+  gh api repos/garricn/premiumflow/pulls/{PR}/reviews/$review_id/comments --jq '.[] | select(.body | contains("P1") or contains("P2") or contains("P3"))'
 done
 ```
 

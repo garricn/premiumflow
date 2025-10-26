@@ -2,7 +2,7 @@
 
 from decimal import Decimal
 
-from rollchain.services.targets import calculate_target_percents, compute_target_close_prices
+from premiumflow.services.targets import calculate_target_percents, compute_target_close_prices
 
 
 def test_calculate_target_percents_includes_midpoint():

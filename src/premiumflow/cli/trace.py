@@ -1,5 +1,5 @@
 """
-Trace command for rollchain CLI.
+Trace command for premiumflow CLI.
 
 Provides the CLI entry point that displays the history of a roll chain.
 """
