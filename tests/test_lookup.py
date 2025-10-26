@@ -4,12 +4,15 @@ import unittest
 import tempfile
 import os
 import sys
+from decimal import Decimal
 from pathlib import Path
 
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from src.roll import find_chain_by_position
+from premiumflow.core.parser import get_options_transactions, parse_lookup_input
+from premiumflow.services.chain_builder import detect_roll_chains
+from premiumflow.services.options import parse_option_description
 
 
 class TestLookupFunctionality(unittest.TestCase):
@@ -40,7 +43,7 @@ class TestLookupFunctionality(unittest.TestCase):
             'expiration': '11/21/2025'
         }
         
-        chain = find_chain_by_position(self.temp_file.name, lookup_spec)
+        chain = self._find_chain(self.temp_file.name, lookup_spec)
         
         self.assertIsNotNone(chain, "Should find the chain")
         self.assertEqual(chain['ticker'], 'TSLA')
@@ -55,7 +58,7 @@ class TestLookupFunctionality(unittest.TestCase):
             'expiration': '12/19/2025'
         }
         
-        chain = find_chain_by_position(self.temp_file.name, lookup_spec)
+        chain = self._find_chain(self.temp_file.name, lookup_spec)
         
         self.assertIsNone(chain, "Should not find a chain")
     
@@ -69,10 +72,42 @@ class TestLookupFunctionality(unittest.TestCase):
             'expiration': '10/17/2025'
         }
         
-        chain = find_chain_by_position(self.temp_file.name, lookup_spec)
+        chain = self._find_chain(self.temp_file.name, lookup_spec)
         
         self.assertIsNotNone(chain, "Should find the chain via first position")
         self.assertEqual(chain['ticker'], 'TSLA')
+
+    @staticmethod
+    def _find_chain(csv_path: str, lookup_spec: dict):
+        month, day, year = lookup_spec['expiration'].split('/')
+        lookup_str = (
+            f"{lookup_spec['ticker']} ${lookup_spec['strike']} "
+            f"{lookup_spec['option_type'][0]} {year}-{int(month):02d}-{int(day):02d}"
+        )
+        symbol, strike, option_type, expiration = parse_lookup_input(lookup_str)
+
+        transactions = get_options_transactions(csv_path)
+        chains = detect_roll_chains(transactions)
+
+        strike_decimal = Decimal(str(strike))
+        # Convert YYYY-MM-DD to MM/DD/YYYY for descriptor matching
+        year, month, day = expiration.split('-')
+        expiration_display = f"{int(month):02d}/{int(day):02d}/{year}"
+        option_word = 'Call' if option_type.upper() == 'C' else 'Put'
+
+        for chain in chains:
+            for txn in chain.get('transactions', []):
+                descriptor = parse_option_description(txn.get('Description', ''))
+                if not descriptor:
+                    continue
+                if (
+                    descriptor.symbol == symbol.upper()
+                    and descriptor.option_type == option_word
+                    and descriptor.strike == strike_decimal
+                    and descriptor.expiration == expiration_display
+                ):
+                    return chain
+        return None
 
 
 if __name__ == '__main__':

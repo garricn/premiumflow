@@ -8,7 +8,7 @@ from pathlib import Path
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from src.roll import detect_roll_chains
+from premiumflow.services.chain_builder import detect_roll_chains
 import premiumflow
 
 
@@ -66,20 +66,19 @@ class TestMultiRollChains(unittest.TestCase):
         self.assertEqual(Decimal(str(chain['total_debits'])), expected_debits)
 
 
-class TestRollchainPackage(unittest.TestCase):
-    """Ensure the new premiumflow package mirrors the legacy API."""
+class TestPremiumFlowPackage(unittest.TestCase):
+    """Ensure the premiumflow package exports expected helpers."""
 
     def test_reexports_legacy_functions(self):
-        from src.roll import (
-            detect_roll_chains,
-            find_chain_by_position,
+        from premiumflow.core.parser import (
             format_position_spec,
+            parse_lookup_input,
             is_call_option,
             is_options_transaction,
             is_put_option,
-            parse_lookup_input,
         )
-        
+        from premiumflow import find_chain_by_position
+
         expected = {
             'detect_roll_chains': detect_roll_chains,
             'find_chain_by_position': find_chain_by_position,

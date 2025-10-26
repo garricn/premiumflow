@@ -8,7 +8,7 @@ from pathlib import Path
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from src.roll import detect_roll_chains
+from premiumflow.services.chain_builder import detect_roll_chains
 
 
 class TestPnLCalculations(unittest.TestCase):
