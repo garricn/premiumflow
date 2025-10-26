@@ -1,5 +1,5 @@
 """
-Command-line interface for rollchain.
+Command-line interface for options.
 
 Provides the CLI command group and registers individual subcommands.
 """

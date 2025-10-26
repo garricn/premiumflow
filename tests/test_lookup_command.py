@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from rollchain.cli.lookup import lookup
+from options.cli.lookup import lookup
 
 
 def _write_sample_csv(tmp_path: Path) -> Path:

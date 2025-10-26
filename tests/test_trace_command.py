@@ -4,7 +4,7 @@ from pathlib import Path
 
 from click.testing import CliRunner
 
-from rollchain.cli.trace import trace
+from options.cli.trace import trace
 
 
 def _write_trace_csv(tmp_path: Path) -> Path:

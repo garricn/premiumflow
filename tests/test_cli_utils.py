@@ -9,7 +9,7 @@ from decimal import Decimal
 from unittest.mock import patch, MagicMock
 from click import BadParameter
 
-from rollchain.cli.utils import (
+from options.cli.utils import (
     parse_target_range,
     prepare_transactions_for_display,
     create_transactions_table,
@@ -74,10 +74,10 @@ class TestPrepareTransactionsForDisplay:
             'Price': '5.00',
         }]
         
-        with patch('rollchain.cli.utils.parse_option_description') as mock_parse, \
-             patch('rollchain.cli.utils.format_option_display') as mock_format, \
-             patch('rollchain.cli.utils.compute_target_close_prices') as mock_compute, \
-             patch('rollchain.cli.utils.format_target_close_prices') as mock_format_target:
+        with patch('options.cli.utils.parse_option_description') as mock_parse, \
+             patch('options.cli.utils.format_option_display') as mock_format, \
+             patch('options.cli.utils.compute_target_close_prices') as mock_compute, \
+             patch('options.cli.utils.format_target_close_prices') as mock_format_target:
             
             # Setup mocks
             mock_option = MagicMock()
@@ -119,10 +119,10 @@ class TestPrepareTransactionsForDisplay:
             }
         ]
         
-        with patch('rollchain.cli.utils.parse_option_description') as mock_parse, \
-             patch('rollchain.cli.utils.format_option_display') as mock_format, \
-             patch('rollchain.cli.utils.compute_target_close_prices') as mock_compute, \
-             patch('rollchain.cli.utils.format_target_close_prices') as mock_format_target:
+        with patch('options.cli.utils.parse_option_description') as mock_parse, \
+             patch('options.cli.utils.format_option_display') as mock_format, \
+             patch('options.cli.utils.compute_target_close_prices') as mock_compute, \
+             patch('options.cli.utils.format_target_close_prices') as mock_format_target:
             
             # Setup mocks
             mock_option = MagicMock()
@@ -144,10 +144,10 @@ class TestPrepareTransactionsForDisplay:
             # Missing other fields
         }]
         
-        with patch('rollchain.cli.utils.parse_option_description') as mock_parse, \
-             patch('rollchain.cli.utils.format_option_display') as mock_format, \
-             patch('rollchain.cli.utils.compute_target_close_prices') as mock_compute, \
-             patch('rollchain.cli.utils.format_target_close_prices') as mock_format_target:
+        with patch('options.cli.utils.parse_option_description') as mock_parse, \
+             patch('options.cli.utils.format_option_display') as mock_format, \
+             patch('options.cli.utils.compute_target_close_prices') as mock_compute, \
+             patch('options.cli.utils.format_target_close_prices') as mock_format_target:
             
             # Setup mocks
             mock_option = MagicMock()
@@ -179,10 +179,10 @@ class TestPrepareTransactionsForDisplay:
             'Price': '5.00',
         }]
         
-        with patch('rollchain.cli.utils.parse_option_description') as mock_parse, \
-             patch('rollchain.cli.utils.format_option_display') as mock_format, \
-             patch('rollchain.cli.utils.compute_target_close_prices') as mock_compute, \
-             patch('rollchain.cli.utils.format_target_close_prices') as mock_format_target:
+        with patch('options.cli.utils.parse_option_description') as mock_parse, \
+             patch('options.cli.utils.format_option_display') as mock_format, \
+             patch('options.cli.utils.compute_target_close_prices') as mock_compute, \
+             patch('options.cli.utils.format_target_close_prices') as mock_format_target:
             
             # Setup mocks
             mock_option = MagicMock()

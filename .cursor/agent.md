@@ -5,12 +5,12 @@ When asked to "address code review comment" or similar:
 
 1. **Always check for review comments first** using:
    ```bash
-   gh api repos/garricn/rollchain/pulls/{PR_NUMBER}/reviews
+   gh api repos/garricn/options/pulls/{PR_NUMBER}/reviews
    ```
 
 2. **For each review, check comments**:
    ```bash
-   gh api repos/garricn/rollchain/pulls/{PR_NUMBER}/reviews/{REVIEW_ID}/comments
+   gh api repos/garricn/options/pulls/{PR_NUMBER}/reviews/{REVIEW_ID}/comments
    ```
 
 3. **Look for P1/P2/P3 priority badges** in comment bodies
@@ -21,7 +21,7 @@ When asked to "address code review comment" or similar:
 - Use `gh pr view {PR} --json reviews,comments` for comprehensive data
 - Always check both general comments AND review comments on specific lines
 - Look for Codex, human reviewers, and automated feedback
-- **Repository**: `garricn/rollchain` (not `garric/rollchain`)
+- **Repository**: `garricn/options` (not `garric/rollchain`)
 - **Owner**: `garricn` (correct GitHub username)
 
 ## GitHub Projects Management
@@ -29,8 +29,8 @@ When asked to "address code review comment" or similar:
 - **Required steps**:
   1. Create appropriate labels: `gh label create "label-name" --description "Description" --color "color"`
   2. Add labels to issues: `gh issue edit {ISSUE_NUMBER} --add-label "label-name"`
-  3. **CRITICAL**: Explicitly add issues to project: `gh project item-add {PROJECT_NUMBER} --owner garricn --url https://github.com/garricn/rollchain/issues/{ISSUE_NUMBER}`
-  4. Add PRs to project: `gh project item-add {PROJECT_NUMBER} --owner garricn --url https://github.com/garricn/rollchain/pull/{PR_NUMBER}`
+  3. **CRITICAL**: Explicitly add issues to project: `gh project item-add {PROJECT_NUMBER} --owner garricn --url https://github.com/garricn/options/issues/{ISSUE_NUMBER}`
+  4. Add PRs to project: `gh project item-add {PROJECT_NUMBER} --owner garricn --url https://github.com/garricn/options/pull/{PR_NUMBER}`
 - **List project items**: `gh project item-list {PROJECT_NUMBER} --owner garricn`
 - **List projects**: `gh project list`
 - **Project ID for RollChain Refactoring**: 2 (use `gh project list` to verify)

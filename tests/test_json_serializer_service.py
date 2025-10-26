@@ -3,7 +3,7 @@
 import unittest
 from decimal import Decimal
 
-from src.rollchain.services.json_serializer import (
+from src.options.services.json_serializer import (
     serialize_decimal,
     serialize_transaction,
     serialize_chain,

@@ -1,58 +1,28 @@
-"""Compatibility shim so the package is importable from a source checkout."""
+"""Compatibility shim for the legacy rollchain package name.
+
+This module re-exports the new ``options`` package to preserve backward
+compatibility for existing scripts. The shim will be removed in a future
+major release.
+"""
 from __future__ import annotations
 
-import sys
-from importlib.util import module_from_spec, spec_from_file_location
-from pathlib import Path
-from types import ModuleType
+import warnings
 
-_pkg_dir = Path(__file__).resolve().parent
-_src_root = _pkg_dir.parent / "src"
-_src_pkg_dir = _src_root / "rollchain"
+import options as _options
 
-if _src_root.exists():
-    src_root_str = str(_src_root)
-    if src_root_str not in sys.path:
-        sys.path.insert(0, src_root_str)
-
-__path__ = []
-if _src_pkg_dir.exists():
-    __path__.append(str(_src_pkg_dir))
-__path__.append(str(_pkg_dir))
-
-
-def _load_impl() -> ModuleType:
-    spec = spec_from_file_location(
-        "_rollchain_impl",
-        _src_pkg_dir / "__init__.py",
-        submodule_search_locations=[str(_src_pkg_dir)],
-    )
-    if spec is None or spec.loader is None:  # pragma: no cover - defensive guard
-        raise ModuleNotFoundError("rollchain implementation module could not be loaded")
-    module = module_from_spec(spec)
-    loader = spec.loader
-    assert loader is not None
-    sys.modules[spec.name] = module
-    try:
-        loader.exec_module(module)
-    except Exception:
-        sys.modules.pop(spec.name, None)
-        raise
-    return module
-
-
-_impl = _load_impl()
-
-for _name, _value in _impl.__dict__.items():
-    if _name in {"__name__", "__loader__", "__package__", "__spec__", "__path__", "__file__"}:
+for _name in dir(_options):
+    if _name.startswith("_"):
         continue
-    globals()[_name] = _value
+    globals()[_name] = getattr(_options, _name)
 
-__all__ = getattr(_impl, "__all__", [])
-if hasattr(_impl, "__getattr__"):
-    __getattr__ = _impl.__getattr__
-if hasattr(_impl, "__dir__"):
-    __dir__ = _impl.__dir__
+__version__ = getattr(_options, "__version__", None)
 
-# Tidy module namespace.
-del ModuleType, module_from_spec, spec_from_file_location, Path, sys, _impl, _name, _value
+warnings.warn(
+    "rollchain has been renamed to options. Please update imports to "
+    "`import options`.",
+    DeprecationWarning,
+    stacklevel=2,
+)
+
+__all__ = [name for name in globals() if not name.startswith("_")]
+del _options

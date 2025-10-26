@@ -1,5 +1,5 @@
 """
-Analyze command for rollchain CLI.
+Analyze command for options CLI.
 
 This module provides the analyze command for detecting and analyzing roll chains
 from CSV transaction data.

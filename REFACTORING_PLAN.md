@@ -1,11 +1,11 @@
-# RollChain Project Refactoring Plan
+# Options Project Refactoring Plan
 
 ## ✅ Phase 1: Test Suite (COMPLETE)
 
-**Status**: 26 tests passing in `test_rollchain.py`
+**Status**: 26 tests passing in `test_rollchain.py` (legacy)
 
 ### What We Accomplished
-- Created comprehensive test suite (`test_rollchain.py`) with 26 passing tests
+- Created comprehensive test suite (`test_rollchain.py` (legacy)) with 26 passing tests
 - All core functions tested and working in `roll.py`:
   - `format_position_spec` - Convert descriptions to lookup format
   - `parse_lookup_input` - Parse position specifications
@@ -56,13 +56,13 @@
 
 ### Proposed Structure
 ```
-rollchain/
+options/
 ├── pyproject.toml          # Project config & dependencies
 ├── README.md
 ├── .gitignore
 ├── uv.lock                 # uv dependency lockfile (committed)
 ├── src/
-│   └── rollchain/
+│   └── options/
 │       ├── __init__.py
 │       ├── __main__.py     # CLI entry point
 │       ├── cli/
@@ -74,7 +74,7 @@ rollchain/
 │       │   └── trace.py
 │       ├── core/
 │       │   ├── __init__.py
-│       │   ├── models.py   # Transaction, RollChain models
+│       │   ├── models.py   # Transaction, Options models
 │       │   └── parser.py   # CSV parsing
 │       ├── services/
 │       │   ├── __init__.py
@@ -119,7 +119,7 @@ rollchain/
    - price: Decimal
    - amount: Decimal
 
-2. **RollChain** (pydantic model)
+2. **Options** (pydantic model)
    - chain_id: str (e.g., "RC-001")
    - ticker: str
    - status: Literal["OPEN", "CLOSED"]
@@ -164,8 +164,8 @@ rollchain/
    - `parse_description(desc)` → OptionContract (ticker, expiration, type, strike)
 
 2. **ChainBuilder** (`services/chain_builder.py`)
-   - `detect_roll_chains(transactions)` → List[RollChain]
-   - `build_chain(transactions)` → RollChain
+   - `detect_roll_chains(transactions)` → List[Options]
+   - `build_chain(transactions)` → Options
    - Handles open/closed status
    - Roll primitive: same‑day close+open pairs
      - Short: `BTC → STO`; Long: `STC → BTO`
@@ -187,7 +187,7 @@ rollchain/
    - `display_chain_summary(chain)` → None
 
 5. **Lookup** (`services/lookup.py`)
-   - `find_chain_by_position(file_path, PositionSpec)` → Optional[RollChain]
+   - `find_chain_by_position(file_path, PositionSpec)` → Optional[Options]
 
 ### Deduplication Policy
 - Prefer broker‑supplied unique IDs when available
@@ -198,7 +198,7 @@ rollchain/
 ## 📋 Phase 5: Refactor CLI
 
 ### Commands to Implement
-1. **`rollchain ingest`** (primary)
+1. **`options ingest`** (primary)
    - Backward‑compatible alias: `injest` (deprecated; warn on use)
    - `--options` flag
    - `--ticker TICKER` filter
@@ -206,7 +206,7 @@ rollchain/
    - `--file FILE` input
    - `--json` output for automation (serialize chains/rolls)
 
-2. **`rollchain lookup`**
+2. **`options lookup`**
    - Position argument: "TICKER $STRIKE TYPE DATE"
    - `--file FILE` input
 
@@ -214,7 +214,7 @@ rollchain/
 ```python
 @click.group()
 def cli():
-    """RollChain - Options roll chain analysis tool"""
+    """Options - Options roll chain analysis tool"""
     pass
 
 @cli.command(name='ingest')
@@ -244,7 +244,7 @@ cli.add_command(ingest, name='injest')
 
 ### Test Updates
 1. **Split tests by module**
-   - Current: All 26 tests centralized in `test_rollchain.py`
+   - Current: All 26 tests centralized in `test_rollchain.py` (legacy)
    - Split into:
      - `test_parser.py` - CSV parsing
      - `test_chain_builder.py` - Chain detection
@@ -287,7 +287,7 @@ cli.add_command(ingest, name='injest')
 
 ## 🎯 Next Steps
 
-1. ✅ Complete test suite (26 tests passing in `test_rollchain.py`)
+1. ✅ Complete test suite (26 tests passing in `test_rollchain.py` (legacy))
 2. ⏭️ Create `pyproject.toml` and package structure
 3. ⏭️ Implement models (Pydantic + Decimal)
 4. ⏭️ Extract services (parser, chain_builder, analyzer, lookup)

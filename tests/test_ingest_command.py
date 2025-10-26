@@ -5,7 +5,7 @@ from pathlib import Path
 
 from click.testing import CliRunner
 
-from rollchain.cli.ingest import ingest
+from options.cli.ingest import ingest
 
 
 def _write_sample_csv(tmp_path: Path) -> Path:

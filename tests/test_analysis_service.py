@@ -3,7 +3,7 @@
 import unittest
 from decimal import Decimal
 
-from src.rollchain.services.analysis import (
+from src.options.services.analysis import (
     is_open_chain,
     calculate_realized_pnl,
     calculate_target_price_range,

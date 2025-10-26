@@ -1,4 +1,4 @@
-"""CLI functionality for rollchain."""
+"""CLI functionality for options."""
 
 from .commands import main
 

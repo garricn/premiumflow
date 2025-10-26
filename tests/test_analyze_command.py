@@ -8,8 +8,8 @@ import click
 import pytest
 from click.testing import CliRunner
 
-from rollchain.cli.analyze import analyze, parse_target_range
-from rollchain.cli.commands import main as rollchain_cli
+from options.cli.analyze import analyze, parse_target_range
+from options.cli.commands import main as options_cli
 
 
 def _write_sample_csv(tmp_path):
@@ -240,7 +240,7 @@ def test_analyze_command_integration_with_main_cli(tmp_path):
     csv_path = _write_sample_csv(tmp_path)
     runner = CliRunner()
     
-    result = runner.invoke(rollchain_cli, ['analyze', str(csv_path)])
+    result = runner.invoke(options_cli, ['analyze', str(csv_path)])
     
     assert result.exit_code == 0
     assert "Parsing" in result.output
