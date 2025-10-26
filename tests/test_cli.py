@@ -24,7 +24,7 @@ def test_cli_help_lists_all_commands():
 
     assert result.exit_code == 0
     output = result.output
-    for command in ("analyze", "ingest", "lookup", "trace"):
+    for command in ("analyze", "import", "ingest", "lookup", "trace"):
         assert command in output
 
 
@@ -73,14 +73,14 @@ def _write_open_chain_csv(tmp_path):
     return sample_csv
 
 
-def test_ingest_reports_missing_ticker(tmp_path):
+def test_import_reports_missing_ticker(tmp_path):
     """--ticker should report when no transactions exist for the symbol."""
     sample_csv = _write_sample_csv(tmp_path)
     runner = CliRunner()
 
     result = runner.invoke(
         premiumflow_cli,
-        ['ingest', '--ticker', 'ZZZ', '--file', str(sample_csv)],
+        ['import', '--ticker', 'ZZZ', '--file', str(sample_csv)],
     )
 
     assert result.exit_code == 0
@@ -290,7 +290,7 @@ def test_prepare_transactions_for_display_honors_target_range(tmp_path):
     assert rows[0]["target_close"] == "$2.25, $1.73, $1.20"
 
 
-def test_ingest_cli_open_only_message(tmp_path):
+def test_import_cli_open_only_message(tmp_path):
     """CLI still reports open position counts for --open-only."""
     csv_content = """Activity Date,Process Date,Settle Date,Instrument,Description,Trans Code,Quantity,Price,Amount
 9/12/2025,9/12/2025,9/15/2025,TSLA,TSLA 10/17/2025 Call $515.00,STO,1,$3.00,$300.00
@@ -303,7 +303,7 @@ def test_ingest_cli_open_only_message(tmp_path):
     runner = CliRunner()
     result = runner.invoke(
         premiumflow_cli,
-        ['ingest', '--options', '--open-only', '--file', str(csv_path)],
+        ['import', '--options', '--open-only', '--file', str(csv_path)],
     )
 
     assert result.exit_code == 0
@@ -458,7 +458,7 @@ def test_filter_open_positions_includes_short_positions():
     assert short_position["Quantity"] == "-1", f"Expected negative quantity for short position, got {short_position['Quantity']}"
 
 
-def test_ingest_json_output(tmp_path):
+def test_import_json_output(tmp_path):
     """JSON output should be machine-friendly with stringified decimals."""
     sample_csv = _write_sample_csv(tmp_path)
     runner = CliRunner()
@@ -466,7 +466,7 @@ def test_ingest_json_output(tmp_path):
     result = runner.invoke(
         premiumflow_cli,
         [
-            'ingest',
+            'import',
             '--options',
             '--file',
             str(sample_csv),
@@ -486,18 +486,32 @@ def test_ingest_json_output(tmp_path):
     assert "targets" in first_txn
 
 
-def test_ingest_strategy_calls_only(tmp_path):
+def test_import_strategy_calls_only(tmp_path):
     """Strategy flag should filter to matching option legs."""
     sample_csv = _write_sample_csv(tmp_path)
     runner = CliRunner()
 
     result = runner.invoke(
         premiumflow_cli,
-        ['ingest', '--file', str(sample_csv), '--strategy', 'calls'],
+        ['import', '--file', str(sample_csv), '--strategy', 'calls'],
     )
 
     assert result.exit_code == 0
     assert "Put" not in result.output
+
+
+def test_ingest_alias_emits_deprecation(tmp_path):
+    """Legacy 'ingest' alias should still function but warn the user."""
+    sample_csv = _write_sample_csv(tmp_path)
+    runner = CliRunner()
+
+    result = runner.invoke(
+        premiumflow_cli,
+        ['ingest', '--file', str(sample_csv)],
+    )
+
+    assert result.exit_code == 0
+    assert "deprecated" in (result.stderr or "").lower()
 
 
 def test_filter_open_positions_includes_partially_closed_short_positions():

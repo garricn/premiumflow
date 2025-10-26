@@ -1,8 +1,9 @@
 """
-Ingest command for premiumflow CLI.
+Import command for PremiumFlow CLI.
 
-This module provides the ingest command used to display and serialize raw
-options transactions extracted from CSV input.
+This module provides the primary ``import`` command used to display and
+serialize raw options transactions extracted from CSV input. A deprecated
+``ingest`` alias is kept temporarily for backward compatibility.
 """
 
 from __future__ import annotations
@@ -27,7 +28,7 @@ from .utils import parse_target_range, prepare_transactions_for_display
 
 
 def _emit_transactions_table(table_rows: Iterable[dict[str, str]], target_label: str) -> Table:
-    """Create a Rich table for the ingest command."""
+    """Create a Rich table for the import command."""
     table = Table(title="Options Transactions", expand=True)
     table.add_column("Date", style="cyan")
     table.add_column("Symbol", style="magenta")
@@ -53,47 +54,68 @@ def _emit_transactions_table(table_rows: Iterable[dict[str, str]], target_label:
     return table
 
 
-@click.command()
-@click.option(
-    '--options/--no-options',
-    'options_only',
-    default=True,
-    help='Filter to options transactions (default behaviour)',
-)
-@click.option('--ticker', 'ticker_symbol', help='Filter transactions by ticker symbol')
-@click.option(
-    '--strategy',
-    type=click.Choice(['calls', 'puts']),
-    help='Filter transactions by strategy',
-)
-@click.option(
-    '--file',
-    'csv_file',
-    type=click.Path(exists=True),
-    default='all_transactions.csv',
-    show_default=True,
-    help='CSV file to ingest',
-)
-@click.option('--open-only', is_flag=True, help='Show only open option positions (no closing trades)')
-@click.option(
-    '--target',
-    default='0.5-0.7',
-    show_default=True,
-    help='Target profit range as fraction of entry price / credit (e.g. 0.5-0.7)',
-)
-@click.option('--json-output', 'json_output', is_flag=True, help='Emit JSON instead of table output')
-@click.pass_context
-def ingest(ctx, options_only, ticker_symbol, strategy, csv_file, open_only, target, json_output):
-    """Ingest and display raw options transactions from CSV."""
-    console = Console()
+def _apply_import_options(func):
+    """Attach the shared options used by both import and ingest commands."""
 
+    option_decorators = [
+        click.option(
+            '--options/--no-options',
+            'options_only',
+            default=True,
+            help='Filter to options transactions (default behaviour)',
+        ),
+        click.option('--ticker', 'ticker_symbol', help='Filter transactions by ticker symbol'),
+        click.option(
+            '--strategy',
+            type=click.Choice(['calls', 'puts']),
+            help='Filter transactions by strategy',
+        ),
+        click.option(
+            '--file',
+            'csv_file',
+            type=click.Path(exists=True),
+            default='all_transactions.csv',
+            show_default=True,
+            help='CSV file to import',
+        ),
+        click.option('--open-only', is_flag=True, help='Show only open option positions (no closing trades)'),
+        click.option(
+            '--target',
+            default='0.5-0.7',
+            show_default=True,
+            help='Target profit range as fraction of entry price / credit (e.g. 0.5-0.7)',
+        ),
+        click.option('--json-output', 'json_output', is_flag=True, help='Emit JSON instead of table output'),
+    ]
+
+    func = click.pass_context(func)
+    for decorator in reversed(option_decorators):
+        func = decorator(func)
+    return func
+
+
+def _run_import(
+    ctx: click.Context,
+    *,
+    options_only,
+    ticker_symbol,
+    strategy,
+    csv_file,
+    open_only,
+    target,
+    json_output,
+    console_label: str,
+) -> None:
+    """Shared implementation used by both import and ingest commands."""
+
+    console = Console()
     target_bounds = parse_target_range(target)
 
     try:
         emit_text = not json_output
 
         if emit_text:
-            console.print(f"[blue]Ingesting {csv_file}...[/blue]")
+            console.print(f"[blue]{console_label} {csv_file}...[/blue]")
 
         transactions = get_options_transactions(csv_file)
         target_percents = calculate_target_percents(target_bounds)
@@ -174,3 +196,41 @@ def ingest(ctx, options_only, ticker_symbol, strategy, csv_file, open_only, targ
     except Exception as exc:
         console.print(f"[red]Error: {exc}[/red]")
         raise click.Abort()
+
+
+@click.command(name="import")
+@_apply_import_options
+def import_transactions(ctx, options_only, ticker_symbol, strategy, csv_file, open_only, target, json_output):
+    """Import and display raw options transactions from CSV."""
+
+    _run_import(
+        ctx,
+        options_only=options_only,
+        ticker_symbol=ticker_symbol,
+        strategy=strategy,
+        csv_file=csv_file,
+        open_only=open_only,
+        target=target,
+        json_output=json_output,
+        console_label="Importing",
+    )
+
+
+@click.command(name="ingest")
+@_apply_import_options
+def ingest(ctx, options_only, ticker_symbol, strategy, csv_file, open_only, target, json_output):
+    """Deprecated alias for ``premiumflow import``."""
+
+    click.echo("[deprecated] 'premiumflow ingest' is deprecated; use 'premiumflow import' instead.", err=True)
+
+    _run_import(
+        ctx,
+        options_only=options_only,
+        ticker_symbol=ticker_symbol,
+        strategy=strategy,
+        csv_file=csv_file,
+        open_only=open_only,
+        target=target,
+        json_output=json_output,
+        console_label="Importing",
+    )
