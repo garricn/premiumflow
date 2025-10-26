@@ -75,7 +75,7 @@ uv lock                                      # refresh everything after edits
 
 ```bash
 uv run premiumflow analyze transactions.csv
-uv run premiumflow ingest --json-output
+uv run premiumflow import --json-output
 uv run premiumflow lookup "TSLA 500C 2025-02-21"
 uv run premiumflow trace "TSLA $550 Call" all_transactions.csv
 ```
