@@ -7,7 +7,7 @@ from pathlib import Path
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from src.roll import (
+from premiumflow.core.parser import (
     is_options_transaction,
     is_call_option,
     is_put_option,
