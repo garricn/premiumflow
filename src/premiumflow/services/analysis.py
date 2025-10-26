@@ -1,5 +1,5 @@
 """
-Chain analysis services for rollchain.
+Chain analysis services for premiumflow.
 
 This module provides business logic for analyzing roll chains,
 calculating P&L, and determining chain status.

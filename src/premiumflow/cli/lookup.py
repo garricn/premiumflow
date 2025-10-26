@@ -1,5 +1,5 @@
 """
-Lookup command for rollchain CLI.
+Lookup command for premiumflow CLI.
 
 Provides lookup functionality to find matching option transactions for a
 position specification.

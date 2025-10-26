@@ -3,9 +3,9 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "rollchain"
+name = "premiumflow"
 version = "0.1.0"
-description = "Options trading roll chain analysis tool"
+description = "Options premium cash flow analysis toolkit"
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
@@ -38,19 +38,19 @@ dev = [
 ]
 
 [project.scripts]
-rollchain = "rollchain.cli:main"
+premiumflow = "premiumflow.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/garricn/rollchain"
-Repository = "https://github.com/garricn/rollchain"
-Issues = "https://github.com/garricn/rollchain/issues"
+Homepage = "https://github.com/garricn/premiumflow"
+Repository = "https://github.com/garricn/premiumflow"
+Issues = "https://github.com/garricn/premiumflow/issues"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["rollchain*"]
+include = ["premiumflow*"]
 
 [tool.pytest.ini_options]
 testpaths = ["."]

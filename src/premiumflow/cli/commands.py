@@ -1,5 +1,5 @@
 """
-Command-line interface for rollchain.
+Command-line interface for premiumflow.
 
 Provides the CLI command group and registers individual subcommands.
 """
@@ -17,7 +17,7 @@ from .trace import trace
 @click.group()
 @click.version_option(version="0.1.0")
 def main():
-    """RollChain - Options trading roll chain analysis tool."""
+    """PremiumFlow - Options trading roll chain analysis tool."""
     pass
 
 

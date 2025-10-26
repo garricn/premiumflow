@@ -9,7 +9,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from src.roll import detect_roll_chains
-import rollchain
+import premiumflow
 
 
 class TestMultiRollChains(unittest.TestCase):
@@ -67,7 +67,7 @@ class TestMultiRollChains(unittest.TestCase):
 
 
 class TestRollchainPackage(unittest.TestCase):
-    """Ensure the new rollchain package mirrors the legacy API."""
+    """Ensure the new premiumflow package mirrors the legacy API."""
 
     def test_reexports_legacy_functions(self):
         from src.roll import (
@@ -93,11 +93,11 @@ class TestRollchainPackage(unittest.TestCase):
         for name, reference in expected.items():
             with self.subTest(name=name):
                 # Check that the function exists and is callable
-                self.assertTrue(hasattr(rollchain, name), f"Function {name} not found in rollchain package")
-                self.assertTrue(callable(getattr(rollchain, name)), f"Attribute {name} is not callable")
+                self.assertTrue(hasattr(premiumflow, name), f"Function {name} not found in premiumflow package")
+                self.assertTrue(callable(getattr(premiumflow, name)), f"Attribute {name} is not callable")
 
     def test_package_version(self):
-        self.assertEqual(rollchain.__version__, '0.1.0')
+        self.assertEqual(premiumflow.__version__, '0.1.0')
 
 
 if __name__ == '__main__':

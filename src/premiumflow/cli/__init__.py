@@ -1,4 +1,4 @@
-"""CLI functionality for rollchain."""
+"""CLI functionality for premiumflow."""
 
 from .commands import main
 
