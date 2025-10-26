@@ -48,7 +48,7 @@ gh api repos/garricn/rollchain/pulls/{PR}/reviews/{REVIEW_ID}/comments
 
 ## Environment Setup
 
-Rollchain uses [uv](https://github.com/astral-sh/uv) for Python and dependency management.
+Rollchain targets Python **3.11** and uses [uv](https://github.com/astral-sh/uv) for Python and dependency management.
 
 1. [Install `uv`](https://github.com/astral-sh/uv?tab=readme-ov-file#installation) (single static binary).
 2. Sync the project environment (installs dependencies and the package in editable mode):
