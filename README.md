@@ -1,4 +1,4 @@
-# Options
+# Rollchain
 
 A Python tool for analyzing options trading roll chains from CSV transaction data.
 
@@ -20,10 +20,10 @@ Use the provided script to comprehensively check all feedback:
 Or manually check:
 ```bash
 # Get all reviews
-gh api repos/garricn/options/pulls/{PR}/reviews
+gh api repos/garricn/rollchain/pulls/{PR}/reviews
 
 # Get review comments for each review
-gh api repos/garricn/options/pulls/{PR}/reviews/{REVIEW_ID}/comments
+gh api repos/garricn/rollchain/pulls/{PR}/reviews/{REVIEW_ID}/comments
 ```
 
 ### Priority Levels
@@ -48,7 +48,7 @@ gh api repos/garricn/options/pulls/{PR}/reviews/{REVIEW_ID}/comments
 
 ## Environment Setup
 
-Options targets Python **3.11** and uses [uv](https://github.com/astral-sh/uv) for Python and dependency management.
+Rollchain targets Python **3.11** and uses [uv](https://github.com/astral-sh/uv) for Python and dependency management.
 
 1. [Install `uv`](https://github.com/astral-sh/uv?tab=readme-ov-file#installation) (single static binary).
 2. Sync the project environment (installs dependencies and the package in editable mode):
@@ -74,8 +74,8 @@ uv lock                                      # refresh everything after edits
 ## Usage
 
 ```bash
-uv run options analyze transactions.csv
-uv run options ingest --json-output
-uv run options lookup "TSLA 500C 2025-02-21"
-uv run options trace "TSLA $550 Call" all_transactions.csv
+uv run rollchain analyze transactions.csv
+uv run rollchain ingest --json-output
+uv run rollchain lookup "TSLA 500C 2025-02-21"
+uv run rollchain trace "TSLA $550 Call" all_transactions.csv
 ```

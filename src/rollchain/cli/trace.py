@@ -1,5 +1,5 @@
 """
-Trace command for options CLI.
+Trace command for rollchain CLI.
 
 Provides the CLI entry point that displays the history of a roll chain.
 """

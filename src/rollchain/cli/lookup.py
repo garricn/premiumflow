@@ -1,5 +1,5 @@
 """
-Lookup command for options CLI.
+Lookup command for rollchain CLI.
 
 Provides lookup functionality to find matching option transactions for a
 position specification.

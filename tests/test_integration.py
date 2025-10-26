@@ -9,8 +9,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from src.roll import detect_roll_chains
-import options
-import rollchain as legacy_rollchain
+import rollchain
 
 
 class TestMultiRollChains(unittest.TestCase):
@@ -67,8 +66,8 @@ class TestMultiRollChains(unittest.TestCase):
         self.assertEqual(Decimal(str(chain['total_debits'])), expected_debits)
 
 
-class TestOptionsPackage(unittest.TestCase):
-    """Ensure the options package exports the expected public API."""
+class TestRollchainPackage(unittest.TestCase):
+    """Ensure the new rollchain package mirrors the legacy API."""
 
     def test_reexports_legacy_functions(self):
         from src.roll import (
@@ -93,15 +92,12 @@ class TestOptionsPackage(unittest.TestCase):
 
         for name, reference in expected.items():
             with self.subTest(name=name):
-                self.assertTrue(hasattr(options, name), f"Function {name} not found in options package")
-                self.assertTrue(callable(getattr(options, name)), f"Attribute {name} is not callable")
+                # Check that the function exists and is callable
+                self.assertTrue(hasattr(rollchain, name), f"Function {name} not found in rollchain package")
+                self.assertTrue(callable(getattr(rollchain, name)), f"Attribute {name} is not callable")
 
     def test_package_version(self):
-        self.assertEqual(options.__version__, '0.1.0')
-
-    def test_legacy_rollchain_shim(self):
-        self.assertEqual(legacy_rollchain.__version__, options.__version__)
-        self.assertIs(legacy_rollchain.Transaction, options.Transaction)
+        self.assertEqual(rollchain.__version__, '0.1.0')
 
 
 if __name__ == '__main__':

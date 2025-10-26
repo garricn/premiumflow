@@ -1,1 +1,1 @@
-"""Test package for options."""
+"""Test package for rollchain."""

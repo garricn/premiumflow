@@ -1,5 +1,5 @@
 """
-Ingest command for options CLI.
+Ingest command for rollchain CLI.
 
 This module provides the ingest command used to display and serialize raw
 options transactions extracted from CSV input.

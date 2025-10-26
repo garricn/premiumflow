@@ -3,9 +3,9 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "options"
+name = "rollchain"
 version = "0.1.0"
-description = "Options selling transaction analysis toolkit"
+description = "Options trading roll chain analysis tool"
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
@@ -38,20 +38,19 @@ dev = [
 ]
 
 [project.scripts]
-options = "options.cli:main"
-rollchain = "options.cli:main"
+rollchain = "rollchain.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/garricn/options"
-Repository = "https://github.com/garricn/options"
-Issues = "https://github.com/garricn/options/issues"
+Homepage = "https://github.com/garricn/rollchain"
+Repository = "https://github.com/garricn/rollchain"
+Issues = "https://github.com/garricn/rollchain/issues"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["options*"]
+include = ["rollchain*"]
 
 [tool.pytest.ini_options]
 testpaths = ["."]

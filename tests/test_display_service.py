@@ -4,7 +4,7 @@ import unittest
 from decimal import Decimal
 from unittest.mock import patch
 
-from src.options.services.display import (
+from src.rollchain.services.display import (
     format_currency,
     format_breakeven,
     format_percent,
@@ -107,7 +107,7 @@ class TestDisplayService(unittest.TestCase):
 
     def test_format_option_display_with_parsed(self):
         """Test option display formatting with parsed descriptor."""
-        from src.options.services.options import OptionDescriptor
+        from src.rollchain.services.options import OptionDescriptor
         
         parsed = OptionDescriptor(
             symbol='TSLA',
@@ -127,11 +127,11 @@ class TestDisplayService(unittest.TestCase):
         self.assertEqual(formatted, 'fallback description')
         self.assertEqual(expiration, '')
 
-    @patch('src.options.services.targets.compute_target_close_prices')
-    @patch('src.options.services.options.parse_option_description')
+    @patch('src.rollchain.services.targets.compute_target_close_prices')
+    @patch('src.rollchain.services.options.parse_option_description')
     def test_prepare_transactions_for_display(self, mock_parse, mock_compute):
         """Test transaction display preparation."""
-        from src.options.services.options import OptionDescriptor
+        from src.rollchain.services.options import OptionDescriptor
         
         # Mock the dependencies
         mock_parse.return_value = OptionDescriptor(

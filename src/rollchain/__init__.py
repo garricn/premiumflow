@@ -1,7 +1,7 @@
 """
-Options - Options selling transaction analysis toolkit.
+RollChain - Options trading roll chain analysis tool.
 
-Provides helpers for parsing, enriching, and analyzing options trades.
+A Python package for analyzing options trading roll chains from transaction data.
 """
 
 __version__ = "0.1.0"

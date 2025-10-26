@@ -1,26 +1,26 @@
-"""CLI integration-related tests for options commands."""
+"""CLI integration-related tests for rollchain commands."""
 
 import json
 from decimal import Decimal
 
 from click.testing import CliRunner
 
-from options.cli.commands import main as options_cli
-from options.cli.utils import prepare_transactions_for_display
-from options.services.targets import calculate_target_percents
-from options.services.transactions import (
+from rollchain.cli.commands import main as rollchain_cli
+from rollchain.cli.utils import prepare_transactions_for_display
+from rollchain.services.targets import calculate_target_percents
+from rollchain.services.transactions import (
     filter_open_positions,
     filter_transactions_by_option_type,
     filter_transactions_by_ticker,
 )
-from options.core.parser import get_options_transactions
+from rollchain.core.parser import get_options_transactions
 
 
 def test_cli_help_lists_all_commands():
     """Root CLI help should list all registered subcommands."""
     runner = CliRunner()
 
-    result = runner.invoke(options_cli, ['--help'])
+    result = runner.invoke(rollchain_cli, ['--help'])
 
     assert result.exit_code == 0
     output = result.output
@@ -32,7 +32,7 @@ def test_cli_unknown_command_reports_error():
     """Unknown commands should produce a helpful error message."""
     runner = CliRunner()
 
-    result = runner.invoke(options_cli, ['unknown'])
+    result = runner.invoke(rollchain_cli, ['unknown'])
 
     assert result.exit_code != 0
     assert "No such command" in result.output
@@ -79,7 +79,7 @@ def test_ingest_reports_missing_ticker(tmp_path):
     runner = CliRunner()
 
     result = runner.invoke(
-        options_cli,
+        rollchain_cli,
         ['ingest', '--ticker', 'ZZZ', '--file', str(sample_csv)],
     )
 
@@ -152,7 +152,7 @@ def test_filter_open_positions_includes_partially_closed_positions():
     Expected: Should show 1 open position (net quantity > 0)
     Current bug: Shows 0 open positions (all filtered out)
     """
-    from options.services.transactions import filter_open_positions
+    from rollchain.services.transactions import filter_open_positions
     
     transactions = [
         # Open 2 long contracts (BTO)
@@ -221,7 +221,7 @@ def test_filter_open_positions_aggregates_partial_fills():
     Expected: Should return 1 aggregated entry with net quantity
     Current bug: Returns 2 separate BTO entries (double-counting)
     """
-    from options.services.transactions import filter_open_positions
+    from rollchain.services.transactions import filter_open_positions
     
     transactions = [
         # Open 1 contract (first fill)
@@ -302,7 +302,7 @@ def test_ingest_cli_open_only_message(tmp_path):
 
     runner = CliRunner()
     result = runner.invoke(
-        options_cli,
+        rollchain_cli,
         ['ingest', '--options', '--open-only', '--file', str(csv_path)],
     )
 
@@ -314,7 +314,7 @@ def test_analyze_summary_shows_realized_for_open_chain(tmp_path):
     csv_path = _write_open_chain_csv(tmp_path)
     runner = CliRunner()
 
-    result = runner.invoke(options_cli, ['analyze', str(csv_path), '--format', 'summary', '--open-only'])
+    result = runner.invoke(rollchain_cli, ['analyze', str(csv_path), '--format', 'summary', '--open-only'])
 
     assert result.exit_code == 0
     output = result.output
@@ -327,7 +327,7 @@ def test_analyze_summary_custom_target(tmp_path):
     csv_path = _write_open_chain_csv(tmp_path)
     runner = CliRunner()
 
-    result = runner.invoke(options_cli, ['analyze', str(csv_path), '--format', 'summary', '--open-only', '--target', '0.25-0.5'])
+    result = runner.invoke(rollchain_cli, ['analyze', str(csv_path), '--format', 'summary', '--open-only', '--target', '0.25-0.5'])
 
     assert result.exit_code == 0
     output = result.output
@@ -338,7 +338,7 @@ def test_trace_outputs_full_history(tmp_path):
     csv_path = _write_trace_csv(tmp_path)
     runner = CliRunner()
 
-    result = runner.invoke(options_cli, ['trace', 'TSLA $550 Call', str(csv_path)])
+    result = runner.invoke(rollchain_cli, ['trace', 'TSLA $550 Call', str(csv_path)])
 
     assert result.exit_code == 0
     output = result.output
@@ -352,7 +352,7 @@ def test_trace_no_match(tmp_path):
     csv_path = _write_trace_csv(tmp_path)
     runner = CliRunner()
 
-    result = runner.invoke(options_cli, ['trace', 'AAPL $150 Call', str(csv_path)])
+    result = runner.invoke(rollchain_cli, ['trace', 'AAPL $150 Call', str(csv_path)])
 
     assert result.exit_code == 0
     assert "No roll chains found" in result.output
@@ -362,7 +362,7 @@ def test_trace_open_chain_shows_realized(tmp_path):
     csv_path = _write_open_chain_csv(tmp_path)
     runner = CliRunner()
 
-    result = runner.invoke(options_cli, ['trace', 'TSLA $550 Call', str(csv_path)])
+    result = runner.invoke(rollchain_cli, ['trace', 'TSLA $550 Call', str(csv_path)])
 
     assert result.exit_code == 0
     output = result.output
@@ -374,7 +374,7 @@ def test_trace_custom_target(tmp_path):
     csv_path = _write_open_chain_csv(tmp_path)
     runner = CliRunner()
 
-    result = runner.invoke(options_cli, ['trace', 'TSLA $550 Call', str(csv_path), '--target', '0.2-0.4'])
+    result = runner.invoke(rollchain_cli, ['trace', 'TSLA $550 Call', str(csv_path), '--target', '0.2-0.4'])
 
     assert result.exit_code == 0
     output = result.output
@@ -386,7 +386,7 @@ def test_lookup_matches_position_spec(tmp_path):
     runner = CliRunner()
 
     result = runner.invoke(
-        options_cli,
+        rollchain_cli,
         ['lookup', 'TSLA $515 C 2025-10-17', '--file', str(csv_path)],
     )
 
@@ -394,7 +394,7 @@ def test_lookup_matches_position_spec(tmp_path):
     assert "Found 2 matching transactions" in result.output
 
     result_padded = runner.invoke(
-        options_cli,
+        rollchain_cli,
         ['lookup', 'AAPL $120 P 2026-01-17', '--file', str(csv_path)],
     )
 
@@ -407,7 +407,7 @@ def test_lookup_invalid_spec(tmp_path):
     runner = CliRunner()
 
     result = runner.invoke(
-        options_cli,
+        rollchain_cli,
         ['lookup', 'INVALID SPEC', '--file', str(csv_path)],
     )
 
@@ -426,7 +426,7 @@ def test_filter_open_positions_includes_short_positions():
     Expected: Should show the open short position
     Current bug: STO is treated as positive quantity, so net_quantity = +1 (incorrect)
     """
-    from options.services.transactions import filter_open_positions
+    from rollchain.services.transactions import filter_open_positions
     
     transactions = [
         # Open 1 short contract (STO) - should contribute negative quantity
@@ -464,7 +464,7 @@ def test_ingest_json_output(tmp_path):
     runner = CliRunner()
 
     result = runner.invoke(
-        options_cli,
+        rollchain_cli,
         [
             'ingest',
             '--options',
@@ -492,7 +492,7 @@ def test_ingest_strategy_calls_only(tmp_path):
     runner = CliRunner()
 
     result = runner.invoke(
-        options_cli,
+        rollchain_cli,
         ['ingest', '--file', str(sample_csv), '--strategy', 'calls'],
     )
 
@@ -511,7 +511,7 @@ def test_filter_open_positions_includes_partially_closed_short_positions():
     Expected: Should show 1 open short position with negative quantity
     Current bug: STO treated as positive, so net_quantity = +1 (incorrect)
     """
-    from options.services.transactions import filter_open_positions
+    from rollchain.services.transactions import filter_open_positions
     
     transactions = [
         # Open 2 short contracts (STO) - should contribute -2 to net quantity

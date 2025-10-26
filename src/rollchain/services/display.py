@@ -1,5 +1,5 @@
 """
-Display formatting services for options CLI.
+Display formatting services for rollchain CLI.
 
 This module provides formatting functions for displaying chains, transactions,
 and other data in the CLI interface.
