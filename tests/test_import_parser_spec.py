@@ -12,28 +12,30 @@ FIXTURE_DIR = Path(__file__).parent / "fixtures"
 
 
 def test_load_option_transactions_parses_fixture():
-    csv_path = FIXTURE_DIR / "tsla_rc-001-closed.csv"
+    csv_path = FIXTURE_DIR / "options_sample.csv"
 
     results = load_option_transactions(csv_path, regulatory_fee=Decimal("0.04"))
 
-    assert len(results) == 8
+    assert len(results) == 3
 
+    # First row is the STO entry (SELL).
     first = results[0]
-    assert first.activity_date.isoformat() == "2025-10-08"
-    assert first.process_date.isoformat() == "2025-10-08"
-    assert first.settle_date.isoformat() == "2025-10-09"
-    assert first.trans_code == "BTC"
-    assert first.action == "BUY"
-    assert first.quantity == 1
-    assert first.price == Decimal("8.75")
+    assert first.activity_date.isoformat() == "2025-10-07"
+    assert first.process_date.isoformat() == "2025-10-07"
+    assert first.settle_date.isoformat() == "2025-10-08"
+    assert first.trans_code == "STO"
+    assert first.action == "SELL"
+    assert first.quantity == 2
+    assert first.price == Decimal("1.20")
     assert first.option_type == "CALL"
-    assert first.expiration.isoformat() == "2025-11-21"
-    assert first.fees == Decimal("0.04")
+    assert first.expiration.isoformat() == "2025-10-25"
+    assert first.fees == Decimal("0.08")
 
-    # Ensure sell-side rows get SELL action and still use default fees.
-    sell_row = next(item for item in results if item.trans_code == "STO")
-    assert sell_row.action == "SELL"
-    assert sell_row.fees == Decimal("0.04")
+    # Second row ensures BUY/STC branches.
+    second = results[1]
+    assert second.trans_code == "BTC"
+    assert second.action == "BUY"
+    assert second.fees == Decimal("0.04")
 
 
 def test_load_option_transactions_uses_commission_override(tmp_path):
