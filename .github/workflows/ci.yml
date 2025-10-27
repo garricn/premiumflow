@@ -33,12 +33,21 @@ jobs:
             install -m 755 /tmp/yamlfmt_0.20.0_Linux_x86_64/yamlfmt "$HOME/.local/bin/yamlfmt"
           fi
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Install taplo
+        run: |
+          curl -sSLo /tmp/taplo.gz https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-linux-x86_64.gz
+          gzip -d /tmp/taplo.gz
+          mkdir -p "$HOME/.local/bin"
+          install -m 755 /tmp/taplo "$HOME/.local/bin/taplo"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Sync dependencies
         run: uv sync --extra dev --locked
       - name: Check Markdown formatting
         run: uv run mdformat --check README.md
       - name: Check YAML formatting
         run: yamlfmt -conf .yamlfmt.yml -lint .github/workflows
+      - name: Check TOML formatting
+        run: taplo fmt --config .taplo.toml --check pyproject.toml
       - name: Check shell formatting
         run: shfmt -d scripts
       - name: Check formatting
