@@ -1,7 +1,7 @@
 """Unit tests for chain detection and roll chain building."""
 
-import unittest
 import sys
+import unittest
 from pathlib import Path
 
 # Add src to path for imports

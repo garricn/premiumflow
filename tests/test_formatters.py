@@ -1,7 +1,7 @@
 """Unit tests for position specification formatting and parsing."""
 
-import unittest
 import sys
+import unittest
 from pathlib import Path
 
 # Add src to path for imports

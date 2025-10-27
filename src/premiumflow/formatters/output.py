@@ -5,11 +5,13 @@ This module handles formatting and displaying analysis results.
 """
 
 from decimal import Decimal
-from typing import List, Dict, Any
+from typing import List
+
 from rich.console import Console
-from rich.table import Table
 from rich.panel import Panel
-from ..core.models import Transaction, RollChain
+from rich.table import Table
+
+from ..core.models import RollChain, Transaction
 
 
 def format_position_spec(symbol: str, strike: Decimal, option_type: str, expiration: str) -> str:

@@ -4,14 +4,13 @@ Roll chain detection and building functionality.
 This module handles detecting and building roll chains from transaction data.
 """
 
+import re
 from collections import defaultdict, deque
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
-import re
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from ..core.parser import parse_date
-
 
 FEE_PER_CONTRACT = Decimal("0.04")
 _CONTRACT_PATTERN = re.compile(
@@ -74,7 +73,6 @@ def _extract_contract_details(description: str) -> Dict[str, Any]:
 
 def detect_rolls(transactions: List[Dict[str, str]]) -> List[Dict[str, Any]]:
     """Detect individual roll transactions (BTC + STO on same day)."""
-    import re
 
     rolls = []
     open_codes = {"STO", "BTO"}
@@ -461,12 +459,12 @@ def detect_roll_chains(transactions: List[Dict[str, str]]) -> List[Dict[str, Any
     chains = []
 
     # For each ticker, build roll chains
-    for ticker, txns in by_ticker.items():
+    for _ticker, txns in by_ticker.items():
         # Track which transactions are part of chains
         used_txns = set()
 
         # Start with each opening position (STO/BTO)
-        for i, open_txn in enumerate(txns):
+        for _, open_txn in enumerate(txns):
             if open_txn.get("Trans Code") not in ["STO", "BTO"]:
                 continue
 

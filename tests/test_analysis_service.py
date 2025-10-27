@@ -4,10 +4,10 @@ import unittest
 from decimal import Decimal
 
 from src.premiumflow.services.analysis import (
-    is_open_chain,
     calculate_realized_pnl,
     calculate_target_price_range,
     filter_open_chains,
+    is_open_chain,
 )
 
 

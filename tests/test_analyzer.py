@@ -1,7 +1,7 @@
 """Unit tests for P&L calculations including credits, debits, fees, and breakeven."""
 
-import unittest
 import sys
+import unittest
 from decimal import Decimal
 from pathlib import Path
 

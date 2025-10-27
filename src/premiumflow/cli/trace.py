@@ -109,4 +109,4 @@ def trace(display_name, csv_file, target):
         raise
     except Exception as exc:
         console.print(f"[red]Error: {exc}[/red]")
-        raise click.Abort()
+        raise click.Abort() from exc

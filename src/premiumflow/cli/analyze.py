@@ -8,7 +8,7 @@ from CSV transaction data.
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import Any, Dict, Iterable, List, Tuple
+from typing import Tuple
 
 import click
 from rich.console import Console
@@ -16,23 +16,22 @@ from rich.panel import Panel
 from rich.table import Table
 
 from ..core.parser import get_options_transactions, parse_csv_file
-from ..services.chain_builder import detect_roll_chains
 from ..services.analysis import (
-    is_open_chain,
-    calculate_realized_pnl,
     calculate_target_price_range,
+    is_open_chain,
 )
-from ..services.targets import calculate_target_percents
+from ..services.chain_builder import detect_roll_chains
+from ..services.cli_helpers import parse_target_range as _parse_target_range
 from ..services.display import (
-    format_currency,
+    ensure_display_name,
     format_breakeven,
+    format_currency,
+    format_net_pnl,
     format_percent,
     format_price_range,
-    ensure_display_name,
-    format_net_pnl,
     format_realized_pnl,
 )
-from ..services.cli_helpers import parse_target_range as _parse_target_range
+from ..services.targets import calculate_target_percents
 
 
 def parse_target_range(target: str) -> Tuple[Decimal, Decimal]:
@@ -101,7 +100,7 @@ def analyze(csv_file, output_format, open_only, target):
             table.add_column("Breakeven", justify="right", no_wrap=True)
             table.add_column(target_label, justify="right", no_wrap=True)
 
-            for idx, chain in enumerate(chains, 1):
+            for _, chain in enumerate(chains, 1):
                 table.add_row(
                     ensure_display_name(chain),
                     chain.get("expiration", "") or "N/A",
@@ -152,4 +151,4 @@ def analyze(csv_file, output_format, open_only, target):
 
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
-        raise click.Abort()
+        raise click.Abort() from e

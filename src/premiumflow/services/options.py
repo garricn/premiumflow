@@ -1,9 +1,9 @@
 """Option contract parsing utilities."""
 
+import re
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from typing import Optional
-import re
 
 
 @dataclass(frozen=True)

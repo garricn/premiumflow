@@ -1,9 +1,9 @@
 """Unit tests for chain lookup functionality."""
 
-import unittest
-import tempfile
 import os
 import sys
+import tempfile
+import unittest
 from decimal import Decimal
 from pathlib import Path
 

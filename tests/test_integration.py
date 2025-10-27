@@ -1,15 +1,15 @@
 """Unit tests for multi-roll chains and package integration."""
 
-import unittest
 import sys
+import unittest
 from decimal import Decimal
 from pathlib import Path
 
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from premiumflow.services.chain_builder import detect_roll_chains
 import premiumflow
+from premiumflow.services.chain_builder import detect_roll_chains
 
 
 class TestMultiRollChains(unittest.TestCase):
@@ -114,14 +114,14 @@ class TestPremiumFlowPackage(unittest.TestCase):
     """Ensure the premiumflow package exports expected helpers."""
 
     def test_reexports_legacy_functions(self):
+        from premiumflow import find_chain_by_position
         from premiumflow.core.parser import (
             format_position_spec,
-            parse_lookup_input,
             is_call_option,
             is_options_transaction,
             is_put_option,
+            parse_lookup_input,
         )
-        from premiumflow import find_chain_by_position
 
         expected = {
             "detect_roll_chains": detect_roll_chains,
@@ -133,7 +133,7 @@ class TestPremiumFlowPackage(unittest.TestCase):
             "parse_lookup_input": parse_lookup_input,
         }
 
-        for name, reference in expected.items():
+        for name, _reference in expected.items():
             with self.subTest(name=name):
                 # Check that the function exists and is callable
                 self.assertTrue(

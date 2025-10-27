@@ -6,7 +6,8 @@ This module handles parsing transaction data from CSV files.
 
 import csv
 from datetime import datetime
-from typing import List, Dict, Any
+from typing import Dict, List
+
 from .models import Transaction
 
 
@@ -50,8 +51,8 @@ def is_put_option(description: str) -> bool:
 
 def parse_transaction_row(row: Dict[str, str]) -> Transaction:
     """Parse a CSV row into a Transaction object."""
-    from decimal import Decimal, InvalidOperation
     import re
+    from decimal import Decimal, InvalidOperation
 
     # Extract symbol from Instrument field
     symbol = row.get("Instrument", "").strip()

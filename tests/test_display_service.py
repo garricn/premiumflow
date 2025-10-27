@@ -5,18 +5,18 @@ from decimal import Decimal
 from unittest.mock import patch
 
 from src.premiumflow.services.display import (
-    format_currency,
+    calculate_target_price_range,
+    ensure_display_name,
     format_breakeven,
+    format_currency,
+    format_net_pnl,
+    format_option_display,
     format_percent,
     format_price_range,
-    format_target_close_prices,
-    ensure_display_name,
-    format_option_display,
-    prepare_transactions_for_display,
-    prepare_chain_display,
-    format_net_pnl,
     format_realized_pnl,
-    calculate_target_price_range,
+    format_target_close_prices,
+    prepare_chain_display,
+    prepare_transactions_for_display,
 )
 
 
