@@ -54,8 +54,8 @@ def test_load_option_transactions_uses_commission_override(tmp_path):
 def test_load_option_transactions_skips_non_option_rows(tmp_path):
     csv_content = (
         "Activity Date,Process Date,Settle Date,Instrument,Description,Trans Code,Quantity,Price,Amount\n"
-        "10/7/2025,10/7/2025,10/8/2025,AMZN,\"Amazon\n"
-        "CUSIP: 023135106\",Buy,10,$220.70,\n"
+        '10/7/2025,10/7/2025,10/8/2025,AMZN,"Amazon\n'
+        'CUSIP: 023135106",Buy,10,$220.70,\n'
     )
     csv_path = tmp_path / "equity.csv"
     csv_path.write_text(csv_content, encoding="utf-8")

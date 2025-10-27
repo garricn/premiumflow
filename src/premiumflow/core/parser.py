@@ -204,7 +204,9 @@ def parse_lookup_input(lookup_input: str) -> tuple:
     return symbol, float(strike), option_type, expiration
 
 
-def load_option_transactions(csv_file: str, *, regulatory_fee: Decimal) -> List[NormalizedOptionTransaction]:
+def load_option_transactions(
+    csv_file: str, *, regulatory_fee: Decimal
+) -> List[NormalizedOptionTransaction]:
     """
     Validate and normalize option transactions from a CSV file.
 
@@ -234,7 +236,9 @@ def load_option_transactions(csv_file: str, *, regulatory_fee: Decimal) -> List[
     return normalized
 
 
-def _normalize_row(row: Dict[str, str], regulatory_fee: Decimal, row_number: int) -> Optional[NormalizedOptionTransaction]:
+def _normalize_row(
+    row: Dict[str, str], regulatory_fee: Decimal, row_number: int
+) -> Optional[NormalizedOptionTransaction]:
     """Normalize a CSV row; returns None for non-option transactions."""
 
     activity_date = _parse_date_field(row, "Activity Date", row_number)
