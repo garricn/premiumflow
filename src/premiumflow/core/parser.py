@@ -5,10 +5,44 @@ This module handles parsing transaction data from CSV files.
 """
 
 import csv
-from datetime import datetime
-from typing import Dict, List
+import re
+from dataclasses import dataclass
+from datetime import date, datetime
+from decimal import Decimal, InvalidOperation
+from typing import Dict, List, Optional
 
 from .models import Transaction
+
+ALLOWED_OPTION_CODES = {"STO", "STC", "BTO", "BTC", "OASGN"}
+
+
+class ImportValidationError(ValueError):
+    """Raised when CSV input fails import validation."""
+
+
+@dataclass
+class NormalizedOptionTransaction:
+    """Normalized representation of an option row for downstream processing."""
+
+    activity_date: date
+    process_date: Optional[date]
+    settle_date: Optional[date]
+    instrument: str
+    description: str
+    trans_code: str
+    quantity: int
+    price: Decimal
+    amount: Optional[Decimal]
+    strike: Decimal
+    option_type: str
+    expiration: date
+    action: str
+    fees: Decimal
+    raw: Dict[str, str]
+
+    @property
+    def symbol(self) -> str:
+        return self.instrument
 
 
 def parse_date(date_str: str) -> datetime:
@@ -51,9 +85,6 @@ def is_put_option(description: str) -> bool:
 
 def parse_transaction_row(row: Dict[str, str]) -> Transaction:
     """Parse a CSV row into a Transaction object."""
-    import re
-    from decimal import Decimal, InvalidOperation
-
     # Extract symbol from Instrument field
     symbol = row.get("Instrument", "").strip()
 
@@ -162,8 +193,6 @@ def format_position_spec(symbol: str, strike: float, option_type: str, expiratio
 
 def parse_lookup_input(lookup_input: str) -> tuple:
     """Parse lookup input string (legacy compatibility)."""
-    import re
-
     # Pattern: TICKER $STRIKE TYPE DATE
     pattern = r"(\w+)\s+\$(\d+(?:\.\d+)?)\s+([CP])\s+(\d{4}-\d{2}-\d{2})"
     match = re.match(pattern, lookup_input.strip())
@@ -173,3 +202,206 @@ def parse_lookup_input(lookup_input: str) -> tuple:
 
     symbol, strike, option_type, expiration = match.groups()
     return symbol, float(strike), option_type, expiration
+
+
+def load_option_transactions(csv_file: str, *, regulatory_fee: Decimal) -> List[NormalizedOptionTransaction]:
+    """
+    Validate and normalize option transactions from a CSV file.
+
+    Returns only rows whose transaction code is in ``ALLOWED_OPTION_CODES``.
+    """
+
+    normalized: List[NormalizedOptionTransaction] = []
+    reg_fee = _coerce_regulatory_fee(regulatory_fee)
+
+    with open(csv_file, "r", encoding="utf-8") as handle:
+        reader = csv.DictReader(handle)
+        if reader.fieldnames is None:
+            raise ImportValidationError("CSV file is empty or missing a header row.")
+
+        for index, row in enumerate(reader, start=2):  # header counted as row 1
+            if not row or not any(value and value.strip() for value in row.values()):
+                continue  # skip blank lines
+
+            try:
+                normalized_row = _normalize_row(row, reg_fee, index)
+            except ImportValidationError as exc:
+                raise ImportValidationError(f"Row {index}: {exc}") from exc
+
+            if normalized_row is not None:
+                normalized.append(normalized_row)
+
+    return normalized
+
+
+def _normalize_row(row: Dict[str, str], regulatory_fee: Decimal, row_number: int) -> Optional[NormalizedOptionTransaction]:
+    """Normalize a CSV row; returns None for non-option transactions."""
+
+    activity_date = _parse_date_field(row, "Activity Date", row_number)
+    process_date = _parse_optional_date_field(row, "Process Date", row_number)
+    settle_date = _parse_optional_date_field(row, "Settle Date", row_number)
+    instrument = _require_field(row, "Instrument", row_number)
+    description = _normalize_description(row, row_number)
+    quantity = _parse_quantity(row, "Quantity", row_number)
+    price = _parse_money(row, "Price", row_number, allow_negative=False)
+    amount = _parse_money(row, "Amount", row_number, allow_negative=True, required=False)
+    trans_code = _require_field(row, "Trans Code", row_number).upper()
+
+    # Skip non-option transactions after basic validation.
+    if trans_code not in ALLOWED_OPTION_CODES:
+        return None
+
+    option_type, strike, expiration = _parse_option_details(description, row_number)
+    action = "SELL" if trans_code in {"STO", "STC"} else "BUY"
+
+    commission = _parse_money(row, "Commission", row_number, allow_negative=True, required=False)
+    if commission is not None:
+        fees = abs(commission)
+    else:
+        fees = regulatory_fee * abs(quantity)
+
+    return NormalizedOptionTransaction(
+        activity_date=activity_date,
+        process_date=process_date,
+        settle_date=settle_date,
+        instrument=instrument,
+        description=description,
+        trans_code=trans_code,
+        quantity=abs(quantity),
+        price=price,
+        amount=amount,
+        strike=strike,
+        option_type=option_type,
+        expiration=expiration,
+        action=action,
+        fees=fees,
+        raw=dict(row),
+    )
+
+
+def _coerce_regulatory_fee(value: Decimal) -> Decimal:
+    try:
+        fee = value if isinstance(value, Decimal) else Decimal(str(value))
+    except (InvalidOperation, ValueError, TypeError) as exc:
+        raise ImportValidationError(f"Invalid regulatory fee value: {value!r}") from exc
+
+    if fee < 0:
+        raise ImportValidationError("Regulatory fee must be non-negative.")
+    return fee
+
+
+def _require_field(row: Dict[str, str], field: str, row_number: int) -> str:
+    value = row.get(field)
+    if value is None:
+        raise ImportValidationError(f'Missing required column "{field}".')
+
+    stripped = value.strip()
+    if not stripped:
+        raise ImportValidationError(f'Column "{field}" cannot be blank.')
+    return stripped
+
+
+def _normalize_description(row: Dict[str, str], row_number: int) -> str:
+    raw = _require_field(row, "Description", row_number)
+    return " ".join(raw.split())
+
+
+def _parse_date_field(row: Dict[str, str], field: str, row_number: int) -> date:
+    value = _require_field(row, field, row_number)
+    try:
+        return datetime.strptime(value, "%m/%d/%Y").date()
+    except ValueError as exc:
+        raise ImportValidationError(f'Invalid date in "{field}": {value}') from exc
+
+
+def _parse_optional_date_field(row: Dict[str, str], field: str, row_number: int) -> Optional[date]:
+    value = row.get(field)
+    if not value or not value.strip():
+        return None
+    try:
+        return datetime.strptime(value.strip(), "%m/%d/%Y").date()
+    except ValueError as exc:
+        raise ImportValidationError(f'Invalid date in "{field}": {value}') from exc
+
+
+def _parse_quantity(row: Dict[str, str], field: str, row_number: int) -> int:
+    value = _require_field(row, field, row_number)
+    cleaned = value.replace(",", "").strip()
+    negative = cleaned.startswith("(") and cleaned.endswith(")")
+    if negative:
+        cleaned = cleaned[1:-1]
+
+    try:
+        quantity = int(cleaned)
+    except ValueError as exc:
+        raise ImportValidationError(f'Invalid integer in "{field}": {value}') from exc
+
+    return -quantity if negative else quantity
+
+
+def _parse_money(
+    row: Dict[str, str],
+    field: str,
+    row_number: int,
+    *,
+    allow_negative: bool,
+    required: bool = True,
+) -> Optional[Decimal]:
+    raw_value = row.get(field)
+    if raw_value is None:
+        if required:
+            raise ImportValidationError(f'Missing required column "{field}".')
+        return None
+
+    stripped = raw_value.strip()
+    if not stripped:
+        if required:
+            raise ImportValidationError(f'Column "{field}" cannot be blank.')
+        return None
+
+    negative = stripped.startswith("(") and stripped.endswith(")")
+    if negative:
+        stripped = stripped[1:-1]
+
+    cleaned = stripped.replace("$", "").replace(",", "")
+
+    try:
+        value = Decimal(cleaned)
+    except InvalidOperation as exc:
+        raise ImportValidationError(f'Invalid decimal in "{field}": {raw_value}') from exc
+
+    if negative:
+        value = -value
+
+    if not allow_negative and value < 0:
+        raise ImportValidationError(f'Column "{field}" must be non-negative.')
+
+    return value
+
+
+def _parse_option_details(description: str, row_number: int) -> tuple[str, Decimal, date]:
+    option_type: Optional[str] = None
+    lowered = description.lower()
+
+    if " call" in lowered or lowered.endswith("call"):
+        option_type = "CALL"
+    elif " put" in lowered or lowered.endswith("put"):
+        option_type = "PUT"
+    else:
+        raise ImportValidationError("Description must include 'Call' or 'Put'.")
+
+    strike_match = re.search(r"\$(\d+(?:\.\d+)?)", description)
+    if not strike_match:
+        raise ImportValidationError("Unable to determine strike price from description.")
+    strike = Decimal(strike_match.group(1))
+
+    expiration_match = re.search(r"(\d{1,2})/(\d{1,2})/(\d{4})", description)
+    if not expiration_match:
+        raise ImportValidationError("Unable to determine expiration date from description.")
+    month, day_str, year_str = expiration_match.groups()
+    try:
+        expiration = date(int(year_str), int(month), int(day_str))
+    except ValueError as exc:
+        raise ImportValidationError("Expiration date in description is invalid.") from exc
+
+    return option_type, strike, expiration
