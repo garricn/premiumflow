@@ -243,7 +243,10 @@ def _normalize_row(row: Dict[str, str], regulatory_fee: Decimal, row_number: int
     instrument = _require_field(row, "Instrument", row_number)
     description = _normalize_description(row, row_number)
     quantity = _parse_quantity(row, "Quantity", row_number)
-    price = _parse_money(row, "Price", row_number, allow_negative=False)
+    price_value = _parse_money(row, "Price", row_number, allow_negative=False)
+    if price_value is None:
+        raise ImportValidationError('Column "Price" cannot be blank.')
+    price = price_value
     amount = _parse_money(row, "Amount", row_number, allow_negative=True, required=False)
     trans_code = _require_field(row, "Trans Code", row_number).upper()
 
