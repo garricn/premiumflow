@@ -5,12 +5,14 @@ A Python tool for analyzing options trading roll chains from CSV transaction dat
 ## Code Review Process
 
 ### Automated Reviews
+
 - All PRs get automated Codex reviews
 - Look for **P1/P2/P3 priority badges** in comments
 - Address all **P1 issues** before merging
 - Use `gh pr view {PR} --json reviews,comments` to see all feedback
 
 ### Checking PR Feedback
+
 Use the provided script to comprehensively check all feedback:
 
 ```bash
@@ -18,6 +20,7 @@ Use the provided script to comprehensively check all feedback:
 ```
 
 Or manually check:
+
 ```bash
 # Get all reviews
 gh api repos/garricn/premiumflow/pulls/{PR}/reviews
@@ -27,13 +30,15 @@ gh api repos/garricn/premiumflow/pulls/{PR}/reviews/{REVIEW_ID}/comments
 ```
 
 ### Priority Levels
+
 - **P1**: Critical functionality changes that could break existing behavior
-- **P2**: Important improvements or optimizations  
+- **P2**: Important improvements or optimizations
 - **P3**: Minor suggestions or style improvements
 
 ## Development Guidelines
 
 ### Service Extraction
+
 - Each service should be self-contained when possible
 - Branch from `main` for each new service
 - Include comprehensive unit tests
@@ -41,12 +46,15 @@ gh api repos/garricn/premiumflow/pulls/{PR}/reviews/{REVIEW_ID}/comments
 - Address code review comments before merging
 
 ### Code Formatting & Linting
+
 - Python formatting uses [Black](https://black.readthedocs.io/) with a 100-character line length target.
 - Linting is handled by [Ruff](https://docs.astral.sh/ruff/) for import order, bugbear checks, and general hygiene.
-- Run `uv run black src tests` and `uv run ruff check src tests --fix` before sending a PR; CI enforces `black --check` and `ruff check`.
+- Markdown uses [mdformat](https://mdformat.readthedocs.io/) with the same 100-character wrap; run `uv run mdformat README.md` to keep docs tidy.
+- Run `uv run black src tests`, `uv run ruff check src tests --fix`, and the Markdown formatter before sending a PR; CI enforces all three checks.
 - Other file types have their own formatter issues tracked separately.
 
 ### Financial Calculations
+
 - Use `Decimal` for all financial calculations
 - Maintain backward compatibility when refactoring
 - Test coverage is critical for financial calculations
@@ -57,14 +65,16 @@ gh api repos/garricn/premiumflow/pulls/{PR}/reviews/{REVIEW_ID}/comments
 PremiumFlow targets Python **3.11** and uses [uv](https://github.com/astral-sh/uv) for Python and dependency management.
 
 1. [Install `uv`](https://github.com/astral-sh/uv?tab=readme-ov-file#installation) (single static binary).
-2. Sync the project environment (installs dependencies and the package in editable mode):
+
+1. Sync the project environment (installs dependencies and the package in editable mode):
 
    ```bash
    uv sync --extra dev
    ```
 
    The repository includes a committed `uv.lock`; use `uv sync --locked --extra dev` in CI or when you want to ensure the lockfile stays unchanged.
-3. Run commands inside the project environment with `uv run`, for example:
+
+1. Run commands inside the project environment with `uv run`, for example:
 
    ```bash
    uv run pytest
