@@ -53,7 +53,7 @@ gh api repos/garricn/premiumflow/pulls/{PR}/reviews/{REVIEW_ID}/comments
 - Shell scripts use [shfmt](https://github.com/mvdan/sh) (v3.12.0); run `shfmt -w scripts` after edits (`brew install shfmt` on macOS, or download from the releases page).
 - YAML files use [yamlfmt](https://github.com/google/yamlfmt) (v0.20.0); run `yamlfmt -conf .yamlfmt.yml .github/workflows` (Homebrew: `brew install yamlfmt`).
 - TOML files use [taplo](https://taplo.tamasfe.dev/) (v0.10.0); run `taplo fmt --config .taplo.toml pyproject.toml` (Homebrew: `brew install taplo`).
-- Run `uv run black src tests`, `uv run ruff check src tests --fix`, `uv run mdformat README.md`, `shfmt -w scripts`, `yamlfmt -conf .yamlfmt.yml .github/workflows`, and `taplo fmt --config .taplo.toml pyproject.toml` before sending a PR; CI enforces the same formatting checks.
+- Run `uv run black src tests`, `uv run ruff check src tests --fix`, `uv run mdformat README.md`, `shfmt -w scripts`, `yamlfmt -conf .yamlfmt.yml .github/workflows`, `taplo fmt --config .taplo.toml pyproject.toml`, and `uv run mypy --config-file mypy.ini src/premiumflow tests` before sending a PR; CI enforces the same formatting checks.
 - Other file types have their own formatter issues tracked separately.
 
 ### Financial Calculations

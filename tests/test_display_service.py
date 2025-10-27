@@ -4,7 +4,7 @@ import unittest
 from decimal import Decimal
 from unittest.mock import patch
 
-from src.premiumflow.services.display import (
+from premiumflow.services.display import (
     calculate_target_price_range,
     ensure_display_name,
     format_breakeven,
@@ -99,7 +99,7 @@ class TestDisplayService(unittest.TestCase):
 
     def test_format_option_display_with_parsed(self):
         """Test option display formatting with parsed descriptor."""
-        from src.premiumflow.services.options import OptionDescriptor
+        from premiumflow.services.options import OptionDescriptor
 
         parsed = OptionDescriptor(
             symbol="TSLA", expiration="11/21/2025", option_type="Call", strike=Decimal("500.00")
@@ -116,11 +116,11 @@ class TestDisplayService(unittest.TestCase):
         self.assertEqual(formatted, "fallback description")
         self.assertEqual(expiration, "")
 
-    @patch("src.premiumflow.services.targets.compute_target_close_prices")
-    @patch("src.premiumflow.services.options.parse_option_description")
+    @patch("premiumflow.services.targets.compute_target_close_prices")
+    @patch("premiumflow.services.options.parse_option_description")
     def test_prepare_transactions_for_display(self, mock_parse, mock_compute):
         """Test transaction display preparation."""
-        from src.premiumflow.services.options import OptionDescriptor
+        from premiumflow.services.options import OptionDescriptor
 
         # Mock the dependencies
         mock_parse.return_value = OptionDescriptor(

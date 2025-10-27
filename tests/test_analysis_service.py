@@ -3,7 +3,7 @@
 import unittest
 from decimal import Decimal
 
-from src.premiumflow.services.analysis import (
+from premiumflow.services.analysis import (
     calculate_realized_pnl,
     calculate_target_price_range,
     filter_open_chains,

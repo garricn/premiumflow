@@ -3,7 +3,7 @@
 import unittest
 from decimal import Decimal
 
-from src.premiumflow.services.json_serializer import (
+from premiumflow.services.json_serializer import (
     build_ingest_payload,
     is_open_chain,
     serialize_chain,
