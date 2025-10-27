@@ -8,7 +8,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import List, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 
 class Transaction(BaseModel):
@@ -52,8 +52,6 @@ class Transaction(BaseModel):
     def position_spec(self) -> str:
         """Position specification string for lookup."""
         return f"{self.symbol} ${self.strike} {self.option_type} {self.expiration}"
-
-    model_config = ConfigDict(json_encoders={Decimal: str, datetime: lambda v: v.isoformat()})
 
 
 class RollChain(BaseModel):
@@ -124,5 +122,3 @@ class RollChain(BaseModel):
     def is_open(self) -> bool:
         """Whether the position is open (net quantity != 0)."""
         return self.net_quantity != 0
-
-    model_config = ConfigDict(json_encoders={Decimal: str, datetime: lambda v: v.isoformat()})
