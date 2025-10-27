@@ -23,7 +23,7 @@ def serialize_decimal(value: Any) -> Any:
     """Serialize Decimal values to JSON-compatible format."""
     if isinstance(value, Decimal):
         normalized = value.normalize()
-        return format(normalized, 'f')
+        return format(normalized, "f")
     return value
 
 

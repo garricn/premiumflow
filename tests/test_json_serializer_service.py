@@ -17,21 +17,21 @@ class TestJsonSerializer(unittest.TestCase):
 
     def test_serialize_decimal_positive(self):
         """Test serializing positive Decimal values."""
-        value = Decimal('123.45')
+        value = Decimal("123.45")
         result = serialize_decimal(value)
-        self.assertEqual(result, '123.45')
+        self.assertEqual(result, "123.45")
 
     def test_serialize_decimal_negative(self):
         """Test serializing negative Decimal values."""
-        value = Decimal('-67.89')
+        value = Decimal("-67.89")
         result = serialize_decimal(value)
-        self.assertEqual(result, '-67.89')
+        self.assertEqual(result, "-67.89")
 
     def test_serialize_decimal_zero(self):
         """Test serializing zero Decimal values."""
-        value = Decimal('0')
+        value = Decimal("0")
         result = serialize_decimal(value)
-        self.assertEqual(result, '0')
+        self.assertEqual(result, "0")
 
     def test_serialize_decimal_none(self):
         """Test serializing None values."""
@@ -40,8 +40,8 @@ class TestJsonSerializer(unittest.TestCase):
 
     def test_serialize_decimal_string(self):
         """Test serializing string values."""
-        result = serialize_decimal('test')
-        self.assertEqual(result, 'test')
+        result = serialize_decimal("test")
+        self.assertEqual(result, "test")
 
     def test_serialize_decimal_int(self):
         """Test serializing integer values."""
@@ -50,47 +50,32 @@ class TestJsonSerializer(unittest.TestCase):
 
     def test_is_open_chain_by_status_open(self):
         """Test is_open_chain with OPEN status."""
-        chain = {'status': 'OPEN'}
+        chain = {"status": "OPEN"}
         self.assertTrue(is_open_chain(chain))
 
     def test_is_open_chain_by_status_closed(self):
         """Test is_open_chain with CLOSED status."""
-        chain = {'status': 'CLOSED'}
+        chain = {"status": "CLOSED"}
         self.assertFalse(is_open_chain(chain))
 
     def test_is_open_chain_by_last_transaction_sto(self):
         """Test is_open_chain with STO as last transaction."""
-        chain = {
-            'transactions': [
-                {'Trans Code': 'BTO'},
-                {'Trans Code': 'STO'}
-            ]
-        }
+        chain = {"transactions": [{"Trans Code": "BTO"}, {"Trans Code": "STO"}]}
         self.assertTrue(is_open_chain(chain))
 
     def test_is_open_chain_by_last_transaction_bto(self):
         """Test is_open_chain with BTO as last transaction."""
-        chain = {
-            'transactions': [
-                {'Trans Code': 'STO'},
-                {'Trans Code': 'BTO'}
-            ]
-        }
+        chain = {"transactions": [{"Trans Code": "STO"}, {"Trans Code": "BTO"}]}
         self.assertTrue(is_open_chain(chain))
 
     def test_is_open_chain_by_last_transaction_close(self):
         """Test is_open_chain with closing transaction."""
-        chain = {
-            'transactions': [
-                {'Trans Code': 'STO'},
-                {'Trans Code': 'BTC'}
-            ]
-        }
+        chain = {"transactions": [{"Trans Code": "STO"}, {"Trans Code": "BTC"}]}
         self.assertFalse(is_open_chain(chain))
 
     def test_is_open_chain_no_transactions(self):
         """Test is_open_chain with no transactions."""
-        chain = {'transactions': []}
+        chain = {"transactions": []}
         self.assertFalse(is_open_chain(chain))
 
     def test_is_open_chain_no_status_no_transactions(self):
@@ -110,7 +95,7 @@ class TestJsonSerializer(unittest.TestCase):
             "Amount": "$500.00",
         }
         result = serialize_transaction(txn)
-        
+
         expected = {
             "activity_date": "2025-01-15",
             "instrument": "TSLA",
@@ -126,7 +111,7 @@ class TestJsonSerializer(unittest.TestCase):
         """Test serializing a transaction with minimal data."""
         txn = {}
         result = serialize_transaction(txn)
-        
+
         expected = {
             "activity_date": "",
             "instrument": "",
@@ -145,7 +130,7 @@ class TestJsonSerializer(unittest.TestCase):
             "Trans Code": None,
         }
         result = serialize_transaction(txn)
-        
+
         self.assertEqual(result["instrument"], "")
         self.assertEqual(result["trans_code"], "")
 
@@ -157,15 +142,15 @@ class TestJsonSerializer(unittest.TestCase):
             "start_date": "2025-01-15",
             "end_date": None,
             "roll_count": 2,
-            "strike": Decimal('500.00'),
+            "strike": Decimal("500.00"),
             "option_label": "CALL",
             "expiration": "2025-02-21",
-            "total_credits": Decimal('1000.00'),
-            "total_debits": Decimal('500.00'),
-            "total_fees": Decimal('10.00'),
-            "net_pnl": Decimal('490.00'),
-            "net_pnl_after_fees": Decimal('480.00'),
-            "breakeven_price": Decimal('450.00'),
+            "total_credits": Decimal("1000.00"),
+            "total_debits": Decimal("500.00"),
+            "total_fees": Decimal("10.00"),
+            "net_pnl": Decimal("490.00"),
+            "net_pnl_after_fees": Decimal("480.00"),
+            "breakeven_price": Decimal("450.00"),
             "breakeven_direction": "UP",
             "net_contracts": 1,
             "transactions": [
@@ -180,7 +165,7 @@ class TestJsonSerializer(unittest.TestCase):
             ],
         }
         result = serialize_chain(chain, "chain-1")
-        
+
         self.assertEqual(result["chain_id"], "chain-1")
         self.assertEqual(result["display_name"], "TSLA $500 CALL")
         self.assertEqual(result["symbol"], "TSLA")
@@ -196,7 +181,7 @@ class TestJsonSerializer(unittest.TestCase):
         """Test serializing a chain with minimal data."""
         chain = {}
         result = serialize_chain(chain, "chain-1")
-        
+
         self.assertEqual(result["chain_id"], "chain-1")
         self.assertEqual(result["symbol"], None)
         self.assertEqual(result["status"], None)
@@ -225,12 +210,12 @@ class TestJsonSerializer(unittest.TestCase):
             {
                 "symbol": "TSLA",
                 "status": "OPEN",
-                "strike": Decimal('500.00'),
+                "strike": Decimal("500.00"),
                 "transactions": [],
             }
         ]
-        target_percents = [Decimal('0.5'), Decimal('0.7')]
-        
+        target_percents = [Decimal("0.5"), Decimal("0.7")]
+
         result = build_ingest_payload(
             csv_file="test.csv",
             transactions=transactions,
@@ -242,7 +227,7 @@ class TestJsonSerializer(unittest.TestCase):
             strategy="calls",
             open_only=False,
         )
-        
+
         self.assertEqual(result["source_file"], "test.csv")
         self.assertEqual(result["filters"]["options_only"], True)
         self.assertEqual(result["filters"]["ticker"], "TSLA")
@@ -261,8 +246,8 @@ class TestJsonSerializer(unittest.TestCase):
             {"symbol": "TSLA", "status": "OPEN", "transactions": []},
             {"symbol": "AAPL", "status": "CLOSED", "transactions": []},
         ]
-        target_percents = [Decimal('0.5')]
-        
+        target_percents = [Decimal("0.5")]
+
         result = build_ingest_payload(
             csv_file="test.csv",
             transactions=transactions,
@@ -274,7 +259,7 @@ class TestJsonSerializer(unittest.TestCase):
             strategy=None,
             open_only=True,
         )
-        
+
         # Should only include the OPEN chain
         self.assertEqual(len(result["chains"]), 1)
         self.assertEqual(result["chains"][0]["symbol"], "TSLA")
@@ -293,7 +278,7 @@ class TestJsonSerializer(unittest.TestCase):
             strategy=None,
             open_only=False,
         )
-        
+
         self.assertEqual(result["source_file"], "test.csv")
         self.assertEqual(result["filters"]["options_only"], False)
         self.assertEqual(result["filters"]["ticker"], None)
@@ -304,5 +289,5 @@ class TestJsonSerializer(unittest.TestCase):
         self.assertEqual(result["chains"], [])
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

@@ -65,29 +65,35 @@ class TestPrepareTransactionsForDisplay:
 
     def test_single_transaction(self):
         """Test with single transaction."""
-        transactions = [{
-            'Activity Date': '2023-01-01',
-            'Instrument': 'TSLA',
-            'Description': 'TSLA $500 CALL 01/20/23',
-            'Trans Code': 'STO',
-            'Quantity': '1',
-            'Price': '5.00',
-        }]
-        
-        with patch('premiumflow.cli.utils.parse_option_description') as mock_parse, \
-             patch('premiumflow.cli.utils.format_option_display') as mock_format, \
-             patch('premiumflow.cli.utils.compute_target_close_prices') as mock_compute, \
-             patch('premiumflow.cli.utils.format_target_close_prices') as mock_format_target:
-            
+        transactions = [
+            {
+                "Activity Date": "2023-01-01",
+                "Instrument": "TSLA",
+                "Description": "TSLA $500 CALL 01/20/23",
+                "Trans Code": "STO",
+                "Quantity": "1",
+                "Price": "5.00",
+            }
+        ]
+
+        with (
+            patch("premiumflow.cli.utils.parse_option_description") as mock_parse,
+            patch("premiumflow.cli.utils.format_option_display") as mock_format,
+            patch("premiumflow.cli.utils.compute_target_close_prices") as mock_compute,
+            patch("premiumflow.cli.utils.format_target_close_prices") as mock_format_target,
+        ):
+
             # Setup mocks
             mock_option = MagicMock()
             mock_parse.return_value = mock_option
             mock_format.return_value = ("TSLA $500 CALL 01/20/23", "01/20/23")
             mock_compute.return_value = [Decimal("2.50"), Decimal("3.50")]
             mock_format_target.return_value = "$2.50-$3.50"
-            
-            result = prepare_transactions_for_display(transactions, [Decimal("0.5"), Decimal("0.7")])
-            
+
+            result = prepare_transactions_for_display(
+                transactions, [Decimal("0.5"), Decimal("0.7")]
+            )
+
             assert len(result) == 1
             assert result[0]["date"] == "2023-01-01"
             assert result[0]["symbol"] == "TSLA"
@@ -102,62 +108,70 @@ class TestPrepareTransactionsForDisplay:
         """Test with multiple transactions."""
         transactions = [
             {
-                'Activity Date': '2023-01-01',
-                'Instrument': 'TSLA',
-                'Description': 'TSLA $500 CALL 01/20/23',
-                'Trans Code': 'STO',
-                'Quantity': '1',
-                'Price': '5.00',
+                "Activity Date": "2023-01-01",
+                "Instrument": "TSLA",
+                "Description": "TSLA $500 CALL 01/20/23",
+                "Trans Code": "STO",
+                "Quantity": "1",
+                "Price": "5.00",
             },
             {
-                'Activity Date': '2023-01-02',
-                'Instrument': 'AAPL',
-                'Description': 'AAPL $150 PUT 02/17/23',
-                'Trans Code': 'BTO',
-                'Quantity': '2',
-                'Price': '3.50',
-            }
+                "Activity Date": "2023-01-02",
+                "Instrument": "AAPL",
+                "Description": "AAPL $150 PUT 02/17/23",
+                "Trans Code": "BTO",
+                "Quantity": "2",
+                "Price": "3.50",
+            },
         ]
-        
-        with patch('premiumflow.cli.utils.parse_option_description') as mock_parse, \
-             patch('premiumflow.cli.utils.format_option_display') as mock_format, \
-             patch('premiumflow.cli.utils.compute_target_close_prices') as mock_compute, \
-             patch('premiumflow.cli.utils.format_target_close_prices') as mock_format_target:
-            
+
+        with (
+            patch("premiumflow.cli.utils.parse_option_description") as mock_parse,
+            patch("premiumflow.cli.utils.format_option_display") as mock_format,
+            patch("premiumflow.cli.utils.compute_target_close_prices") as mock_compute,
+            patch("premiumflow.cli.utils.format_target_close_prices") as mock_format_target,
+        ):
+
             # Setup mocks
             mock_option = MagicMock()
             mock_parse.return_value = mock_option
             mock_format.return_value = ("Formatted Description", "Expiration")
             mock_compute.return_value = [Decimal("2.50"), Decimal("3.50")]
             mock_format_target.return_value = "$2.50-$3.50"
-            
-            result = prepare_transactions_for_display(transactions, [Decimal("0.5"), Decimal("0.7")])
-            
+
+            result = prepare_transactions_for_display(
+                transactions, [Decimal("0.5"), Decimal("0.7")]
+            )
+
             assert len(result) == 2
             assert result[0]["symbol"] == "TSLA"
             assert result[1]["symbol"] == "AAPL"
 
     def test_missing_fields(self):
         """Test handling of missing fields in transactions."""
-        transactions = [{
-            'Activity Date': '2023-01-01',
-            # Missing other fields
-        }]
-        
-        with patch('premiumflow.cli.utils.parse_option_description') as mock_parse, \
-             patch('premiumflow.cli.utils.format_option_display') as mock_format, \
-             patch('premiumflow.cli.utils.compute_target_close_prices') as mock_compute, \
-             patch('premiumflow.cli.utils.format_target_close_prices') as mock_format_target:
-            
+        transactions = [
+            {
+                "Activity Date": "2023-01-01",
+                # Missing other fields
+            }
+        ]
+
+        with (
+            patch("premiumflow.cli.utils.parse_option_description") as mock_parse,
+            patch("premiumflow.cli.utils.format_option_display") as mock_format,
+            patch("premiumflow.cli.utils.compute_target_close_prices") as mock_compute,
+            patch("premiumflow.cli.utils.format_target_close_prices") as mock_format_target,
+        ):
+
             # Setup mocks
             mock_option = MagicMock()
             mock_parse.return_value = mock_option
             mock_format.return_value = ("", "")
             mock_compute.return_value = []
             mock_format_target.return_value = ""
-            
+
             result = prepare_transactions_for_display(transactions, [Decimal("0.5")])
-            
+
             assert len(result) == 1
             assert result[0]["date"] == "2023-01-01"
             assert result[0]["symbol"] == ""
@@ -170,29 +184,33 @@ class TestPrepareTransactionsForDisplay:
 
     def test_none_instrument_handling(self):
         """Test handling of None instrument field."""
-        transactions = [{
-            'Activity Date': '2023-01-01',
-            'Instrument': None,
-            'Description': 'Test',
-            'Trans Code': 'STO',
-            'Quantity': '1',
-            'Price': '5.00',
-        }]
-        
-        with patch('premiumflow.cli.utils.parse_option_description') as mock_parse, \
-             patch('premiumflow.cli.utils.format_option_display') as mock_format, \
-             patch('premiumflow.cli.utils.compute_target_close_prices') as mock_compute, \
-             patch('premiumflow.cli.utils.format_target_close_prices') as mock_format_target:
-            
+        transactions = [
+            {
+                "Activity Date": "2023-01-01",
+                "Instrument": None,
+                "Description": "Test",
+                "Trans Code": "STO",
+                "Quantity": "1",
+                "Price": "5.00",
+            }
+        ]
+
+        with (
+            patch("premiumflow.cli.utils.parse_option_description") as mock_parse,
+            patch("premiumflow.cli.utils.format_option_display") as mock_format,
+            patch("premiumflow.cli.utils.compute_target_close_prices") as mock_compute,
+            patch("premiumflow.cli.utils.format_target_close_prices") as mock_format_target,
+        ):
+
             # Setup mocks
             mock_option = MagicMock()
             mock_parse.return_value = mock_option
             mock_format.return_value = ("Test", "")
             mock_compute.return_value = []
             mock_format_target.return_value = ""
-            
+
             result = prepare_transactions_for_display(transactions, [Decimal("0.5")])
-            
+
             assert result[0]["symbol"] == ""
 
 
@@ -206,17 +224,19 @@ class TestCreateTransactionsTable:
 
     def test_single_transaction(self):
         """Test with single transaction."""
-        transactions = [{
-            "date": "2023-01-01",
-            "symbol": "TSLA",
-            "expiration": "01/20/23",
-            "code": "STO",
-            "quantity": "1",
-            "price": "5.00",
-            "description": "TSLA $500 CALL 01/20/23",
-            "target_close": "$2.50-$3.50",
-        }]
-        
+        transactions = [
+            {
+                "date": "2023-01-01",
+                "symbol": "TSLA",
+                "expiration": "01/20/23",
+                "code": "STO",
+                "quantity": "1",
+                "price": "5.00",
+                "description": "TSLA $500 CALL 01/20/23",
+                "target_close": "$2.50-$3.50",
+            }
+        ]
+
         table = create_transactions_table(transactions)
         assert table.row_count == 1
 
@@ -242,9 +262,9 @@ class TestCreateTransactionsTable:
                 "price": "3.50",
                 "description": "AAPL $150 PUT 02/17/23",
                 "target_close": "$1.75-$2.45",
-            }
+            },
         ]
-        
+
         table = create_transactions_table(transactions)
         assert table.row_count == 2
 
@@ -252,5 +272,14 @@ class TestCreateTransactionsTable:
         """Test table has correct columns."""
         table = create_transactions_table([])
         columns = [col.header for col in table.columns]
-        expected_columns = ["Date", "Symbol", "Expiration", "Code", "Quantity", "Price", "Description", "Target Close"]
+        expected_columns = [
+            "Date",
+            "Symbol",
+            "Expiration",
+            "Code",
+            "Quantity",
+            "Price",
+            "Description",
+            "Target Close",
+        ]
         assert columns == expected_columns

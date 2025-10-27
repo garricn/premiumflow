@@ -29,5 +29,5 @@ main.add_command(lookup)
 main.add_command(trace)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

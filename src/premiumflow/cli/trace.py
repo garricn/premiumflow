@@ -71,13 +71,15 @@ def _render_transactions_table(chain: dict) -> Table:
 
 
 @click.command()
-@click.argument('display_name')
-@click.argument('csv_file', type=click.Path(exists=True), required=False, default="all_transactions.csv")
+@click.argument("display_name")
+@click.argument(
+    "csv_file", type=click.Path(exists=True), required=False, default="all_transactions.csv"
+)
 @click.option(
-    '--target',
-    default='0.5-0.7',
+    "--target",
+    default="0.5-0.7",
     show_default=True,
-    help='Target profit range as fraction of net credit (e.g. 0.5-0.7)',
+    help="Target profit range as fraction of net credit (e.g. 0.5-0.7)",
 )
 def trace(display_name, csv_file, target):
     """Trace the full history of a roll chain by display name."""
@@ -90,10 +92,7 @@ def trace(display_name, csv_file, target):
         chains = detect_roll_chains(raw_transactions)
 
         display_key = display_name.strip().lower()
-        matched = [
-            chain for chain in chains
-            if ensure_display_name(chain).lower() == display_key
-        ]
+        matched = [chain for chain in chains if ensure_display_name(chain).lower() == display_key]
 
         if not matched:
             console.print(f"[yellow]No roll chains found for {display_name}[/yellow]")

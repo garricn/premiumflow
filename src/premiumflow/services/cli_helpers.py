@@ -20,7 +20,7 @@ def is_open_chain(chain: Dict[str, Any]) -> bool:
 def parse_target_range(target: str) -> Tuple[Decimal, Decimal]:
     """Parse target range string into decimal bounds."""
     try:
-        parts = target.split('-')
+        parts = target.split("-")
         if len(parts) != 2:
             raise ValueError(f"Invalid target range format: {target}")
         lower = Decimal(parts[0].strip())
@@ -34,7 +34,7 @@ def parse_target_range(target: str) -> Tuple[Decimal, Decimal]:
 
 def format_percent(value: Decimal) -> str:
     """Format a decimal as a percentage string."""
-    percent = (value * Decimal('100')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    percent = (value * Decimal("100")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     text = f"{percent:,.2f}"
     if text.endswith(".00"):
         text = text[:-3]
@@ -51,7 +51,7 @@ def filter_open_chains(chains: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 def format_expiration_date(expiration: str) -> str:
     """Format expiration date from YYYY-MM-DD to MM/DD/YYYY."""
     try:
-        parts = expiration.split('-')
+        parts = expiration.split("-")
         if len(parts) != 3:
             return expiration
         year_text, month_text, day_text = parts

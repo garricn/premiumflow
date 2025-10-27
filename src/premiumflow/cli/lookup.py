@@ -31,26 +31,26 @@ def _build_results_table(position_spec: str, transactions: List[dict]) -> Table:
 
     for txn in transactions:
         table.add_row(
-            txn.get('Activity Date', ''),
-            txn.get('Instrument', ''),
-            txn.get('Trans Code', ''),
-            txn.get('Quantity', ''),
-            txn.get('Price', ''),
-            txn.get('Description', ''),
+            txn.get("Activity Date", ""),
+            txn.get("Instrument", ""),
+            txn.get("Trans Code", ""),
+            txn.get("Quantity", ""),
+            txn.get("Price", ""),
+            txn.get("Description", ""),
         )
 
     return table
 
 
 @click.command()
-@click.argument('position_spec')
+@click.argument("position_spec")
 @click.option(
-    '--file',
-    'csv_file',
+    "--file",
+    "csv_file",
     type=click.Path(exists=True),
-    default='all_transactions.csv',
+    default="all_transactions.csv",
     show_default=True,
-    help='CSV file to search',
+    help="CSV file to search",
 )
 def lookup(position_spec, csv_file):
     """Look up a specific position in the CSV data."""
@@ -65,15 +65,15 @@ def lookup(position_spec, csv_file):
 
         transactions = get_options_transactions(csv_file)
         target_symbol = symbol.upper()
-        target_option = 'Call' if option_type.upper() == 'C' else 'Put'
+        target_option = "Call" if option_type.upper() == "C" else "Put"
         strike_decimal = Decimal(str(strike))
-        expiration_parts = expiration.split('-')
+        expiration_parts = expiration.split("-")
         year_text, month_text, day_text = expiration_parts
         expiration_display = f"{int(month_text):02d}/{int(day_text):02d}/{year_text}"
 
         matches = []
         for txn in transactions:
-            descriptor = parse_option_description(txn.get('Description', ''))
+            descriptor = parse_option_description(txn.get("Description", ""))
             if not descriptor:
                 continue
             if descriptor.symbol != target_symbol:

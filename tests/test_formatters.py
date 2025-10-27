@@ -32,10 +32,10 @@ class TestPositionFormatting(unittest.TestCase):
         lookup_str = "TSLA $550 C 2025-11-21"
         symbol, strike, option_type, expiration = parse_lookup_input(lookup_str)
 
-        self.assertEqual(symbol, 'TSLA')
+        self.assertEqual(symbol, "TSLA")
         self.assertEqual(strike, 550.0)
-        self.assertEqual(option_type, 'C')
-        self.assertEqual(expiration, '2025-11-21')
+        self.assertEqual(option_type, "C")
+        self.assertEqual(expiration, "2025-11-21")
 
     def test_parse_lookup_input_lowercase(self):
         lookup_str = "tsla $550 c 2025-11-21"
@@ -61,5 +61,5 @@ class TestPositionFormatting(unittest.TestCase):
         self.assertIn("invalid lookup format", str(context.exception).lower())
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main(verbosity=2)

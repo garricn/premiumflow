@@ -59,33 +59,37 @@ def _apply_import_options(func):
 
     option_decorators = [
         click.option(
-            '--options/--no-options',
-            'options_only',
+            "--options/--no-options",
+            "options_only",
             default=True,
-            help='Filter to options transactions (default behaviour)',
+            help="Filter to options transactions (default behaviour)",
         ),
-        click.option('--ticker', 'ticker_symbol', help='Filter transactions by ticker symbol'),
+        click.option("--ticker", "ticker_symbol", help="Filter transactions by ticker symbol"),
         click.option(
-            '--strategy',
-            type=click.Choice(['calls', 'puts']),
-            help='Filter transactions by strategy',
+            "--strategy",
+            type=click.Choice(["calls", "puts"]),
+            help="Filter transactions by strategy",
         ),
         click.option(
-            '--file',
-            'csv_file',
+            "--file",
+            "csv_file",
             type=click.Path(exists=True),
-            default='all_transactions.csv',
+            default="all_transactions.csv",
             show_default=True,
-            help='CSV file to import',
+            help="CSV file to import",
         ),
-        click.option('--open-only', is_flag=True, help='Show only open option positions (no closing trades)'),
         click.option(
-            '--target',
-            default='0.5-0.7',
-            show_default=True,
-            help='Target profit range as fraction of entry price / credit (e.g. 0.5-0.7)',
+            "--open-only", is_flag=True, help="Show only open option positions (no closing trades)"
         ),
-        click.option('--json-output', 'json_output', is_flag=True, help='Emit JSON instead of table output'),
+        click.option(
+            "--target",
+            default="0.5-0.7",
+            show_default=True,
+            help="Target profit range as fraction of entry price / credit (e.g. 0.5-0.7)",
+        ),
+        click.option(
+            "--json-output", "json_output", is_flag=True, help="Emit JSON instead of table output"
+        ),
     ]
 
     func = click.pass_context(func)
@@ -119,10 +123,12 @@ def _run_import(
 
         transactions = get_options_transactions(csv_file)
         target_percents = calculate_target_percents(target_bounds)
-        target_label = "Target (" + ", ".join(format_percent(value) for value in target_percents) + ")"
+        target_label = (
+            "Target (" + ", ".join(format_percent(value) for value in target_percents) + ")"
+        )
 
-        calls_only = strategy == 'calls'
-        puts_only = strategy == 'puts'
+        calls_only = strategy == "calls"
+        puts_only = strategy == "puts"
 
         try:
             filtered_by_ticker = filter_transactions_by_ticker(transactions, ticker_symbol)
@@ -153,13 +159,19 @@ def _run_import(
                     )
                     console.print_json(data=empty_payload)
                 else:
-                    console.print(f"[yellow]No options transactions found for ticker {ticker_key}[/yellow]")
+                    console.print(
+                        f"[yellow]No options transactions found for ticker {ticker_key}[/yellow]"
+                    )
                 return
             if emit_text:
-                console.print(f"[green]Filtered to {len(filtered_by_ticker)} {ticker_key} options transactions[/green]")
+                console.print(
+                    f"[green]Filtered to {len(filtered_by_ticker)} {ticker_key} options transactions[/green]"
+                )
         else:
             if emit_text:
-                console.print(f"[green]Found {len(filtered_transactions)} options transactions[/green]")
+                console.print(
+                    f"[green]Found {len(filtered_transactions)} options transactions[/green]"
+                )
 
         if open_only:
             filtered_transactions = filter_open_positions(filtered_transactions)
@@ -200,7 +212,9 @@ def _run_import(
 
 @click.command(name="import")
 @_apply_import_options
-def import_transactions(ctx, options_only, ticker_symbol, strategy, csv_file, open_only, target, json_output):
+def import_transactions(
+    ctx, options_only, ticker_symbol, strategy, csv_file, open_only, target, json_output
+):
     """Import and display raw options transactions from CSV."""
 
     _run_import(
@@ -221,7 +235,10 @@ def import_transactions(ctx, options_only, ticker_symbol, strategy, csv_file, op
 def ingest(ctx, options_only, ticker_symbol, strategy, csv_file, open_only, target, json_output):
     """Deprecated alias for ``premiumflow import``."""
 
-    click.echo("[deprecated] 'premiumflow ingest' is deprecated; use 'premiumflow import' instead.", err=True)
+    click.echo(
+        "[deprecated] 'premiumflow ingest' is deprecated; use 'premiumflow import' instead.",
+        err=True,
+    )
 
     _run_import(
         ctx,

@@ -40,6 +40,11 @@ gh api repos/garricn/premiumflow/pulls/{PR}/reviews/{REVIEW_ID}/comments
 - Export functions in `services/__init__.py`
 - Address code review comments before merging
 
+### Code Formatting
+- Python uses [Black](https://black.readthedocs.io/) with a 100-character line length target.
+- Run `uv run black src tests` before sending a PR; CI enforces `black --check` on these paths.
+- Other file types have their own formatter issues tracked separately.
+
 ### Financial Calculations
 - Use `Decimal` for all financial calculations
 - Maintain backward compatibility when refactoring

@@ -35,7 +35,7 @@ def test_import_command_table_output(tmp_path):
     csv_path = _write_sample_csv(tmp_path)
     runner = CliRunner()
 
-    result = runner.invoke(import_transactions, ['--file', str(csv_path)])
+    result = runner.invoke(import_transactions, ["--file", str(csv_path)])
 
     assert result.exit_code == 0
     assert "Importing" in result.output
@@ -48,7 +48,7 @@ def test_import_command_json_output(tmp_path):
     csv_path = _write_sample_csv(tmp_path)
     runner = CliRunner()
 
-    result = runner.invoke(import_transactions, ['--file', str(csv_path), '--json-output'])
+    result = runner.invoke(import_transactions, ["--file", str(csv_path), "--json-output"])
 
     assert result.exit_code == 0
     payload = json.loads(result.output)
@@ -62,7 +62,7 @@ def test_import_command_filters_by_ticker(tmp_path):
     csv_path = _write_sample_csv(tmp_path)
     runner = CliRunner()
 
-    result = runner.invoke(import_transactions, ['--file', str(csv_path), '--ticker', 'ZZZ'])
+    result = runner.invoke(import_transactions, ["--file", str(csv_path), "--ticker", "ZZZ"])
 
     assert result.exit_code == 0
     assert "No options transactions found for ticker ZZZ" in result.output
@@ -73,7 +73,7 @@ def test_import_command_open_only(tmp_path):
     csv_path = _write_open_positions_csv(tmp_path)
     runner = CliRunner()
 
-    result = runner.invoke(import_transactions, ['--file', str(csv_path), '--open-only'])
+    result = runner.invoke(import_transactions, ["--file", str(csv_path), "--open-only"])
 
     assert result.exit_code == 0
     assert "Open positions:" in result.output
@@ -84,8 +84,8 @@ def test_import_command_invalid_target_range(tmp_path):
     csv_path = _write_sample_csv(tmp_path)
     runner = CliRunner()
 
-    result = runner.invoke(import_transactions, ['--file', str(csv_path), '--target', 'invalid'])
-    
+    result = runner.invoke(import_transactions, ["--file", str(csv_path), "--target", "invalid"])
+
     assert result.exit_code != 0
     assert "Invalid target range format" in result.output
 
@@ -95,7 +95,7 @@ def test_ingest_alias_warns(tmp_path):
     csv_path = _write_sample_csv(tmp_path)
     runner = CliRunner()
 
-    result = runner.invoke(ingest, ['--file', str(csv_path)])
+    result = runner.invoke(ingest, ["--file", str(csv_path)])
 
     assert result.exit_code == 0
     assert "deprecated" in (result.stderr or "").lower()

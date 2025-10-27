@@ -35,7 +35,7 @@ def test_trace_command_displays_matching_chain(tmp_path):
     csv_path = _write_trace_csv(tmp_path)
     runner = CliRunner()
 
-    result = runner.invoke(trace, ['TSLA $550 Call', str(csv_path)])
+    result = runner.invoke(trace, ["TSLA $550 Call", str(csv_path)])
 
     assert result.exit_code == 0
     output = result.output
@@ -50,7 +50,7 @@ def test_trace_command_reports_when_no_match(tmp_path):
     csv_path = _write_trace_csv(tmp_path)
     runner = CliRunner()
 
-    result = runner.invoke(trace, ['AAPL $150 Call', str(csv_path)])
+    result = runner.invoke(trace, ["AAPL $150 Call", str(csv_path)])
 
     assert result.exit_code == 0
     assert "No roll chains found" in result.output
@@ -61,7 +61,7 @@ def test_trace_command_open_chain_shows_target_range(tmp_path):
     csv_path = _write_open_chain_csv(tmp_path)
     runner = CliRunner()
 
-    result = runner.invoke(trace, ['TSLA $550 Call', str(csv_path)])
+    result = runner.invoke(trace, ["TSLA $550 Call", str(csv_path)])
 
     assert result.exit_code == 0
     output = result.output
@@ -74,7 +74,7 @@ def test_trace_command_allows_custom_target(tmp_path):
     csv_path = _write_open_chain_csv(tmp_path)
     runner = CliRunner()
 
-    result = runner.invoke(trace, ['TSLA $550 Call', str(csv_path), '--target', '0.2-0.4'])
+    result = runner.invoke(trace, ["TSLA $550 Call", str(csv_path), "--target", "0.2-0.4"])
 
     assert result.exit_code == 0
     output = result.output
@@ -86,7 +86,7 @@ def test_trace_command_invalid_target(tmp_path):
     csv_path = _write_trace_csv(tmp_path)
     runner = CliRunner()
 
-    result = runner.invoke(trace, ['TSLA $550 Call', str(csv_path), '--target', 'invalid'])
+    result = runner.invoke(trace, ["TSLA $550 Call", str(csv_path), "--target", "invalid"])
 
     assert result.exit_code != 0
     assert "Invalid target range format" in result.output
@@ -96,7 +96,7 @@ def test_trace_command_missing_file():
     """Missing files should raise a Click error."""
     runner = CliRunner()
 
-    result = runner.invoke(trace, ['TSLA $550 Call', 'nonexistent.csv'])
+    result = runner.invoke(trace, ["TSLA $550 Call", "nonexistent.csv"])
 
     assert result.exit_code != 0
     assert "Path 'nonexistent.csv' does not exist" in result.output

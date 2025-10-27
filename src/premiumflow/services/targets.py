@@ -13,12 +13,12 @@ def parse_decimal(value: Optional[str]) -> Optional[Decimal]:
         return None
 
     negative = False
-    if text.startswith('(') and text.endswith(')'):
+    if text.startswith("(") and text.endswith(")"):
         negative = True
         text = text[1:-1]
 
-    text = text.replace('$', '').replace(',', '').strip()
-    if text.startswith('-'):
+    text = text.replace("$", "").replace(",", "").strip()
+    if text.startswith("-"):
         negative = True
         text = text[1:]
 
@@ -45,7 +45,7 @@ def calculate_target_percents(bounds: Sequence[Decimal]) -> List[Decimal]:
     if lower == upper:
         return [lower]
 
-    midpoint = (lower + upper) / Decimal('2')
+    midpoint = (lower + upper) / Decimal("2")
     percents: List[Decimal] = [lower, midpoint, upper]
     ordered_unique: List[Decimal] = []
     for value in percents:
@@ -60,8 +60,8 @@ def compute_target_close_prices(
     percents: Iterable[Decimal],
 ) -> Optional[List[Decimal]]:
     """Compute close prices for a trade given percent targets."""
-    code = (trans_code or '').strip().upper()
-    if code not in {'STO', 'BTO'}:
+    code = (trans_code or "").strip().upper()
+    if code not in {"STO", "BTO"}:
         return None
 
     price = parse_decimal(price_text)
@@ -70,14 +70,14 @@ def compute_target_close_prices(
 
     results: List[Decimal] = []
     for percent in percents:
-        if code == 'STO':
-            target_price = price * (Decimal('1') - percent)
-            target_price = max(target_price, Decimal('0'))
+        if code == "STO":
+            target_price = price * (Decimal("1") - percent)
+            target_price = max(target_price, Decimal("0"))
         else:
-            target_price = price * (Decimal('1') + percent)
-        results.append(target_price.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP))
+            target_price = price * (Decimal("1") + percent)
+        results.append(target_price.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
 
-    if code == 'STO':
+    if code == "STO":
         results.sort(reverse=True)
     else:
         results.sort()

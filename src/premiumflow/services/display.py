@@ -36,7 +36,7 @@ def format_breakeven(chain: Dict[str, Any]) -> str:
 
 def format_percent(value: Decimal) -> str:
     """Format a decimal value as a percentage."""
-    percent = (value * Decimal('100')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    percent = (value * Decimal("100")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     text = f"{percent:,.2f}"
     if text.endswith(".00"):
         text = text[:-3]
@@ -75,13 +75,13 @@ def ensure_display_name(chain: Dict[str, Any]) -> str:
             strike_text = f"{strike.quantize(Decimal('0.01')):,.2f}"
     else:
         strike_text = str(strike or "")
-    
+
     parts = [symbol]
     if strike_text:
         parts.append(f"${strike_text}")
     if option_label:
         parts.append(option_label)
-    
+
     result = " ".join(parts).strip()
     return result if result != symbol else symbol
 
@@ -100,25 +100,27 @@ def prepare_transactions_for_display(
 ) -> List[Dict[str, str]]:
     """Prepare transaction data for display formatting."""
     from ..services.targets import compute_target_close_prices
-    
+
     rows: List[Dict[str, str]] = []
     for txn in transactions:
-        parsed_option = parse_option_description(txn.get('Description', ''))
-        formatted_desc, expiration = format_option_display(parsed_option, txn.get('Description', ''))
+        parsed_option = parse_option_description(txn.get("Description", ""))
+        formatted_desc, expiration = format_option_display(
+            parsed_option, txn.get("Description", "")
+        )
         target_prices = compute_target_close_prices(
-            txn.get('Trans Code'),
-            txn.get('Price'),
+            txn.get("Trans Code"),
+            txn.get("Price"),
             target_percents,
         )
 
         rows.append(
             {
-                "date": txn.get('Activity Date', ''),
-                "symbol": (txn.get('Instrument') or '').strip(),
+                "date": txn.get("Activity Date", ""),
+                "symbol": (txn.get("Instrument") or "").strip(),
                 "expiration": expiration,
-                "code": txn.get('Trans Code', ''),
-                "quantity": txn.get('Quantity', ''),
-                "price": txn.get('Price', ''),
+                "code": txn.get("Trans Code", ""),
+                "quantity": txn.get("Quantity", ""),
+                "price": txn.get("Price", ""),
                 "description": formatted_desc,
                 "target_close": format_target_close_prices(target_prices),
             }
@@ -127,10 +129,12 @@ def prepare_transactions_for_display(
     return rows
 
 
-def calculate_target_price_range(chain: Dict[str, Any], bounds: Tuple[Decimal, Decimal]) -> Optional[Tuple[Decimal, Decimal]]:
+def calculate_target_price_range(
+    chain: Dict[str, Any], bounds: Tuple[Decimal, Decimal]
+) -> Optional[Tuple[Decimal, Decimal]]:
     """Calculate the target price range for an open chain."""
-    breakeven = chain.get('breakeven_price')
-    net_contracts = chain.get('net_contracts', 0)
+    breakeven = chain.get("breakeven_price")
+    net_contracts = chain.get("net_contracts", 0)
     if breakeven is None or not net_contracts:
         return None
 
@@ -139,18 +143,18 @@ def calculate_target_price_range(chain: Dict[str, Any], bounds: Tuple[Decimal, D
     total_debits = chain.get("total_debits") or Decimal("0")
     total_fees = chain.get("total_fees") or Decimal("0")
     realized = total_credits - total_debits - total_fees
-    
+
     contracts = abs(net_contracts)
     if contracts == 0:
         return None
 
-    per_share_realized = realized / (Decimal(contracts) * Decimal('100'))
-    per_share_realized = per_share_realized.quantize(Decimal('0.0001'))
-    if per_share_realized <= Decimal('0'):
+    per_share_realized = realized / (Decimal(contracts) * Decimal("100"))
+    per_share_realized = per_share_realized.quantize(Decimal("0.0001"))
+    if per_share_realized <= Decimal("0"):
         return None
 
-    lower_shift = (per_share_realized * bounds[0]).quantize(Decimal('0.01'))
-    upper_shift = (per_share_realized * bounds[1]).quantize(Decimal('0.01'))
+    lower_shift = (per_share_realized * bounds[0]).quantize(Decimal("0.01"))
+    upper_shift = (per_share_realized * bounds[1]).quantize(Decimal("0.01"))
 
     breakeven = Decimal(breakeven)
     if net_contracts < 0:
@@ -164,12 +168,11 @@ def calculate_target_price_range(chain: Dict[str, Any], bounds: Tuple[Decimal, D
 
 
 def prepare_chain_display(
-    chain: Dict[str, Any], 
-    target_bounds: Tuple[Decimal, Decimal]
+    chain: Dict[str, Any], target_bounds: Tuple[Decimal, Decimal]
 ) -> Dict[str, str]:
     """Prepare chain data for display formatting."""
     target_price = calculate_target_price_range(chain, target_bounds)
-    
+
     return {
         "display_name": ensure_display_name(chain),
         "expiration": chain.get("expiration", "") or "N/A",
