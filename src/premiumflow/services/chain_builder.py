@@ -77,27 +77,27 @@ def detect_rolls(transactions: List[Dict[str, str]]) -> List[Dict[str, Any]]:
     import re
 
     rolls = []
-    open_codes = {'STO', 'BTO'}
-    close_codes = {'BTC', 'STC'}
+    open_codes = {"STO", "BTO"}
+    close_codes = {"BTC", "STC"}
 
     open_positions: Dict[tuple, deque] = defaultdict(deque)
     close_origin_dates: Dict[int, List[datetime]] = {}
 
     sorted_txns = sorted(
         (
-            (parse_date(txn.get('Activity Date', '')), idx, txn)
+            (parse_date(txn.get("Activity Date", "")), idx, txn)
             for idx, txn in enumerate(transactions)
         ),
-        key=lambda item: (item[0], item[1])
+        key=lambda item: (item[0], item[1]),
     )
 
     for activity_dt, _, txn in sorted_txns:
-        trans_code = (txn.get('Trans Code') or '').strip().upper()
+        trans_code = (txn.get("Trans Code") or "").strip().upper()
         key = (
-            (txn.get('Instrument') or '').strip(),
-            (txn.get('Description') or '').strip(),
+            (txn.get("Instrument") or "").strip(),
+            (txn.get("Description") or "").strip(),
         )
-        qty = max(abs(_parse_quantity(txn.get('Quantity'))), 1)
+        qty = max(abs(_parse_quantity(txn.get("Quantity"))), 1)
 
         if trans_code in open_codes:
             for _ in range(qty):
@@ -110,21 +110,21 @@ def detect_rolls(transactions: List[Dict[str, str]]) -> List[Dict[str, Any]]:
 
     by_date: Dict[str, List[Dict[str, str]]] = {}
     for txn in transactions:
-        date = txn.get('Activity Date', '')
+        date = txn.get("Activity Date", "")
         by_date.setdefault(date, []).append(txn)
 
     for date, txns in by_date.items():
-        btc_txns = [t for t in txns if (t.get('Trans Code') or '').strip().upper() in close_codes]
-        sto_txns = [t for t in txns if (t.get('Trans Code') or '').strip().upper() in open_codes]
+        btc_txns = [t for t in txns if (t.get("Trans Code") or "").strip().upper() in close_codes]
+        sto_txns = [t for t in txns if (t.get("Trans Code") or "").strip().upper() in open_codes]
 
         close_entries = []
         for btc in btc_txns:
             origin_dates = close_origin_dates.get(id(btc), [])
             origin_dates.sort()
             open_date = origin_dates[0] if origin_dates else None
-            close_entries.append((open_date, parse_date(btc.get('Activity Date', '')), btc))
+            close_entries.append((open_date, parse_date(btc.get("Activity Date", "")), btc))
 
-        close_entries.sort(key=lambda entry: (entry[0] or parse_date('12/31/2999'), entry[1]))
+        close_entries.sort(key=lambda entry: (entry[0] or parse_date("12/31/2999"), entry[1]))
 
         used_open_indices: Set[int] = set()
 
@@ -132,12 +132,12 @@ def detect_rolls(transactions: List[Dict[str, str]]) -> List[Dict[str, Any]]:
             if open_date is None:
                 continue
 
-            btc_desc = btc.get('Description', '') or ''
+            btc_desc = btc.get("Description", "") or ""
             btc_details = _extract_contract_details(btc_desc)
             if not btc_details:
                 continue
 
-            btc_qty = abs(_parse_quantity(btc.get('Quantity')))
+            btc_qty = abs(_parse_quantity(btc.get("Quantity")))
             if not btc_qty:
                 continue
 
@@ -145,41 +145,43 @@ def detect_rolls(transactions: List[Dict[str, str]]) -> List[Dict[str, Any]]:
                 if idx in used_open_indices:
                     continue
 
-                if (btc.get('Instrument') or '').strip() != (sto.get('Instrument') or '').strip():
+                if (btc.get("Instrument") or "").strip() != (sto.get("Instrument") or "").strip():
                     continue
 
-                sto_desc = sto.get('Description', '') or ''
+                sto_desc = sto.get("Description", "") or ""
                 sto_details = _extract_contract_details(sto_desc)
                 if not sto_details:
                     continue
 
-                if btc_details['option_label'] != sto_details['option_label']:
+                if btc_details["option_label"] != sto_details["option_label"]:
                     continue
 
-                sto_qty = abs(_parse_quantity(sto.get('Quantity')))
+                sto_qty = abs(_parse_quantity(sto.get("Quantity")))
                 if btc_qty != sto_qty or not sto_qty:
                     continue
 
                 same_contract = (
-                    btc_details['strike'] == sto_details['strike'] and
-                    btc_details['expiration'] == sto_details['expiration']
+                    btc_details["strike"] == sto_details["strike"]
+                    and btc_details["expiration"] == sto_details["expiration"]
                 )
                 if same_contract:
                     continue
 
                 used_open_indices.add(idx)
-                rolls.append({
-                    'date': date,
-                    'ticker': btc.get('Instrument', ''),
-                    'btc_desc': btc_desc,
-                    'sto_desc': sto_desc,
-                    'btc_strike': btc_details['strike'],
-                    'sto_strike': sto_details['strike'],
-                    'btc_expiration': btc_details['expiration'],
-                    'sto_expiration': sto_details['expiration'],
-                    'option_label': btc_details['option_label'],
-                    'quantity': btc_qty,
-                })
+                rolls.append(
+                    {
+                        "date": date,
+                        "ticker": btc.get("Instrument", ""),
+                        "btc_desc": btc_desc,
+                        "sto_desc": sto_desc,
+                        "btc_strike": btc_details["strike"],
+                        "sto_strike": sto_details["strike"],
+                        "btc_expiration": btc_details["expiration"],
+                        "sto_expiration": sto_details["expiration"],
+                        "option_label": btc_details["option_label"],
+                        "quantity": btc_qty,
+                    }
+                )
                 break
 
     return rolls
@@ -198,11 +200,11 @@ def deduplicate_transactions(transactions: List[Dict[str, str]]) -> List[Dict[st
 
     for txn in transactions:
         key = (
-            txn.get('Activity Date', ''),
-            txn.get('Instrument', ''),
-            (txn.get('Trans Code') or '').strip().upper(),
-            txn.get('Price', ''),
-            txn.get('Description', '')
+            txn.get("Activity Date", ""),
+            txn.get("Instrument", ""),
+            (txn.get("Trans Code") or "").strip().upper(),
+            txn.get("Price", ""),
+            txn.get("Description", ""),
         )
 
         if key not in aggregated:
@@ -210,15 +212,15 @@ def deduplicate_transactions(transactions: List[Dict[str, str]]) -> List[Dict[st
             continue
 
         existing = aggregated[key]
-        existing_qty = _parse_quantity(existing.get('Quantity'))
-        incoming_qty = _parse_quantity(txn.get('Quantity'))
+        existing_qty = _parse_quantity(existing.get("Quantity"))
+        incoming_qty = _parse_quantity(txn.get("Quantity"))
         combined_qty = existing_qty + incoming_qty
-        existing['Quantity'] = str(combined_qty)
+        existing["Quantity"] = str(combined_qty)
 
-        existing_amount = _parse_amount(existing.get('Amount'))
-        incoming_amount = _parse_amount(txn.get('Amount'))
+        existing_amount = _parse_amount(existing.get("Amount"))
+        incoming_amount = _parse_amount(txn.get("Amount"))
         combined_amount = existing_amount + incoming_amount
-        existing['Amount'] = _format_amount(combined_amount)
+        existing["Amount"] = _format_amount(combined_amount)
 
     return list(aggregated.values())
 
@@ -227,19 +229,23 @@ def group_by_ticker(transactions: List[Dict[str, str]]) -> Dict[str, List[Dict[s
     """Group transactions by ticker symbol."""
     grouped = {}
     for txn in transactions:
-        ticker = txn.get('Instrument', '').strip()
+        ticker = txn.get("Instrument", "").strip()
         if ticker not in grouped:
             grouped[ticker] = []
         grouped[ticker].append(txn)
     return grouped
 
 
-def get_txn_by_desc_date(txns: List[Dict[str, str]], desc: str, date: str, trans_code: str) -> Dict[str, str]:
+def get_txn_by_desc_date(
+    txns: List[Dict[str, str]], desc: str, date: str, trans_code: str
+) -> Dict[str, str]:
     """Find transaction by description, date, and transaction code."""
     for txn in txns:
-        if (txn.get('Description') == desc and 
-            txn.get('Activity Date') == date and 
-            txn.get('Trans Code') == trans_code):
+        if (
+            txn.get("Description") == desc
+            and txn.get("Activity Date") == date
+            and txn.get("Trans Code") == trans_code
+        ):
             return txn
     return None
 
@@ -444,37 +450,37 @@ def detect_roll_chains(transactions: List[Dict[str, str]]) -> List[Dict[str, Any
     """
     # First detect individual rolls
     rolls = detect_rolls(transactions)
-    
+
     # Deduplicate and sort transactions
     unique_txns = deduplicate_transactions(transactions)
-    unique_txns.sort(key=lambda x: parse_date(x.get('Activity Date', '')))
-    
+    unique_txns.sort(key=lambda x: parse_date(x.get("Activity Date", "")))
+
     # Group by ticker
     by_ticker = group_by_ticker(unique_txns)
-    
+
     chains = []
-    
+
     # For each ticker, build roll chains
     for ticker, txns in by_ticker.items():
         # Track which transactions are part of chains
         used_txns = set()
-        
+
         # Start with each opening position (STO/BTO)
         for i, open_txn in enumerate(txns):
-            if open_txn.get('Trans Code') not in ['STO', 'BTO']:
+            if open_txn.get("Trans Code") not in ["STO", "BTO"]:
                 continue
-            
+
             txn_id = id(open_txn)
             if txn_id in used_txns:
                 continue
-            
+
             # Try to build a chain starting from this opening
             chain = build_chain(open_txn, txns, rolls, used_txns)
-            
-            if chain and len(chain['transactions']) >= 3:  # Minimum: Open, Roll, Close
+
+            if chain and len(chain["transactions"]) >= 3:  # Minimum: Open, Roll, Close
                 chains.append(chain)
                 # Mark all transactions in this chain as used
-                for txn in chain['transactions']:
+                for txn in chain["transactions"]:
                     used_txns.add(id(txn))
-    
+
     return chains

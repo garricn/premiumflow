@@ -33,22 +33,24 @@ def prepare_transactions_for_display(
     """Prepare transactions for display formatting."""
     rows: List[Dict[str, str]] = []
     for txn in transactions:
-        parsed_option = parse_option_description(txn.get('Description', ''))
-        formatted_desc, expiration = format_option_display(parsed_option, txn.get('Description', ''))
+        parsed_option = parse_option_description(txn.get("Description", ""))
+        formatted_desc, expiration = format_option_display(
+            parsed_option, txn.get("Description", "")
+        )
         target_prices = compute_target_close_prices(
-            txn.get('Trans Code'),
-            txn.get('Price'),
+            txn.get("Trans Code"),
+            txn.get("Price"),
             target_percents,
         )
 
         rows.append(
             {
-                "date": txn.get('Activity Date', ''),
-                "symbol": (txn.get('Instrument') or '').strip(),
+                "date": txn.get("Activity Date", ""),
+                "symbol": (txn.get("Instrument") or "").strip(),
                 "expiration": expiration,
-                "code": txn.get('Trans Code', ''),
-                "quantity": txn.get('Quantity', ''),
-                "price": txn.get('Price', ''),
+                "code": txn.get("Trans Code", ""),
+                "quantity": txn.get("Quantity", ""),
+                "price": txn.get("Price", ""),
                 "description": formatted_desc,
                 "target_close": format_target_close_prices(target_prices),
             }

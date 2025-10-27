@@ -20,7 +20,7 @@ def test_cli_help_lists_all_commands():
     """Root CLI help should list all registered subcommands."""
     runner = CliRunner()
 
-    result = runner.invoke(premiumflow_cli, ['--help'])
+    result = runner.invoke(premiumflow_cli, ["--help"])
 
     assert result.exit_code == 0
     output = result.output
@@ -32,7 +32,7 @@ def test_cli_unknown_command_reports_error():
     """Unknown commands should produce a helpful error message."""
     runner = CliRunner()
 
-    result = runner.invoke(premiumflow_cli, ['unknown'])
+    result = runner.invoke(premiumflow_cli, ["unknown"])
 
     assert result.exit_code != 0
     assert "No such command" in result.output
@@ -80,7 +80,7 @@ def test_import_reports_missing_ticker(tmp_path):
 
     result = runner.invoke(
         premiumflow_cli,
-        ['import', '--ticker', 'ZZZ', '--file', str(sample_csv)],
+        ["import", "--ticker", "ZZZ", "--file", str(sample_csv)],
     )
 
     assert result.exit_code == 0
@@ -143,17 +143,17 @@ def test_filter_open_positions_and_display_format(tmp_path):
 def test_filter_open_positions_includes_partially_closed_positions():
     """
     Test that open position filter correctly handles partial closes by netting quantities.
-    
+
     This test demonstrates the bug where partially closed positions are incorrectly
     filtered out. The filter should net quantities rather than treat close presence
     as an all-or-nothing toggle.
-    
+
     Scenario: STO 2 contracts, BTC 1 contract = 1 contract still open
     Expected: Should show 1 open position (net quantity > 0)
     Current bug: Shows 0 open positions (all filtered out)
     """
     from premiumflow.services.transactions import filter_open_positions
-    
+
     transactions = [
         # Open 2 long contracts (BTO)
         {
@@ -195,13 +195,13 @@ def test_filter_open_positions_includes_partially_closed_positions():
             "Amount": "($200.00)",
         },
     ]
-    
+
     open_positions = filter_open_positions(transactions)
-    
+
     # Should find 1 open position (TSLA with net quantity of 1)
     # Current bug: finds 0 positions because partial close filters out all TSLA positions
     assert len(open_positions) == 1, f"Expected 1 open position, got {len(open_positions)}"
-    
+
     # The remaining position should be TSLA with net quantity
     tsla_position = open_positions[0]
     assert tsla_position["Instrument"] == "TSLA"
@@ -213,16 +213,16 @@ def test_filter_open_positions_includes_partially_closed_positions():
 def test_filter_open_positions_aggregates_partial_fills():
     """
     Test that open position filter aggregates partial fills instead of returning duplicates.
-    
+
     This test demonstrates the bug where partially closed positions return all
     original opening transactions instead of aggregating them into net quantities.
-    
+
     Scenario: BTO 1 + BTO 1 + STC 1 = 1 contract still open
     Expected: Should return 1 aggregated entry with net quantity
     Current bug: Returns 2 separate BTO entries (double-counting)
     """
     from premiumflow.services.transactions import filter_open_positions
-    
+
     transactions = [
         # Open 1 contract (first fill)
         {
@@ -255,13 +255,15 @@ def test_filter_open_positions_aggregates_partial_fills():
             "Amount": "$800.00",
         },
     ]
-    
+
     open_positions = filter_open_positions(transactions)
-    
+
     # Should find 1 aggregated position (net quantity = 1)
     # Current bug: finds 2 separate BTO entries (double-counting)
-    assert len(open_positions) == 1, f"Expected 1 aggregated position, got {len(open_positions)} separate entries"
-    
+    assert (
+        len(open_positions) == 1
+    ), f"Expected 1 aggregated position, got {len(open_positions)} separate entries"
+
     # The aggregated position should have net quantity of 1
     aggregated_position = open_positions[0]
     assert aggregated_position["Instrument"] == "TSLA"
@@ -303,7 +305,7 @@ def test_import_cli_open_only_message(tmp_path):
     runner = CliRunner()
     result = runner.invoke(
         premiumflow_cli,
-        ['import', '--options', '--open-only', '--file', str(csv_path)],
+        ["import", "--options", "--open-only", "--file", str(csv_path)],
     )
 
     assert result.exit_code == 0
@@ -314,7 +316,9 @@ def test_analyze_summary_shows_realized_for_open_chain(tmp_path):
     csv_path = _write_open_chain_csv(tmp_path)
     runner = CliRunner()
 
-    result = runner.invoke(premiumflow_cli, ['analyze', str(csv_path), '--format', 'summary', '--open-only'])
+    result = runner.invoke(
+        premiumflow_cli, ["analyze", str(csv_path), "--format", "summary", "--open-only"]
+    )
 
     assert result.exit_code == 0
     output = result.output
@@ -327,7 +331,10 @@ def test_analyze_summary_custom_target(tmp_path):
     csv_path = _write_open_chain_csv(tmp_path)
     runner = CliRunner()
 
-    result = runner.invoke(premiumflow_cli, ['analyze', str(csv_path), '--format', 'summary', '--open-only', '--target', '0.25-0.5'])
+    result = runner.invoke(
+        premiumflow_cli,
+        ["analyze", str(csv_path), "--format", "summary", "--open-only", "--target", "0.25-0.5"],
+    )
 
     assert result.exit_code == 0
     output = result.output
@@ -338,7 +345,7 @@ def test_trace_outputs_full_history(tmp_path):
     csv_path = _write_trace_csv(tmp_path)
     runner = CliRunner()
 
-    result = runner.invoke(premiumflow_cli, ['trace', 'TSLA $550 Call', str(csv_path)])
+    result = runner.invoke(premiumflow_cli, ["trace", "TSLA $550 Call", str(csv_path)])
 
     assert result.exit_code == 0
     output = result.output
@@ -352,7 +359,7 @@ def test_trace_no_match(tmp_path):
     csv_path = _write_trace_csv(tmp_path)
     runner = CliRunner()
 
-    result = runner.invoke(premiumflow_cli, ['trace', 'AAPL $150 Call', str(csv_path)])
+    result = runner.invoke(premiumflow_cli, ["trace", "AAPL $150 Call", str(csv_path)])
 
     assert result.exit_code == 0
     assert "No roll chains found" in result.output
@@ -362,7 +369,7 @@ def test_trace_open_chain_shows_realized(tmp_path):
     csv_path = _write_open_chain_csv(tmp_path)
     runner = CliRunner()
 
-    result = runner.invoke(premiumflow_cli, ['trace', 'TSLA $550 Call', str(csv_path)])
+    result = runner.invoke(premiumflow_cli, ["trace", "TSLA $550 Call", str(csv_path)])
 
     assert result.exit_code == 0
     output = result.output
@@ -374,7 +381,9 @@ def test_trace_custom_target(tmp_path):
     csv_path = _write_open_chain_csv(tmp_path)
     runner = CliRunner()
 
-    result = runner.invoke(premiumflow_cli, ['trace', 'TSLA $550 Call', str(csv_path), '--target', '0.2-0.4'])
+    result = runner.invoke(
+        premiumflow_cli, ["trace", "TSLA $550 Call", str(csv_path), "--target", "0.2-0.4"]
+    )
 
     assert result.exit_code == 0
     output = result.output
@@ -387,7 +396,7 @@ def test_lookup_matches_position_spec(tmp_path):
 
     result = runner.invoke(
         premiumflow_cli,
-        ['lookup', 'TSLA $515 C 2025-10-17', '--file', str(csv_path)],
+        ["lookup", "TSLA $515 C 2025-10-17", "--file", str(csv_path)],
     )
 
     assert result.exit_code == 0
@@ -395,7 +404,7 @@ def test_lookup_matches_position_spec(tmp_path):
 
     result_padded = runner.invoke(
         premiumflow_cli,
-        ['lookup', 'AAPL $120 P 2026-01-17', '--file', str(csv_path)],
+        ["lookup", "AAPL $120 P 2026-01-17", "--file", str(csv_path)],
     )
 
     assert result_padded.exit_code == 0
@@ -408,7 +417,7 @@ def test_lookup_invalid_spec(tmp_path):
 
     result = runner.invoke(
         premiumflow_cli,
-        ['lookup', 'INVALID SPEC', '--file', str(csv_path)],
+        ["lookup", "INVALID SPEC", "--file", str(csv_path)],
     )
 
     assert result.exit_code != 0
@@ -418,16 +427,16 @@ def test_lookup_invalid_spec(tmp_path):
 def test_filter_open_positions_includes_short_positions():
     """
     Test that open position filter includes short positions (negative quantities).
-    
+
     This test demonstrates the bug where short positions are filtered out because
     the quantity calculation logic doesn't properly handle short positions as negative quantities.
-    
+
     Scenario: STO 1 contract (short position) should have net quantity = -1
     Expected: Should show the open short position
     Current bug: STO is treated as positive quantity, so net_quantity = +1 (incorrect)
     """
     from premiumflow.services.transactions import filter_open_positions
-    
+
     transactions = [
         # Open 1 short contract (STO) - should contribute negative quantity
         {
@@ -441,21 +450,23 @@ def test_filter_open_positions_includes_short_positions():
         },
         # No closing transaction - position should still be open
     ]
-    
+
     open_positions = filter_open_positions(transactions)
-    
+
     # Should find 1 open short position (net quantity = -1)
     # Current bug: STO is treated as positive, so net_quantity = +1, but this is conceptually wrong
     # The real issue is that short positions should have negative net quantities
     assert len(open_positions) == 1, f"Expected 1 open short position, got {len(open_positions)}"
-    
+
     # The short position should be included with correct quantity sign
     short_position = open_positions[0]
     assert short_position["Instrument"] == "TSLA"
     assert short_position["Description"] == "TSLA 10/17/2025 Call $200.00"
     assert short_position["Trans Code"] == "STO"
     # For short positions, the quantity should be negative to represent the short position
-    assert short_position["Quantity"] == "-1", f"Expected negative quantity for short position, got {short_position['Quantity']}"
+    assert (
+        short_position["Quantity"] == "-1"
+    ), f"Expected negative quantity for short position, got {short_position['Quantity']}"
 
 
 def test_import_json_output(tmp_path):
@@ -466,13 +477,13 @@ def test_import_json_output(tmp_path):
     result = runner.invoke(
         premiumflow_cli,
         [
-            'import',
-            '--options',
-            '--file',
+            "import",
+            "--options",
+            "--file",
             str(sample_csv),
-            '--ticker',
-            'PLTR',
-            '--json-output',
+            "--ticker",
+            "PLTR",
+            "--json-output",
         ],
     )
 
@@ -493,7 +504,7 @@ def test_import_strategy_calls_only(tmp_path):
 
     result = runner.invoke(
         premiumflow_cli,
-        ['import', '--file', str(sample_csv), '--strategy', 'calls'],
+        ["import", "--file", str(sample_csv), "--strategy", "calls"],
     )
 
     assert result.exit_code == 0
@@ -507,7 +518,7 @@ def test_ingest_alias_emits_deprecation(tmp_path):
 
     result = runner.invoke(
         premiumflow_cli,
-        ['ingest', '--file', str(sample_csv)],
+        ["ingest", "--file", str(sample_csv)],
     )
 
     assert result.exit_code == 0
@@ -517,16 +528,16 @@ def test_ingest_alias_emits_deprecation(tmp_path):
 def test_filter_open_positions_includes_partially_closed_short_positions():
     """
     Test that open position filter includes partially closed short positions.
-    
+
     This test demonstrates the bug where short position quantity calculation
     doesn't properly handle the sign convention for short positions.
-    
+
     Scenario: STO 2 contracts + BTC 1 contract = net quantity = -1 (still open)
     Expected: Should show 1 open short position with negative quantity
     Current bug: STO treated as positive, so net_quantity = +1 (incorrect)
     """
     from premiumflow.services.transactions import filter_open_positions
-    
+
     transactions = [
         # Open 2 short contracts (STO) - should contribute -2 to net quantity
         {
@@ -549,17 +560,19 @@ def test_filter_open_positions_includes_partially_closed_short_positions():
             "Amount": "($300.00)",
         },
     ]
-    
+
     open_positions = filter_open_positions(transactions)
-    
+
     # Should find 1 open short position (net quantity = -1)
     # Current bug: STO treated as positive, so net_quantity = +1 (incorrect)
     assert len(open_positions) == 1, f"Expected 1 open short position, got {len(open_positions)}"
-    
+
     # The remaining short position should be included with correct quantity sign
     short_position = open_positions[0]
     assert short_position["Instrument"] == "TSLA"
     assert short_position["Description"] == "TSLA 10/17/2025 Call $200.00"
     assert short_position["Trans Code"] == "STO"
     # For short positions, the quantity should be negative to represent the short position
-    assert short_position["Quantity"] == "-1", f"Expected negative quantity for short position, got {short_position['Quantity']}"
+    assert (
+        short_position["Quantity"] == "-1"
+    ), f"Expected negative quantity for short position, got {short_position['Quantity']}"

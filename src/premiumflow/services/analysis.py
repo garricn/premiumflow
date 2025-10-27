@@ -33,12 +33,11 @@ def calculate_realized_pnl(chain: Dict[str, Any]) -> Decimal:
 
 
 def calculate_target_price_range(
-    chain: Dict[str, Any], 
-    bounds: Tuple[Decimal, Decimal]
+    chain: Dict[str, Any], bounds: Tuple[Decimal, Decimal]
 ) -> Optional[Tuple[Decimal, Decimal]]:
     """Calculate target price range for a chain."""
-    breakeven = chain.get('breakeven_price')
-    net_contracts = chain.get('net_contracts', 0)
+    breakeven = chain.get("breakeven_price")
+    net_contracts = chain.get("net_contracts", 0)
     if breakeven is None or not net_contracts:
         return None
 
@@ -47,13 +46,13 @@ def calculate_target_price_range(
     if contracts == 0:
         return None
 
-    per_share_realized = realized / (Decimal(contracts) * Decimal('100'))
-    per_share_realized = per_share_realized.quantize(Decimal('0.0001'), rounding=ROUND_HALF_UP)
-    if per_share_realized <= Decimal('0'):
+    per_share_realized = realized / (Decimal(contracts) * Decimal("100"))
+    per_share_realized = per_share_realized.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+    if per_share_realized <= Decimal("0"):
         return None
 
-    lower_shift = (per_share_realized * bounds[0]).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-    upper_shift = (per_share_realized * bounds[1]).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    lower_shift = (per_share_realized * bounds[0]).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    upper_shift = (per_share_realized * bounds[1]).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
     breakeven = Decimal(breakeven)
     if net_contracts < 0:

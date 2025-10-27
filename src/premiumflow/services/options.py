@@ -15,9 +15,9 @@ class OptionDescriptor:
 
 
 _PATTERN = re.compile(
-    r'^\s*(?P<symbol>[A-Za-z]+)\s+'
-    r'(?P<expiration>\d{1,2}/\d{1,2}/\d{4})\s+'
-    r'(?P<option_type>Call|Put)\s+\$?(?P<strike>[\d,]+(?:\.\d+)?)\s*$'
+    r"^\s*(?P<symbol>[A-Za-z]+)\s+"
+    r"(?P<expiration>\d{1,2}/\d{1,2}/\d{4})\s+"
+    r"(?P<option_type>Call|Put)\s+\$?(?P<strike>[\d,]+(?:\.\d+)?)\s*$"
 )
 
 
@@ -29,15 +29,15 @@ def parse_option_description(description: Optional[str]) -> Optional[OptionDescr
     if not match:
         return None
 
-    strike_text = match.group('strike').replace(',', '')
+    strike_text = match.group("strike").replace(",", "")
     try:
         strike = Decimal(strike_text)
     except InvalidOperation:
         return None
 
     return OptionDescriptor(
-        symbol=match.group('symbol').upper(),
-        expiration=match.group('expiration'),
-        option_type=match.group('option_type').capitalize(),
+        symbol=match.group("symbol").upper(),
+        expiration=match.group("expiration"),
+        option_type=match.group("option_type").capitalize(),
         strike=strike,
     )

@@ -25,7 +25,7 @@ def test_lookup_command_finds_matches(tmp_path):
     csv_path = _write_sample_csv(tmp_path)
     runner = CliRunner()
 
-    result = runner.invoke(lookup, ['TSLA $550 C 2025-11-21', '--file', str(csv_path)])
+    result = runner.invoke(lookup, ["TSLA $550 C 2025-11-21", "--file", str(csv_path)])
 
     assert result.exit_code == 0
     assert "Found 2 matching transactions" in result.output
@@ -37,7 +37,7 @@ def test_lookup_command_no_matches(tmp_path):
     csv_path = _write_sample_csv(tmp_path)
     runner = CliRunner()
 
-    result = runner.invoke(lookup, ['AAPL $150 P 2025-12-19', '--file', str(csv_path)])
+    result = runner.invoke(lookup, ["AAPL $150 P 2025-12-19", "--file", str(csv_path)])
 
     assert result.exit_code == 0
     assert "No transactions found for position" in result.output
@@ -48,7 +48,7 @@ def test_lookup_command_invalid_spec(tmp_path):
     csv_path = _write_sample_csv(tmp_path)
     runner = CliRunner()
 
-    result = runner.invoke(lookup, ['invalid-spec', '--file', str(csv_path)])
+    result = runner.invoke(lookup, ["invalid-spec", "--file", str(csv_path)])
 
     assert result.exit_code != 0
     assert "Invalid lookup format" in result.output
@@ -58,7 +58,7 @@ def test_lookup_command_missing_file():
     """Nonexistent CSV file results in Click error."""
     runner = CliRunner()
 
-    result = runner.invoke(lookup, ['TSLA $550 C 2025-11-21', '--file', 'nonexistent.csv'])
+    result = runner.invoke(lookup, ["TSLA $550 C 2025-11-21", "--file", "nonexistent.csv"])
 
     assert result.exit_code != 0
     assert "Path 'nonexistent.csv' does not exist" in result.output

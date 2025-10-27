@@ -32,8 +32,8 @@ from .cli_helpers import (
 )
 
 __all__ = [
-    "detect_roll_chains", 
-    "calculate_pnl", 
+    "detect_roll_chains",
+    "calculate_pnl",
     "calculate_breakeven",
     "format_currency",
     "format_breakeven",

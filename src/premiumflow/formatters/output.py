@@ -32,8 +32,8 @@ def format_transaction_summary(transaction: Transaction) -> str:
 def format_roll_chain_summary(chain: RollChain) -> str:
     """Format a roll chain summary for display."""
     # Handle breakeven price formatting safely
-    breakeven = 'N/A' if chain.breakeven_price is None else f"${chain.breakeven_price:,.2f}"
-    
+    breakeven = "N/A" if chain.breakeven_price is None else f"${chain.breakeven_price:,.2f}"
+
     summary = f"""
 Roll Chain: {chain.symbol} ${chain.strike} {chain.option_type} {chain.expiration}
 Status: {'CLOSED' if chain.is_closed else 'OPEN'}
@@ -52,7 +52,7 @@ Transactions: {len(chain.transactions)}
 def create_roll_chain_table(chains: List[RollChain]) -> Table:
     """Create a Rich table for displaying roll chains."""
     table = Table(title="Roll Chains Analysis")
-    
+
     table.add_column("Symbol", style="cyan")
     table.add_column("Strike", style="magenta")
     table.add_column("Type", style="green")
@@ -61,11 +61,11 @@ def create_roll_chain_table(chains: List[RollChain]) -> Table:
     table.add_column("Net P&L", justify="right", style="green")
     table.add_column("Breakeven", justify="right")
     table.add_column("Txs", justify="right")
-    
+
     for chain in chains:
         status = "CLOSED" if chain.is_closed else "OPEN"
         pnl_color = "green" if chain.net_pnl_after_fees >= 0 else "red"
-        
+
         table.add_row(
             chain.symbol,
             f"${chain.strike}",
@@ -74,9 +74,9 @@ def create_roll_chain_table(chains: List[RollChain]) -> Table:
             str(chain.net_quantity),
             f"[{pnl_color}]${chain.net_pnl_after_fees:,.2f}[/{pnl_color}]",
             f"${chain.breakeven_price:,.2f}" if chain.breakeven_price else "N/A",
-            str(len(chain.transactions))
+            str(len(chain.transactions)),
         )
-    
+
     return table
 
 
@@ -84,19 +84,21 @@ def display_roll_chains(chains: List[RollChain], console: Console = None):
     """Display roll chains using Rich formatting."""
     if console is None:
         console = Console()
-    
+
     if not chains:
         console.print("[yellow]No roll chains found.[/yellow]")
         return
-    
+
     table = create_roll_chain_table(chains)
     console.print(table)
-    
+
     # Show detailed summary for each chain
     for i, chain in enumerate(chains, 1):
         console.print(f"\n[bold]Chain {i}:[/bold]")
-        console.print(Panel(
-            format_roll_chain_summary(chain),
-            title=f"{chain.symbol} ${chain.strike} {chain.option_type}",
-            border_style="blue"
-        ))
+        console.print(
+            Panel(
+                format_roll_chain_summary(chain),
+                title=f"{chain.symbol} ${chain.strike} {chain.option_type}",
+                border_style="blue",
+            )
+        )

@@ -44,31 +44,37 @@ def parse_target_range(target: str) -> Tuple[Decimal, Decimal]:
 
 
 @click.command()
-@click.argument('csv_file', type=click.Path(exists=True))
-@click.option('--format', 'output_format',
-              type=click.Choice(['table', 'summary', 'raw']),
-              default='table',
-              help='Output format')
-@click.option('--open-only', is_flag=True,
-              help='Only display roll chains with open positions')
-@click.option('--target', default='0.5-0.7', show_default=True,
-              help='Target profit range as fraction of net credit (e.g. 0.5-0.7)')
+@click.argument("csv_file", type=click.Path(exists=True))
+@click.option(
+    "--format",
+    "output_format",
+    type=click.Choice(["table", "summary", "raw"]),
+    default="table",
+    help="Output format",
+)
+@click.option("--open-only", is_flag=True, help="Only display roll chains with open positions")
+@click.option(
+    "--target",
+    default="0.5-0.7",
+    show_default=True,
+    help="Target profit range as fraction of net credit (e.g. 0.5-0.7)",
+)
 def analyze(csv_file, output_format, open_only, target):
     """Analyze roll chains from a CSV file."""
     console = Console()
-    
+
     # Parse target range first to get proper Click error handling
     target_bounds = parse_target_range(target)
-    
+
     try:
         # Parse CSV file
         console.print(f"[blue]Parsing {csv_file}...[/blue]")
         transactions = parse_csv_file(csv_file)
         console.print(f"[green]Found {len(transactions)} options transactions[/green]")
-        
+
         # Get raw transaction data for chain detection
         raw_transactions = get_options_transactions(csv_file)
-        
+
         # Detect roll chains
         console.print("[blue]Detecting roll chains...[/blue]")
         chains = detect_roll_chains(raw_transactions)
@@ -78,10 +84,12 @@ def analyze(csv_file, output_format, open_only, target):
             chains = [chain for chain in chains if is_open_chain(chain)]
             console.print(f"[cyan]Open chains: {len(chains)}[/cyan]")
         target_percents = calculate_target_percents(target_bounds)
-        target_label = "Target (" + ", ".join(format_percent(value) for value in target_percents) + ")"
-        
+        target_label = (
+            "Target (" + ", ".join(format_percent(value) for value in target_percents) + ")"
+        )
+
         # Display results
-        if output_format == 'table':
+        if output_format == "table":
             table = Table(title="Roll Chains Analysis")
 
             table.add_column("Display", style="cyan", no_wrap=True)
@@ -106,7 +114,7 @@ def analyze(csv_file, output_format, open_only, target):
                 )
 
             console.print(table)
-        elif output_format == 'summary':
+        elif output_format == "summary":
             for i, chain in enumerate(chains, 1):
                 console.print(f"\n[bold]Chain {i}:[/bold]")
                 credits = format_currency(chain.get("total_credits"))
@@ -127,7 +135,9 @@ def analyze(csv_file, output_format, open_only, target):
                 else:
                     body_lines.append(f"Realized P&L (after fees): {format_realized_pnl(chain)}")
                     body_lines.append(f"Breakeven to close: {format_breakeven(chain)}")
-                    body_lines.append(f"Target Price: {format_price_range(calculate_target_price_range(chain, target_bounds))}")
+                    body_lines.append(
+                        f"Target Price: {format_price_range(calculate_target_price_range(chain, target_bounds))}"
+                    )
 
                 console.print(
                     Panel(
@@ -139,7 +149,7 @@ def analyze(csv_file, output_format, open_only, target):
         else:  # raw
             for i, chain in enumerate(chains, 1):
                 console.print(f"\nChain {i}: {chain}")
-        
+
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
         raise click.Abort()
