@@ -53,6 +53,7 @@ class Transaction(BaseModel):
         """Position specification string for lookup."""
         return f"{self.symbol} ${self.strike} {self.option_type} {self.expiration}"
 
+
 class RollChain(BaseModel):
     """Represents a roll chain of connected transactions."""
 
