@@ -96,4 +96,4 @@ def lookup(position_spec, csv_file):
         raise
     except Exception as exc:
         console.print(f"[red]Error: {exc}[/red]")
-        raise click.Abort()
+        raise click.Abort() from exc

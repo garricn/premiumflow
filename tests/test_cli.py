@@ -7,13 +7,13 @@ from click.testing import CliRunner
 
 from premiumflow.cli.commands import main as premiumflow_cli
 from premiumflow.cli.utils import prepare_transactions_for_display
+from premiumflow.core.parser import get_options_transactions
 from premiumflow.services.targets import calculate_target_percents
 from premiumflow.services.transactions import (
     filter_open_positions,
     filter_transactions_by_option_type,
     filter_transactions_by_ticker,
 )
-from premiumflow.core.parser import get_options_transactions
 
 
 def test_cli_help_lists_all_commands():

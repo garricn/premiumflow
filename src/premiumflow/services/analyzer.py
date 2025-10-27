@@ -5,8 +5,9 @@ This module handles profit/loss calculations and analysis.
 """
 
 from decimal import Decimal
-from typing import List, Dict, Any, Optional
-from ..core.models import Transaction, RollChain
+from typing import Any, Dict, List, Optional
+
+from ..core.models import RollChain, Transaction
 
 
 def calculate_credits(transactions: List[Transaction]) -> Decimal:

@@ -4,12 +4,12 @@ import unittest
 from decimal import Decimal
 
 from src.premiumflow.services.cli_helpers import (
-    is_open_chain,
-    parse_target_range,
-    format_percent,
+    create_target_label,
     filter_open_chains,
     format_expiration_date,
-    create_target_label,
+    format_percent,
+    is_open_chain,
+    parse_target_range,
 )
 
 

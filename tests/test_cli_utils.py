@@ -4,15 +4,16 @@ Tests for CLI utilities module.
 This module tests the shared utilities used across CLI commands.
 """
 
-import pytest
 from decimal import Decimal
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
+import pytest
 from click import BadParameter
 
 from premiumflow.cli.utils import (
+    create_transactions_table,
     parse_target_range,
     prepare_transactions_for_display,
-    create_transactions_table,
 )
 
 

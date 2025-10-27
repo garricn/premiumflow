@@ -7,7 +7,7 @@ and other data in the CLI interface.
 
 from __future__ import annotations
 
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Dict, List, Optional, Tuple
 
 from ..services.options import OptionDescriptor, parse_option_description

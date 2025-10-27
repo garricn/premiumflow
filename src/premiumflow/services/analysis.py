@@ -7,8 +7,8 @@ calculating P&L, and determining chain status.
 
 from __future__ import annotations
 
-from decimal import Decimal, ROUND_HALF_UP
-from typing import Any, Dict, List, Tuple
+from decimal import ROUND_HALF_UP, Decimal
+from typing import Any, Dict, List, Optional, Tuple
 
 
 def is_open_chain(chain: Dict[str, Any]) -> bool:

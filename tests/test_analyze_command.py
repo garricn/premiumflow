@@ -1,8 +1,6 @@
 """Tests for the analyze command module."""
 
-import json
 from decimal import Decimal
-from pathlib import Path
 
 import click
 import pytest

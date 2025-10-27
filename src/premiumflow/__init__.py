@@ -9,18 +9,18 @@ __author__ = "Garric Nahapetian"
 __email__ = "garricn@users.noreply.github.com"
 
 # Import main components for easy access
-from .core.models import Transaction, RollChain
+from .core.models import RollChain, Transaction
 from .core.parser import (
-    parse_csv_file,
-    is_options_transaction,
-    is_call_option,
-    is_put_option,
     format_position_spec,
+    is_call_option,
+    is_options_transaction,
+    is_put_option,
+    parse_csv_file,
     parse_lookup_input,
 )
-from .services.chain_builder import detect_roll_chains
-from .services.analyzer import calculate_pnl, calculate_breakeven
 from .formatters.output import format_roll_chain_summary
+from .services.analyzer import calculate_breakeven, calculate_pnl
+from .services.chain_builder import detect_roll_chains
 
 
 # Legacy function compatibility - need to implement find_chain_by_position

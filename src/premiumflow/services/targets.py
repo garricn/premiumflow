@@ -1,6 +1,6 @@
 """Target price calculation utilities."""
 
-from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Iterable, List, Optional, Sequence
 
 
