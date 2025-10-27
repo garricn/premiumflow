@@ -16,10 +16,18 @@ jobs:
         uses: astral-sh/setup-uv@v7
         with:
           python-version: '3.11'
+      - name: Install shfmt
+        run: |
+          curl -sSLo /tmp/shfmt https://github.com/mvdan/sh/releases/download/v3.12.0/shfmt_v3.12.0_linux_amd64
+          mkdir -p "$HOME/.local/bin"
+          install -m 755 /tmp/shfmt "$HOME/.local/bin/shfmt"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Sync dependencies
         run: uv sync --extra dev --locked
       - name: Check Markdown formatting
         run: uv run mdformat --check README.md
+      - name: Check shell formatting
+        run: shfmt -d scripts
       - name: Check formatting
         run: uv run black --check src tests
       - name: Lint with Ruff
