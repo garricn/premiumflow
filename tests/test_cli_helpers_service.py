@@ -3,7 +3,7 @@
 import unittest
 from decimal import Decimal
 
-from src.premiumflow.services.cli_helpers import (
+from premiumflow.services.cli_helpers import (
     create_target_label,
     filter_open_chains,
     format_expiration_date,

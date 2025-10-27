@@ -5,7 +5,7 @@ This module handles formatting and displaying analysis results.
 """
 
 from decimal import Decimal
-from typing import List
+from typing import List, Optional
 
 from rich.console import Console
 from rich.panel import Panel
@@ -82,7 +82,7 @@ def create_roll_chain_table(chains: List[RollChain]) -> Table:
     return table
 
 
-def display_roll_chains(chains: List[RollChain], console: Console = None):
+def display_roll_chains(chains: List[RollChain], console: Optional[Console] = None) -> None:
     """Display roll chains using Rich formatting."""
     if console is None:
         console = Console()

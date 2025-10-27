@@ -12,17 +12,23 @@ from ..core.models import RollChain, Transaction
 
 def calculate_credits(transactions: List[Transaction]) -> Decimal:
     """Calculate total credits from sell transactions."""
-    return sum(t.price * abs(t.quantity) for t in transactions if t.action == "SELL")
+    return sum(
+        (t.price * abs(t.quantity) for t in transactions if t.action == "SELL"),
+        Decimal("0"),
+    )
 
 
 def calculate_debits(transactions: List[Transaction]) -> Decimal:
     """Calculate total debits from buy transactions."""
-    return sum(t.price * abs(t.quantity) for t in transactions if t.action == "BUY")
+    return sum(
+        (t.price * abs(t.quantity) for t in transactions if t.action == "BUY"),
+        Decimal("0"),
+    )
 
 
 def calculate_fees(transactions: List[Transaction]) -> Decimal:
     """Calculate total fees across all transactions."""
-    return sum(t.total_fees for t in transactions)
+    return sum((t.total_fees for t in transactions), Decimal("0"))
 
 
 def calculate_pnl(transactions: List[Transaction]) -> Decimal:

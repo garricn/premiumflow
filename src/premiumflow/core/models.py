@@ -80,12 +80,18 @@ class RollChain(BaseModel):
     @property
     def total_credits(self) -> Decimal:
         """Total credits received."""
-        return sum(t.price * abs(t.quantity) for t in self.transactions if t.action == "SELL")
+        return sum(
+            (t.price * abs(t.quantity) for t in self.transactions if t.action == "SELL"),
+            Decimal("0"),
+        )
 
     @property
     def total_debits(self) -> Decimal:
         """Total debits paid."""
-        return sum(t.price * abs(t.quantity) for t in self.transactions if t.action == "BUY")
+        return sum(
+            (t.price * abs(t.quantity) for t in self.transactions if t.action == "BUY"),
+            Decimal("0"),
+        )
 
     @property
     def net_pnl(self) -> Decimal:
@@ -95,7 +101,7 @@ class RollChain(BaseModel):
     @property
     def total_fees(self) -> Decimal:
         """Total fees across all transactions."""
-        return sum(t.total_fees for t in self.transactions)
+        return sum((t.total_fees for t in self.transactions), Decimal("0"))
 
     @property
     def net_pnl_after_fees(self) -> Decimal:

@@ -225,7 +225,7 @@ def deduplicate_transactions(transactions: List[Dict[str, str]]) -> List[Dict[st
 
 def group_by_ticker(transactions: List[Dict[str, str]]) -> Dict[str, List[Dict[str, str]]]:
     """Group transactions by ticker symbol."""
-    grouped = {}
+    grouped: Dict[str, List[Dict[str, str]]] = {}
     for txn in transactions:
         ticker = txn.get("Instrument", "").strip()
         if ticker not in grouped:
@@ -236,7 +236,7 @@ def group_by_ticker(transactions: List[Dict[str, str]]) -> Dict[str, List[Dict[s
 
 def get_txn_by_desc_date(
     txns: List[Dict[str, str]], desc: str, date: str, trans_code: str
-) -> Dict[str, str]:
+) -> Optional[Dict[str, str]]:
     """Find transaction by description, date, and transaction code."""
     for txn in txns:
         if (
@@ -251,7 +251,7 @@ def get_txn_by_desc_date(
 def _expand_chain_with_related_transactions(
     chain_txns: List[Dict[str, str]],
     all_txns: List[Dict[str, str]],
-    used_txns: set,
+    used_txns: Set[int],
 ) -> None:
     """Attach additional partial fills that belong to the positions in the chain."""
     if not chain_txns:
@@ -461,7 +461,7 @@ def detect_roll_chains(transactions: List[Dict[str, str]]) -> List[Dict[str, Any
     # For each ticker, build roll chains
     for _ticker, txns in by_ticker.items():
         # Track which transactions are part of chains
-        used_txns = set()
+        used_txns: Set[int] = set()
 
         # Start with each opening position (STO/BTO)
         for _, open_txn in enumerate(txns):
