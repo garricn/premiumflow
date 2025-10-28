@@ -241,6 +241,15 @@ def _normalize_row(
 ) -> Optional[NormalizedOptionTransaction]:
     """Normalize a CSV row; returns None for non-option transactions."""
 
+    trans_code_raw = row.get("Trans Code")
+    if trans_code_raw is None:
+        raise ImportValidationError('Missing required column "Trans Code".')
+    trans_code = trans_code_raw.strip().upper()
+    if not trans_code:
+        raise ImportValidationError('Column "Trans Code" cannot be blank.')
+    if trans_code not in ALLOWED_OPTION_CODES:
+        return None
+
     activity_date = _parse_date_field(row, "Activity Date", row_number)
     process_date = _parse_optional_date_field(row, "Process Date", row_number)
     settle_date = _parse_optional_date_field(row, "Settle Date", row_number)
@@ -252,11 +261,6 @@ def _normalize_row(
         raise ImportValidationError('Column "Price" cannot be blank.')
     price = price_value
     amount = _parse_money(row, "Amount", row_number, allow_negative=True, required=False)
-    trans_code = _require_field(row, "Trans Code", row_number).upper()
-
-    # Skip non-option transactions after basic validation.
-    if trans_code not in ALLOWED_OPTION_CODES:
-        return None
 
     option_type, strike, expiration = _parse_option_details(description, row_number)
     action = "SELL" if trans_code in {"STO", "STC"} else "BUY"

@@ -64,6 +64,19 @@ def test_load_option_transactions_skips_non_option_rows(tmp_path):
     assert results == []
 
 
+def test_load_option_transactions_skips_incomplete_non_option_rows(tmp_path):
+    csv_content = (
+        "Activity Date,Process Date,Settle Date,Instrument,Description,Trans Code,Quantity,Price,Amount\n"
+        ",,,,,Buy,,,\n"
+    )
+    csv_path = tmp_path / "incomplete.csv"
+    csv_path.write_text(csv_content, encoding="utf-8")
+
+    results = load_option_transactions(csv_path, regulatory_fee=Decimal("0.04"))
+
+    assert results == []
+
+
 @pytest.mark.parametrize(
     "field,value,error",
     [
