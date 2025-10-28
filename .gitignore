@@ -165,4 +165,4 @@ Desktop.ini
 logs/
 
 # MCP Configuration (contains tokens)
-**/mcp.json
+*mcp.json
