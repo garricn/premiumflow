@@ -8,7 +8,7 @@ on:
       - refactor/*
 
 jobs:
-  tests:
+  format:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -54,15 +54,45 @@ jobs:
       - name: Shell formatting
         id: shell
         run: shfmt -d scripts
-      - name: Type check (mypy)
-        id: mypy
-        run: uv run mypy --config-file mypy.ini src/premiumflow tests
       - name: Python formatting (black)
         id: black
         run: uv run black --check src tests
+  type-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: '3.11'
+      - name: Sync dependencies
+        run: uv sync --extra dev --locked
+      - name: Type check (mypy)
+        id: mypy
+        run: uv run mypy --config-file mypy.ini src/premiumflow tests
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: '3.11'
+      - name: Sync dependencies
+        run: uv sync --extra dev --locked
       - name: Lint (ruff)
         id: ruff
         run: uv run ruff check src tests
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: '3.11'
+      - name: Sync dependencies
+        run: uv sync --extra dev --locked
       - name: Tests (pytest)
         id: pytest
         run: uv run pytest
