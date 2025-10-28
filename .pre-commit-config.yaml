@@ -1,0 +1,46 @@
+repos:
+  - repo: local
+    hooks:
+      - id: black
+        name: black (uv)
+        entry: uv run black --check --diff
+        language: system
+        types: [python]
+      - id: ruff
+        name: ruff (uv)
+        entry: uv run ruff check
+        language: system
+        types: [python]
+      - id: mypy
+        name: mypy (uv)
+        entry: uv run mypy --config-file mypy.ini src/premiumflow tests
+        language: system
+        pass_filenames: false
+      - id: mdformat
+        name: mdformat (uv)
+        entry: uv run mdformat
+        language: system
+        types: [markdown]
+      - id: shfmt
+        name: shfmt
+        entry: shfmt -d
+        language: system
+        types: [shell]
+      - id: yamlfmt
+        name: yamlfmt
+        entry: yamlfmt -conf .yamlfmt.yml -lint
+        language: system
+        files: ^\.github/workflows/.*\.ya?ml$
+        pass_filenames: false
+      - id: taplo
+        name: taplo fmt
+        entry: taplo fmt --config .taplo.toml --check pyproject.toml
+        language: system
+        files: ^pyproject\.toml$
+        pass_filenames: false
+      - id: pytest
+        name: pytest (uv)
+        entry: uv run pytest
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
