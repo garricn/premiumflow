@@ -3,24 +3,28 @@
 ## When User Says "Address Code Review Comment"
 
 1. **Run the feedback checker:**
+
    ```bash
    ./scripts/check-pr-feedback.sh {PR_NUMBER}
    ```
 
-2. **Or manually check:**
+1. **Or manually check:**
+
    ```bash
    gh api repos/garricn/premiumflow/pulls/{PR}/reviews
    gh api repos/garricn/premiumflow/pulls/{PR}/reviews/{REVIEW_ID}/comments
    ```
 
-3. **Look for priority badges:**
+1. **Look for priority badges:**
+
    - P1 = Critical (must fix)
    - P2 = Important (should fix)
    - P3 = Minor (nice to fix)
 
-4. **Parse the actual feedback** from comment bodies, not just review summaries
+1. **Parse the actual feedback** from comment bodies, not just review summaries
 
 ## Common Commands
+
 ```bash
 # Check specific PR
 gh pr view {PR} --json reviews,comments
@@ -38,6 +42,7 @@ done
 ```
 
 ## Project-Specific Notes
+
 - This is a financial options trading tool
 - Use Decimal for all financial calculations
 - Preserve fallback logic when refactoring

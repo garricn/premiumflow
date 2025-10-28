@@ -56,6 +56,13 @@ gh api repos/garricn/premiumflow/pulls/{PR}/reviews/{REVIEW_ID}/comments
 - Run `uv run black src tests`, `uv run ruff check src tests --fix`, `uv run mdformat README.md`, `shfmt -w scripts`, `yamlfmt -conf .yamlfmt.yml .github/workflows`, `taplo fmt --config .taplo.toml pyproject.toml`, and `uv run mypy --config-file mypy.ini src/premiumflow tests` before sending a PR; CI enforces the same formatting checks.
 - Other file types have their own formatter issues tracked separately.
 
+### Pre-commit Hooks
+
+- Install hooks after syncing dependencies: `uv run pre-commit install --hook-type pre-commit --hook-type pre-push`.
+- Run `uv run pre-commit run --all-files` to warm caches and verify the checkout before pushing.
+- Hooks call `black`, `ruff`, `mypy`, and `mdformat` via `uv`, plus locally installed `shfmt`, `yamlfmt`, and `taplo` binaries (see commands above for installation).
+- A pre-push hook runs `uv run pytest` so CI failures are caught early.
+
 ### Financial Calculations
 
 - Use `Decimal` for all financial calculations
