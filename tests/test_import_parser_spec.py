@@ -7,7 +7,6 @@ import pytest
 
 from premiumflow.core.parser import ImportValidationError, load_option_transactions
 
-
 FIXTURE_DIR = Path(__file__).parent / "fixtures"
 
 
