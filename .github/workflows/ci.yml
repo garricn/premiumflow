@@ -42,19 +42,27 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Sync dependencies
         run: uv sync --extra dev --locked
-      - name: Check Markdown formatting
+      - name: Markdown formatting
+        id: markdown
         run: uv run mdformat --check README.md
-      - name: Check YAML formatting
+      - name: YAML formatting
+        id: yaml
         run: yamlfmt -conf .yamlfmt.yml -lint .github/workflows
-      - name: Check TOML formatting
+      - name: TOML formatting
+        id: toml
         run: taplo fmt --config .taplo.toml --check pyproject.toml
-      - name: Check shell formatting
+      - name: Shell formatting
+        id: shell
         run: shfmt -d scripts
-      - name: Type check
+      - name: Type check (mypy)
+        id: mypy
         run: uv run mypy --config-file mypy.ini src/premiumflow tests
-      - name: Check formatting
+      - name: Python formatting (black)
+        id: black
         run: uv run black --check src tests
-      - name: Lint with Ruff
+      - name: Lint (ruff)
+        id: ruff
         run: uv run ruff check src tests
-      - name: Run tests
+      - name: Tests (pytest)
+        id: pytest
         run: uv run pytest
