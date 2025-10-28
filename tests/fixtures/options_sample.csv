@@ -1,0 +1,4 @@
+Activity Date,Process Date,Settle Date,Instrument,Description,Trans Code,Quantity,Price,Amount
+10/7/2025,10/7/2025,10/8/2025,XYZ,XYZ 10/25/2025 Call $200.00,STO,2,$1.20,$240.00
+10/6/2025,10/6/2025,10/7/2025,XYZ,XYZ 10/25/2025 Call $200.00,BTC,1,$0.80,($80.00)
+10/5/2025,10/5/2025,10/6/2025,XYZ,XYZ 10/25/2025 Call $180.00,BTO,1,$1.10,$110.00
