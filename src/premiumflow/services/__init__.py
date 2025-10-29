@@ -1,6 +1,7 @@
 """Services for roll chain analysis."""
 
 from .analyzer import calculate_breakeven, calculate_pnl
+from .cash_flows import CashFlowRow, CashFlowSummary, CashFlowTotals, summarize_cash_flows
 from .chain_builder import detect_roll_chains
 from .cli_helpers import (
     create_target_label,
@@ -55,4 +56,8 @@ __all__ = [
     "filter_open_chains",
     "format_expiration_date",
     "create_target_label",
+    "summarize_cash_flows",
+    "CashFlowSummary",
+    "CashFlowTotals",
+    "CashFlowRow",
 ]
