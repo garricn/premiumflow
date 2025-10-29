@@ -45,6 +45,16 @@ class NormalizedOptionTransaction:
         return self.instrument
 
 
+@dataclass
+class ParsedImportResult:
+    """Container for normalized import data and account metadata."""
+
+    account_name: str
+    account_number: Optional[str]
+    regulatory_fee: Decimal
+    transactions: List[NormalizedOptionTransaction]
+
+
 def parse_date(date_str: str) -> datetime:
     """Parse date string in M/D/YYYY format."""
     return datetime.strptime(date_str, "%m/%d/%Y")
@@ -205,8 +215,12 @@ def parse_lookup_input(lookup_input: str) -> tuple:
 
 
 def load_option_transactions(
-    csv_file: str, *, regulatory_fee: Decimal
-) -> List[NormalizedOptionTransaction]:
+    csv_file: str,
+    *,
+    account_name: str,
+    account_number: Optional[str] = None,
+    regulatory_fee: Decimal,
+) -> ParsedImportResult:
     """
     Validate and normalize option transactions from a CSV file.
 
@@ -214,6 +228,9 @@ def load_option_transactions(
     """
 
     normalized: List[NormalizedOptionTransaction] = []
+    normalized_account_name, normalized_account_number = _validate_account_metadata(
+        account_name, account_number
+    )
     reg_fee = _coerce_regulatory_fee(regulatory_fee)
 
     with open(csv_file, "r", encoding="utf-8") as handle:
@@ -233,7 +250,12 @@ def load_option_transactions(
             if normalized_row is not None:
                 normalized.append(normalized_row)
 
-    return normalized
+    return ParsedImportResult(
+        account_name=normalized_account_name,
+        account_number=normalized_account_number,
+        regulatory_fee=reg_fee,
+        transactions=normalized,
+    )
 
 
 def _normalize_row(
@@ -241,14 +263,7 @@ def _normalize_row(
 ) -> Optional[NormalizedOptionTransaction]:
     """Normalize a CSV row; returns None for non-option transactions."""
 
-    trans_code_raw = row.get("Trans Code")
-    if trans_code_raw is None:
-        raise ImportValidationError('Missing required column "Trans Code".')
-    trans_code = trans_code_raw.strip().upper()
-    if not trans_code:
-        raise ImportValidationError('Column "Trans Code" cannot be blank.')
-    if trans_code not in ALLOWED_OPTION_CODES:
-        return None
+    trans_code = _parse_trans_code(row, row_number)
 
     activity_date = _parse_date_field(row, "Activity Date", row_number)
     process_date = _parse_optional_date_field(row, "Process Date", row_number)
@@ -262,12 +277,16 @@ def _normalize_row(
     price = price_value
     amount = _parse_money(row, "Amount", row_number, allow_negative=True, required=False)
 
+    commission = _parse_money(row, "Commission", row_number, allow_negative=False, required=False)
+
+    if trans_code not in ALLOWED_OPTION_CODES:
+        return None
+
     option_type, strike, expiration = _parse_option_details(description, row_number)
     action = "SELL" if trans_code in {"STO", "STC"} else "BUY"
 
-    commission = _parse_money(row, "Commission", row_number, allow_negative=True, required=False)
     if commission is not None:
-        fees = abs(commission)
+        fees = commission
     else:
         fees = regulatory_fee * abs(quantity)
 
@@ -288,6 +307,35 @@ def _normalize_row(
         fees=fees,
         raw=dict(row),
     )
+
+
+def _parse_trans_code(row: Dict[str, str], row_number: int) -> str:
+    trans_code_raw = row.get("Trans Code")
+    if trans_code_raw is None:
+        raise ImportValidationError('Missing required column "Trans Code".')
+    trans_code = trans_code_raw.strip().upper()
+    if not trans_code:
+        raise ImportValidationError('Column "Trans Code" cannot be blank.')
+    return trans_code
+
+
+def _validate_account_metadata(
+    account_name: str, account_number: Optional[str]
+) -> tuple[str, Optional[str]]:
+    if account_name is None:
+        raise ImportValidationError("--account-name is required.")
+    normalized_name = account_name.strip()
+    if not normalized_name:
+        raise ImportValidationError("--account-name is required.")
+
+    if account_number is None:
+        return normalized_name, None
+
+    normalized_number = account_number.strip()
+    if not normalized_number:
+        raise ImportValidationError("--account-number cannot be blank.")
+
+    return normalized_name, normalized_number
 
 
 def _coerce_regulatory_fee(value: Decimal) -> Decimal:

@@ -13,12 +13,20 @@ FIXTURE_DIR = Path(__file__).parent / "fixtures"
 def test_load_option_transactions_parses_fixture():
     csv_path = FIXTURE_DIR / "options_sample.csv"
 
-    results = load_option_transactions(csv_path, regulatory_fee=Decimal("0.04"))
+    result = load_option_transactions(
+        csv_path,
+        account_name="Robinhood IRA",
+        account_number=" RH-12345 ",
+        regulatory_fee=Decimal("0.04"),
+    )
 
-    assert len(results) == 3
+    assert result.account_name == "Robinhood IRA"
+    assert result.account_number == "RH-12345"
+    assert result.regulatory_fee == Decimal("0.04")
+    assert len(result.transactions) == 3
 
     # First row is the STO entry (SELL).
-    first = results[0]
+    first = result.transactions[0]
     assert first.activity_date.isoformat() == "2025-10-07"
     assert first.process_date.isoformat() == "2025-10-07"
     assert first.settle_date.isoformat() == "2025-10-08"
@@ -31,7 +39,7 @@ def test_load_option_transactions_parses_fixture():
     assert first.fees == Decimal("0.08")
 
     # Second row ensures BUY/STC branches.
-    second = results[1]
+    second = result.transactions[1]
     assert second.trans_code == "BTC"
     assert second.action == "BUY"
     assert second.fees == Decimal("0.04")
@@ -39,15 +47,36 @@ def test_load_option_transactions_parses_fixture():
 
 def test_load_option_transactions_uses_commission_override(tmp_path):
     csv_content = """Activity Date,Process Date,Settle Date,Instrument,Description,Trans Code,Quantity,Price,Amount,Commission
-10/7/2025,10/7/2025,10/8/2025,TSLA,TSLA 10/25/2025 Call $200.00,STO,2,$1.25,$250.00,($1.50)
+10/7/2025,10/7/2025,10/8/2025,TSLA,TSLA 10/25/2025 Call $200.00,STO,2,$1.25,$250.00,1.50
 """
     csv_path = tmp_path / "commission.csv"
     csv_path.write_text(csv_content, encoding="utf-8")
 
-    results = load_option_transactions(csv_path, regulatory_fee=Decimal("0.04"))
+    result = load_option_transactions(
+        csv_path,
+        account_name="Test Account",
+        regulatory_fee=Decimal("0.04"),
+    )
 
-    assert len(results) == 1
-    assert results[0].fees == Decimal("1.50")
+    assert len(result.transactions) == 1
+    assert result.transactions[0].fees == Decimal("1.50")
+
+
+def test_load_option_transactions_rejects_negative_commission(tmp_path):
+    csv_content = """Activity Date,Process Date,Settle Date,Instrument,Description,Trans Code,Quantity,Price,Amount,Commission
+10/7/2025,10/7/2025,10/8/2025,TSLA,TSLA 10/25/2025 Call $200.00,STO,2,$1.25,$250.00,($1.50)
+"""
+    csv_path = tmp_path / "negative_commission.csv"
+    csv_path.write_text(csv_content, encoding="utf-8")
+
+    with pytest.raises(ImportValidationError) as excinfo:
+        load_option_transactions(
+            csv_path,
+            account_name="Test Account",
+            regulatory_fee=Decimal("0.04"),
+        )
+
+    assert 'Row 2: Column "Commission" must be non-negative.' == str(excinfo.value)
 
 
 def test_load_option_transactions_skips_non_option_rows(tmp_path):
@@ -59,9 +88,13 @@ def test_load_option_transactions_skips_non_option_rows(tmp_path):
     csv_path = tmp_path / "equity.csv"
     csv_path.write_text(csv_content, encoding="utf-8")
 
-    results = load_option_transactions(csv_path, regulatory_fee=Decimal("0.04"))
+    result = load_option_transactions(
+        csv_path,
+        account_name="Test Account",
+        regulatory_fee=Decimal("0.04"),
+    )
 
-    assert results == []
+    assert result.transactions == []
 
 
 def test_load_option_transactions_skips_incomplete_non_option_rows(tmp_path):
@@ -72,9 +105,14 @@ def test_load_option_transactions_skips_incomplete_non_option_rows(tmp_path):
     csv_path = tmp_path / "incomplete.csv"
     csv_path.write_text(csv_content, encoding="utf-8")
 
-    results = load_option_transactions(csv_path, regulatory_fee=Decimal("0.04"))
+    with pytest.raises(ImportValidationError) as excinfo:
+        load_option_transactions(
+            csv_path,
+            account_name="Test Account",
+            regulatory_fee=Decimal("0.04"),
+        )
 
-    assert results == []
+    assert 'Row 2: Column "Activity Date" cannot be blank.' == str(excinfo.value)
 
 
 @pytest.mark.parametrize(
@@ -104,7 +142,11 @@ def test_load_option_transactions_reports_first_validation_error(tmp_path, field
     csv_path.write_text(f"{headers}\n{row_values}\n", encoding="utf-8")
 
     with pytest.raises(ImportValidationError) as excinfo:
-        load_option_transactions(csv_path, regulatory_fee=Decimal("0.04"))
+        load_option_transactions(
+            csv_path,
+            account_name="Test Account",
+            regulatory_fee=Decimal("0.04"),
+        )
 
     assert "Row 2" in str(excinfo.value)
     assert error in str(excinfo.value)
@@ -118,7 +160,42 @@ def test_load_option_transactions_requires_option_details(tmp_path):
     csv_path.write_text(csv_content, encoding="utf-8")
 
     with pytest.raises(ImportValidationError) as excinfo:
-        load_option_transactions(csv_path, regulatory_fee=Decimal("0.04"))
+        load_option_transactions(
+            csv_path,
+            account_name="Test Account",
+            regulatory_fee=Decimal("0.04"),
+        )
 
     assert "Row 2" in str(excinfo.value)
     assert "Description must include 'Call' or 'Put'" in str(excinfo.value)
+
+
+def test_load_option_transactions_requires_account_name(tmp_path):
+    csv_content = """Activity Date,Process Date,Settle Date,Instrument,Description,Trans Code,Quantity,Price,Amount
+10/7/2025,10/7/2025,10/8/2025,TSLA,TSLA 10/25/2025 Call $200.00,STO,1,$1.25,$125.00
+"""
+    csv_path = tmp_path / "account.csv"
+    csv_path.write_text(csv_content, encoding="utf-8")
+
+    with pytest.raises(ImportValidationError) as excinfo:
+        load_option_transactions(csv_path, account_name=" ", regulatory_fee=Decimal("0.04"))
+
+    assert str(excinfo.value) == "--account-name is required."
+
+
+def test_load_option_transactions_rejects_blank_account_number(tmp_path):
+    csv_content = """Activity Date,Process Date,Settle Date,Instrument,Description,Trans Code,Quantity,Price,Amount
+10/7/2025,10/7/2025,10/8/2025,TSLA,TSLA 10/25/2025 Call $200.00,STO,1,$1.25,$125.00
+"""
+    csv_path = tmp_path / "account_blank_number.csv"
+    csv_path.write_text(csv_content, encoding="utf-8")
+
+    with pytest.raises(ImportValidationError) as excinfo:
+        load_option_transactions(
+            csv_path,
+            account_name="Test Account",
+            account_number="   ",
+            regulatory_fee=Decimal("0.04"),
+        )
+
+    assert str(excinfo.value) == "--account-number cannot be blank."
