@@ -15,6 +15,9 @@ from typing import List, Optional
 
 from ..core.parser import NormalizedOptionTransaction, ParsedImportResult
 
+CONTRACT_MULTIPLIER = Decimal("100")
+ZERO = Decimal("0")
+
 
 @dataclass(frozen=True)
 class CashFlowTotals:
@@ -76,19 +79,19 @@ def summarize_cash_flows(parsed: ParsedImportResult) -> CashFlowSummary:
         totals suitable for CLI and JSON output.
     """
 
-    running_credits = Decimal("0")
-    running_debits = Decimal("0")
-    running_fees = Decimal("0")
+    running_credits = ZERO
+    running_debits = ZERO
+    running_fees = ZERO
 
     rows: List[CashFlowRow] = []
 
     for txn in parsed.transactions:
-        notional = txn.price * txn.quantity
+        notional = _calculate_cash_value(txn)
         if txn.action == "SELL":
             credit = notional
-            debit = Decimal("0")
+            debit = ZERO
         else:
-            credit = Decimal("0")
+            credit = ZERO
             debit = notional
 
         running_credits += credit
@@ -112,12 +115,13 @@ def summarize_cash_flows(parsed: ParsedImportResult) -> CashFlowSummary:
             )
         )
 
+    net_premium = running_credits - running_debits
     totals = CashFlowTotals(
         credits=running_credits,
         debits=running_debits,
         fees=running_fees,
-        net_premium=running_credits - running_debits,
-        net_pnl=(running_credits - running_debits) - running_fees,
+        net_premium=net_premium,
+        net_pnl=net_premium - running_fees,
     )
 
     return CashFlowSummary(
@@ -127,3 +131,18 @@ def summarize_cash_flows(parsed: ParsedImportResult) -> CashFlowSummary:
         rows=rows,
         totals=totals,
     )
+
+
+def _calculate_cash_value(txn: NormalizedOptionTransaction) -> Decimal:
+    """
+    Determine the gross cash value of a transaction.
+
+    Prefer broker-supplied ``Amount`` values when available since they already
+    include the contract multiplier and reflect the actual cash movement. When
+    ``Amount`` is missing (e.g., synthetic fixtures), fall back to
+    ``price * quantity * 100`` to approximate the same behaviour.
+    """
+
+    if txn.amount is not None:
+        return abs(txn.amount)
+    return txn.price * Decimal(txn.quantity) * CONTRACT_MULTIPLIER
