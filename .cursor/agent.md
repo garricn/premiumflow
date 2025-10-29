@@ -2,7 +2,8 @@
 
 ## Identity & Signature
 
-- Sign all PR reviews, issue comments, and automated PR/thread notes with: "— Cursor Agent".
+- Scope: Sign PR reviews, issue comments, and automated PR/thread notes. Do not include the signature in PR or issue titles.
+- Sign with: "— Cursor Agent".
 - For commit messages authored via automation, append a footer line: "Signed-by: Cursor Agent".
 - Example PR review closing line: "Looks good to merge — Cursor Agent".
 
@@ -34,37 +35,20 @@ When asked to "address code review comment" or similar:
 - **Repository**: `garricn/premiumflow` (not `garric/premiumflow`)
 - **Owner**: `garricn` (correct GitHub username)
 
-## GitHub Projects Management
+### Quick commands (cheat sheet)
 
-- **Adding issues to projects**: Issues don't automatically appear in projects just because they have labels
-- **Required steps**:
-  1. Create appropriate labels: `gh label create "label-name" --description "Description" --color "color"`
-  1. Add labels to issues: `gh issue edit {ISSUE_NUMBER} --add-label "label-name"`
-  1. **CRITICAL**: Explicitly add issues to project: `gh project item-add {PROJECT_NUMBER} --owner garricn --url https://github.com/garricn/premiumflow/issues/{ISSUE_NUMBER}`
-  1. Add PRs to project: `gh project item-add {PROJECT_NUMBER} --owner garricn --url https://github.com/garricn/premiumflow/pull/{PR_NUMBER}`
-- **List project items**: `gh project item-list {PROJECT_NUMBER} --owner garricn`
-- **List projects**: `gh project list`
-- **Project ID for RollChain Refactoring**: 2 (use `gh project list` to verify)
+```bash
+# Check specific PR
+gh pr view {PR} --json reviews,comments
 
-## Project Context
+# Get all reviews
+gh api repos/garricn/premiumflow/pulls/{PR}/reviews
 
-- This is a Python financial options trading analysis tool
-- Focus on precision with Decimal arithmetic
-- Maintain backward compatibility when refactoring
-- Test coverage is critical for financial calculations
+# Get review comments
+gh api repos/garricn/premiumflow/pulls/{PR}/reviews/{REVIEW_ID}/comments
 
-## Service Extraction Guidelines
-
-- Each service should be self-contained when possible
-- Branch from `main` for each new service
-- Include comprehensive unit tests
-- Export functions in `services/__init__.py`
-- Address code review comments before merging
-
-## Common Issues to Watch For
-
-- P1: Critical functionality changes that could break existing behavior
-- P2: Important improvements or optimizations
-- P3: Minor suggestions or style improvements
-- Always preserve fallback logic when refactoring
-- Test edge cases thoroughly for financial calculations
+# Scan for priority markers
+gh api repos/garricn/premiumflow/pulls/{PR}/reviews --jq '.[].id' | while read review_id; do
+  gh api repos/garricn/premiumflow/pulls/{PR}/reviews/$review_id/comments --jq '.[] | select(.body | contains("P1") or contains("P2") or contains("P3"))'
+done
+```
