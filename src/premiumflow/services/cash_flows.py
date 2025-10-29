@@ -86,13 +86,13 @@ def summarize_cash_flows(parsed: ParsedImportResult) -> CashFlowSummary:
     rows: List[CashFlowRow] = []
 
     for txn in parsed.transactions:
-        notional = _calculate_cash_value(txn)
-        if txn.action == "SELL":
-            credit = notional
+        cash_value = _calculate_cash_value(txn)
+        if cash_value >= ZERO:
+            credit = cash_value
             debit = ZERO
         else:
             credit = ZERO
-            debit = notional
+            debit = -cash_value
 
         running_credits += credit
         running_debits += debit
@@ -144,5 +144,7 @@ def _calculate_cash_value(txn: NormalizedOptionTransaction) -> Decimal:
     """
 
     if txn.amount is not None:
-        return abs(txn.amount)
-    return txn.price * Decimal(txn.quantity) * CONTRACT_MULTIPLIER
+        return txn.amount
+
+    base_value = txn.price * Decimal(txn.quantity) * CONTRACT_MULTIPLIER
+    return base_value if txn.action == "SELL" else -base_value

@@ -100,7 +100,7 @@ def test_summarize_cash_flows_basic_flow():
     assert second.running_net_pnl == Decimal("159.88")
 
 
-def test_summarize_cash_flows_handles_assignment_as_debit():
+def test_summarize_cash_flows_handles_assignment_debit():
     transactions = [
         _make_transaction(
             trans_code="STO",
@@ -146,3 +146,30 @@ def test_summarize_cash_flows_empty_input():
         net_pnl=Decimal("0"),
     )
     assert summary.rows == []
+
+
+def test_summarize_cash_flows_handles_assignment_credit():
+    transactions = [
+        _make_transaction(
+            trans_code="STO",
+            action="SELL",
+            quantity=1,
+            price="1.00",
+            fees="0.04",
+            amount="100",
+        ),
+        _make_transaction(
+            trans_code="OASGN",
+            action="BUY",
+            quantity=1,
+            price="0.50",
+            fees="0.04",
+            amount="150",
+        ),
+    ]
+    summary = summarize_cash_flows(_make_parsed_result(transactions))
+
+    assert summary.totals.credits == Decimal("250")
+    assert summary.totals.debits == Decimal("0")
+    assert summary.totals.net_premium == Decimal("250")
+    assert summary.totals.net_pnl == Decimal("249.92")
