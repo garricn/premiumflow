@@ -1,5 +1,11 @@
 # PremiumFlow Project Agent Guidelines
 
+## Identity & Signature
+
+- Sign all PR reviews, issue comments, and automated PR/thread notes with: "— Cursor Agent".
+- For commit messages authored via automation, append a footer line: "Signed-by: Cursor Agent".
+- Example PR review closing line: "Looks good to merge — Cursor Agent".
+
 ## Code Review Process
 
 When asked to "address code review comment" or similar:

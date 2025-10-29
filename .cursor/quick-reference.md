@@ -1,5 +1,12 @@
 # Quick Reference for Code Review Comments
 
+## Signature policy
+
+- Always sign public comments, PR reviews, and automated notes with "— Cursor Agent".
+- When relevant, add a short footer line, e.g.:
+  - "Reviewed and signed — Cursor Agent"
+  - "LGTM — Cursor Agent"
+
 ## When User Says "Address Code Review Comment"
 
 1. **Run the feedback checker:**
