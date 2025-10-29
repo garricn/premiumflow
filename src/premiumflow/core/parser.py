@@ -45,6 +45,16 @@ class NormalizedOptionTransaction:
         return self.instrument
 
 
+@dataclass
+class ParsedImportResult:
+    """Container for normalized import data and account metadata."""
+
+    account_name: str
+    account_number: Optional[str]
+    regulatory_fee: Decimal
+    transactions: List[NormalizedOptionTransaction]
+
+
 def parse_date(date_str: str) -> datetime:
     """Parse date string in M/D/YYYY format."""
     return datetime.strptime(date_str, "%m/%d/%Y")
@@ -205,15 +215,43 @@ def parse_lookup_input(lookup_input: str) -> tuple:
 
 
 def load_option_transactions(
-    csv_file: str, *, regulatory_fee: Decimal
-) -> List[NormalizedOptionTransaction]:
+    csv_file: str,
+    *,
+    account_name: str,
+    account_number: Optional[str] = None,
+    regulatory_fee: Decimal,
+) -> ParsedImportResult:
     """
     Validate and normalize option transactions from a CSV file.
 
-    Returns only rows whose transaction code is in ``ALLOWED_OPTION_CODES``.
+    Parameters
+    ----------
+    csv_file:
+        Path to the Robinhood-style CSV export.
+    account_name:
+        Required CLI-supplied account label; must contain non-whitespace characters.
+    account_number:
+        Optional account identifier. When provided, must contain non-whitespace characters.
+    regulatory_fee:
+        Default per-contract regulatory fee to use when Commission data is absent.
+
+    Returns
+    -------
+    ParsedImportResult
+        Aggregated account metadata, normalized regulatory fee, and the list of
+        normalized option rows (filtered to ``ALLOWED_OPTION_CODES``).
+
+    Raises
+    ------
+    ImportValidationError
+        When the CSV header is missing, account metadata is invalid, or a row
+        fails validation. Errors include 1-based row numbers.
     """
 
     normalized: List[NormalizedOptionTransaction] = []
+    normalized_account_name, normalized_account_number = _validate_account_metadata(
+        account_name, account_number
+    )
     reg_fee = _coerce_regulatory_fee(regulatory_fee)
 
     with open(csv_file, "r", encoding="utf-8") as handle:
@@ -233,7 +271,12 @@ def load_option_transactions(
             if normalized_row is not None:
                 normalized.append(normalized_row)
 
-    return normalized
+    return ParsedImportResult(
+        account_name=normalized_account_name,
+        account_number=normalized_account_number,
+        regulatory_fee=reg_fee,
+        transactions=normalized,
+    )
 
 
 def _normalize_row(
@@ -241,12 +284,7 @@ def _normalize_row(
 ) -> Optional[NormalizedOptionTransaction]:
     """Normalize a CSV row; returns None for non-option transactions."""
 
-    trans_code_raw = row.get("Trans Code")
-    if trans_code_raw is None:
-        raise ImportValidationError('Missing required column "Trans Code".')
-    trans_code = trans_code_raw.strip().upper()
-    if not trans_code:
-        raise ImportValidationError('Column "Trans Code" cannot be blank.')
+    trans_code = _parse_trans_code(row, row_number)
     if trans_code not in ALLOWED_OPTION_CODES:
         return None
 
@@ -262,12 +300,20 @@ def _normalize_row(
     price = price_value
     amount = _parse_money(row, "Amount", row_number, allow_negative=True, required=False)
 
+    commission = _parse_money(
+        row,
+        "Commission",
+        row_number,
+        allow_negative=False,
+        required=False,
+        allow_parenthesized_positive=True,
+    )
+
     option_type, strike, expiration = _parse_option_details(description, row_number)
     action = "SELL" if trans_code in {"STO", "STC"} else "BUY"
 
-    commission = _parse_money(row, "Commission", row_number, allow_negative=True, required=False)
     if commission is not None:
-        fees = abs(commission)
+        fees = commission
     else:
         fees = regulatory_fee * abs(quantity)
 
@@ -288,6 +334,35 @@ def _normalize_row(
         fees=fees,
         raw=dict(row),
     )
+
+
+def _parse_trans_code(row: Dict[str, str], row_number: int) -> str:
+    trans_code_raw = row.get("Trans Code")
+    if trans_code_raw is None:
+        raise ImportValidationError('Missing required column "Trans Code".')
+    trans_code = trans_code_raw.strip().upper()
+    if not trans_code:
+        raise ImportValidationError('Column "Trans Code" cannot be blank.')
+    return trans_code
+
+
+def _validate_account_metadata(
+    account_name: str, account_number: Optional[str]
+) -> tuple[str, Optional[str]]:
+    if account_name is None:
+        raise ImportValidationError("--account-name is required.")
+    normalized_name = account_name.strip()
+    if not normalized_name:
+        raise ImportValidationError("--account-name is required.")
+
+    if account_number is None:
+        return normalized_name, None
+
+    normalized_number = account_number.strip()
+    if not normalized_number:
+        raise ImportValidationError("--account-number cannot be blank.")
+
+    return normalized_name, normalized_number
 
 
 def _coerce_regulatory_fee(value: Decimal) -> Decimal:
@@ -357,6 +432,7 @@ def _parse_money(
     *,
     allow_negative: bool,
     required: bool = True,
+    allow_parenthesized_positive: bool = False,
 ) -> Optional[Decimal]:
     raw_value = row.get(field)
     if raw_value is None:
@@ -385,6 +461,8 @@ def _parse_money(
         value = -value
 
     if not allow_negative and value < 0:
+        if negative and allow_parenthesized_positive:
+            return abs(value)
         raise ImportValidationError(f'Column "{field}" must be non-negative.')
 
     return value
