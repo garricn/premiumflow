@@ -110,9 +110,9 @@ def test_load_option_transactions_rejects_parenthesized_price(tmp_path):
             regulatory_fee=Decimal("0.04"),
         )
 
-    assert 'Row 2: Invalid decimal in "Price"' in str(excinfo.value) or "must be non-negative" in str(
+    assert 'Row 2: Invalid decimal in "Price"' in str(
         excinfo.value
-    )
+    ) or "must be non-negative" in str(excinfo.value)
 
 
 def test_load_option_transactions_skips_non_option_rows(tmp_path):
