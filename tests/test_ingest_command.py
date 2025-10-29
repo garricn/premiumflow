@@ -1,11 +1,13 @@
 """Tests for the import command module."""
 
 import json
+from decimal import Decimal
 from pathlib import Path
 
 from click.testing import CliRunner
 
 from premiumflow.cli.ingest import import_transactions, ingest
+from premiumflow.core.parser import ImportValidationError, ParsedImportResult
 
 
 def _write_sample_csv(tmp_path: Path) -> Path:
@@ -30,12 +32,42 @@ def _write_open_positions_csv(tmp_path: Path) -> Path:
     return csv_path
 
 
+def _write_missing_price_csv(tmp_path: Path) -> Path:
+    csv_content = """Activity Date,Process Date,Settle Date,Instrument,Description,Trans Code,Quantity,Price,Amount
+9/1/2025,9/1/2025,9/3/2025,TSLA,TSLA 10/17/2025 Call $515.00,STO,1,,$300.00
+"""
+    csv_path = tmp_path / "missing_price.csv"
+    csv_path.write_text(csv_content, encoding="utf-8")
+    return csv_path
+
+
+def _write_assignment_without_price_csv(tmp_path: Path) -> Path:
+    csv_content = """Activity Date,Process Date,Settle Date,Instrument,Description,Trans Code,Quantity,Price,Amount
+9/5/2025,9/5/2025,9/8/2025,HOOD,HOOD 9/5/2025 Call $104.00,OASGN,1,,
+"""
+    csv_path = tmp_path / "assignment_missing_price.csv"
+    csv_path.write_text(csv_content, encoding="utf-8")
+    return csv_path
+
+
+def _write_non_option_row_csv(tmp_path: Path) -> Path:
+    csv_content = """Activity Date,Process Date,Settle Date,Instrument,Description,Trans Code,Quantity,Price,Amount
+9/22/2025,9/22/2025,9/23/2025,AMD,AMD CUSIP: 007903107,Sell,200,$161.66,$32,331.17
+"""
+    csv_path = tmp_path / "non_option.csv"
+    csv_path.write_text(csv_content, encoding="utf-8")
+    return csv_path
+
+
 def test_import_command_table_output(tmp_path):
     """Import command renders table output by default."""
     csv_path = _write_sample_csv(tmp_path)
     runner = CliRunner()
 
-    result = runner.invoke(import_transactions, ["--file", str(csv_path)])
+    result = runner.invoke(
+        import_transactions,
+        ["--file", str(csv_path), "--account-name", "Test Account"],
+    )
 
     assert result.exit_code == 0
     assert "Importing" in result.output
@@ -48,7 +80,10 @@ def test_import_command_json_output(tmp_path):
     csv_path = _write_sample_csv(tmp_path)
     runner = CliRunner()
 
-    result = runner.invoke(import_transactions, ["--file", str(csv_path), "--json-output"])
+    result = runner.invoke(
+        import_transactions,
+        ["--file", str(csv_path), "--account-name", "Test Account", "--json-output"],
+    )
 
     assert result.exit_code == 0
     payload = json.loads(result.output)
@@ -62,7 +97,10 @@ def test_import_command_filters_by_ticker(tmp_path):
     csv_path = _write_sample_csv(tmp_path)
     runner = CliRunner()
 
-    result = runner.invoke(import_transactions, ["--file", str(csv_path), "--ticker", "ZZZ"])
+    result = runner.invoke(
+        import_transactions,
+        ["--file", str(csv_path), "--account-name", "Test Account", "--ticker", "ZZZ"],
+    )
 
     assert result.exit_code == 0
     assert "No options transactions found for ticker ZZZ" in result.output
@@ -73,7 +111,10 @@ def test_import_command_open_only(tmp_path):
     csv_path = _write_open_positions_csv(tmp_path)
     runner = CliRunner()
 
-    result = runner.invoke(import_transactions, ["--file", str(csv_path), "--open-only"])
+    result = runner.invoke(
+        import_transactions,
+        ["--file", str(csv_path), "--account-name", "Test Account", "--open-only"],
+    )
 
     assert result.exit_code == 0
     assert "Open positions:" in result.output
@@ -84,7 +125,10 @@ def test_import_command_invalid_target_range(tmp_path):
     csv_path = _write_sample_csv(tmp_path)
     runner = CliRunner()
 
-    result = runner.invoke(import_transactions, ["--file", str(csv_path), "--target", "invalid"])
+    result = runner.invoke(
+        import_transactions,
+        ["--file", str(csv_path), "--account-name", "Test Account", "--target", "invalid"],
+    )
 
     assert result.exit_code != 0
     assert "Invalid target range format" in result.output
@@ -95,7 +139,167 @@ def test_ingest_alias_warns(tmp_path):
     csv_path = _write_sample_csv(tmp_path)
     runner = CliRunner()
 
-    result = runner.invoke(ingest, ["--file", str(csv_path)])
+    result = runner.invoke(
+        ingest,
+        ["--file", str(csv_path), "--account-name", "Test Account"],
+    )
 
     assert result.exit_code == 0
     assert "deprecated" in (result.stderr or "").lower()
+
+
+def test_import_command_requires_account_name(tmp_path):
+    """Missing account name should fail before parsing."""
+    csv_path = _write_sample_csv(tmp_path)
+    runner = CliRunner()
+
+    result = runner.invoke(import_transactions, ["--file", str(csv_path)])
+
+    assert result.exit_code != 0
+    assert "Missing option '--account-name'" in result.output
+
+
+def test_import_command_rejects_invalid_reg_fee(tmp_path):
+    """Invalid regulatory fee values should raise a Click error."""
+    csv_path = _write_sample_csv(tmp_path)
+    runner = CliRunner()
+
+    result = runner.invoke(
+        import_transactions,
+        ["--file", str(csv_path), "--account-name", "Test Account", "--regulatory-fee", "abc"],
+    )
+
+    assert result.exit_code != 0
+    assert "--regulatory-fee must be a decimal value." in result.output
+
+
+def test_import_command_surfaces_parser_errors(monkeypatch, tmp_path):
+    """Import validation failures should be reported to the CLI."""
+    csv_path = _write_sample_csv(tmp_path)
+    runner = CliRunner()
+
+    def _fake_loader(*args, **kwargs):
+        raise ImportValidationError("Account name required")
+
+    monkeypatch.setattr("premiumflow.cli.ingest.load_option_transactions", _fake_loader)
+
+    result = runner.invoke(
+        import_transactions,
+        ["--file", str(csv_path), "--account-name", "Test Account"],
+    )
+
+    assert result.exit_code != 0
+    assert "Account name required" in result.output
+
+
+def test_import_command_passes_account_metadata(monkeypatch, tmp_path):
+    """CLI should forward account metadata and fee overrides to the parser."""
+    csv_path = _write_sample_csv(tmp_path)
+    runner = CliRunner()
+    captured = {}
+
+    def _fake_loader(csv_file, *, account_name, account_number, regulatory_fee):
+        captured["csv_file"] = csv_file
+        captured["account_name"] = account_name
+        captured["account_number"] = account_number
+        captured["reg_fee"] = regulatory_fee
+        return ParsedImportResult(
+            account_name=account_name,
+            account_number=account_number,
+            regulatory_fee=regulatory_fee,
+            transactions=[],
+        )
+
+    monkeypatch.setattr("premiumflow.cli.ingest.load_option_transactions", _fake_loader)
+
+    result = runner.invoke(
+        import_transactions,
+        [
+            "--file",
+            str(csv_path),
+            "--account-name",
+            "Primary",
+            "--account-number",
+            "ACCT-123",
+            "--regulatory-fee",
+            "0.02",
+            "--json-output",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured["csv_file"] == str(csv_path)
+    assert captured["account_name"] == "Primary"
+    assert captured["account_number"] == "ACCT-123"
+    assert captured["reg_fee"] == Decimal("0.02")
+
+
+def test_import_command_infers_price_from_amount(tmp_path):
+    """Missing prices are derived from Amount values."""
+    csv_path = _write_missing_price_csv(tmp_path)
+    runner = CliRunner()
+
+    result = runner.invoke(
+        import_transactions,
+        [
+            "--file",
+            str(csv_path),
+            "--account-name",
+            "Test Account",
+            "--json-output",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    first_txn = payload["transactions"][0]
+    assert first_txn["price"] == "$3.00"
+
+
+def test_import_command_allows_assignment_with_blank_price(tmp_path):
+    """Assignments without price/amount default to zero price."""
+    csv_path = _write_assignment_without_price_csv(tmp_path)
+    runner = CliRunner()
+
+    result = runner.invoke(
+        import_transactions,
+        [
+            "--file",
+            str(csv_path),
+            "--account-name",
+            "Test Account",
+            "--json-output",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    first_txn = payload["transactions"][0]
+    assert first_txn["price"] == "$0.00"
+
+
+def test_import_skips_rows_without_option_trans_code(tmp_path):
+    """Non-option rows with blank or unexpected codes are ignored."""
+    csv_content = """Activity Date,Process Date,Settle Date,Instrument,Description,Trans Code,Quantity,Price,Amount
+9/1/2025,9/1/2025,9/3/2025,TSLA,TSLA 10/17/2025 Call $515.00,STO,1,$3.00,$300.00
+9/2/2025,9/2/2025,9/4/2025,AMD,AMD Common Stock,,100,$110.00,$11,000.00
+"""
+    csv_path = tmp_path / "mixed_rows.csv"
+    csv_path.write_text(csv_content, encoding="utf-8")
+
+    runner = CliRunner()
+    result = runner.invoke(
+        import_transactions,
+        [
+            "--file",
+            str(csv_path),
+            "--account-name",
+            "Test Account",
+            "--json-output",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert len(payload["transactions"]) == 1
+    assert payload["transactions"][0]["instrument"] == "TSLA"

@@ -80,7 +80,7 @@ def test_import_reports_missing_ticker(tmp_path):
 
     result = runner.invoke(
         premiumflow_cli,
-        ["import", "--ticker", "ZZZ", "--file", str(sample_csv)],
+        ["import", "--ticker", "ZZZ", "--file", str(sample_csv), "--account-name", "Test Account"],
     )
 
     assert result.exit_code == 0
@@ -305,7 +305,15 @@ def test_import_cli_open_only_message(tmp_path):
     runner = CliRunner()
     result = runner.invoke(
         premiumflow_cli,
-        ["import", "--options", "--open-only", "--file", str(csv_path)],
+        [
+            "import",
+            "--options",
+            "--open-only",
+            "--file",
+            str(csv_path),
+            "--account-name",
+            "Test Account",
+        ],
     )
 
     assert result.exit_code == 0
@@ -483,6 +491,8 @@ def test_import_json_output(tmp_path):
             str(sample_csv),
             "--ticker",
             "PLTR",
+            "--account-name",
+            "Test Account",
             "--json-output",
         ],
     )
@@ -504,7 +514,15 @@ def test_import_strategy_calls_only(tmp_path):
 
     result = runner.invoke(
         premiumflow_cli,
-        ["import", "--file", str(sample_csv), "--strategy", "calls"],
+        [
+            "import",
+            "--file",
+            str(sample_csv),
+            "--strategy",
+            "calls",
+            "--account-name",
+            "Test Account",
+        ],
     )
 
     assert result.exit_code == 0
@@ -518,7 +536,7 @@ def test_ingest_alias_emits_deprecation(tmp_path):
 
     result = runner.invoke(
         premiumflow_cli,
-        ["ingest", "--file", str(sample_csv)],
+        ["ingest", "--file", str(sample_csv), "--account-name", "Test Account"],
     )
 
     assert result.exit_code == 0
