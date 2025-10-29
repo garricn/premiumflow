@@ -261,7 +261,21 @@ def _run_import(
     display_rows = prepare_transactions_for_display(filtered_transactions, target_percents)
 
     if not filtered_transactions:
-        if emit_text:
+        if json_output:
+            chains_for_json = detect_roll_chains(chain_source_transactions)
+            payload = build_ingest_payload(
+                csv_file=csv_file,
+                transactions=filtered_transactions,
+                display_rows=display_rows,
+                chains=chains_for_json,
+                target_percents=target_percents,
+                options_only=options_only,
+                ticker=ticker_symbol,
+                strategy=strategy,
+                open_only=open_only,
+            )
+            console.print_json(data=payload)
+        elif emit_text:
             console.print("[yellow]No transactions match the provided filters.[/yellow]")
         return
 
