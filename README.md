@@ -105,3 +105,30 @@ uv run premiumflow import --json-output
 uv run premiumflow lookup "TSLA 500C 2025-02-21"
 uv run premiumflow trace "TSLA $550 Call" all_transactions.csv
 ```
+
+### Parser API
+
+If you need to work directly with the import parser, call `premiumflow.core.parser.load_option_transactions`
+with explicit account metadata and a default regulatory fee. The function now returns a
+`ParsedImportResult` object that bundles the trimmed account name/number, the normalized fee value,
+and the list of normalized option rows.
+
+```python
+from decimal import Decimal
+from premiumflow.core.parser import load_option_transactions
+
+result = load_option_transactions(
+    "all_transactions.csv",
+    account_name="Robinhood IRA",
+    account_number="RH-12345",
+    regulatory_fee=Decimal("0.04"),
+)
+
+for txn in result.transactions:
+    ...
+```
+
+`account_name` is required and must contain non-whitespace characters. `account_number` is optional, but
+when provided must also contain non-whitespace characters. Commissions supplied in the CSV override the
+regulatory fee and accept parenthesized values such as `(1.50)`; negative numbers like `-1.50` continue to
+raise `ImportValidationError`.

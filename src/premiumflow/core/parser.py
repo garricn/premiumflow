@@ -224,7 +224,28 @@ def load_option_transactions(
     """
     Validate and normalize option transactions from a CSV file.
 
-    Returns only rows whose transaction code is in ``ALLOWED_OPTION_CODES``.
+    Parameters
+    ----------
+    csv_file:
+        Path to the Robinhood-style CSV export.
+    account_name:
+        Required CLI-supplied account label; must contain non-whitespace characters.
+    account_number:
+        Optional account identifier. When provided, must contain non-whitespace characters.
+    regulatory_fee:
+        Default per-contract regulatory fee to use when Commission data is absent.
+
+    Returns
+    -------
+    ParsedImportResult
+        Aggregated account metadata, normalized regulatory fee, and the list of
+        normalized option rows (filtered to ``ALLOWED_OPTION_CODES``).
+
+    Raises
+    ------
+    ImportValidationError
+        When the CSV header is missing, account metadata is invalid, or a row
+        fails validation. Errors include 1-based row numbers.
     """
 
     normalized: List[NormalizedOptionTransaction] = []
@@ -264,6 +285,8 @@ def _normalize_row(
     """Normalize a CSV row; returns None for non-option transactions."""
 
     trans_code = _parse_trans_code(row, row_number)
+    if trans_code not in ALLOWED_OPTION_CODES:
+        return None
 
     activity_date = _parse_date_field(row, "Activity Date", row_number)
     process_date = _parse_optional_date_field(row, "Process Date", row_number)
@@ -278,9 +301,6 @@ def _normalize_row(
     amount = _parse_money(row, "Amount", row_number, allow_negative=True, required=False)
 
     commission = _parse_money(row, "Commission", row_number, allow_negative=False, required=False)
-
-    if trans_code not in ALLOWED_OPTION_CODES:
-        return None
 
     option_type, strike, expiration = _parse_option_details(description, row_number)
     action = "SELL" if trans_code in {"STO", "STC"} else "BUY"
@@ -433,6 +453,8 @@ def _parse_money(
         value = -value
 
     if not allow_negative and value < 0:
+        if negative:
+            return abs(value)
         raise ImportValidationError(f'Column "{field}" must be non-negative.')
 
     return value
