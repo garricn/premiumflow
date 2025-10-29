@@ -300,7 +300,14 @@ def _normalize_row(
     price = price_value
     amount = _parse_money(row, "Amount", row_number, allow_negative=True, required=False)
 
-    commission = _parse_money(row, "Commission", row_number, allow_negative=False, required=False)
+    commission = _parse_money(
+        row,
+        "Commission",
+        row_number,
+        allow_negative=False,
+        required=False,
+        allow_parenthesized_positive=True,
+    )
 
     option_type, strike, expiration = _parse_option_details(description, row_number)
     action = "SELL" if trans_code in {"STO", "STC"} else "BUY"
@@ -425,6 +432,7 @@ def _parse_money(
     *,
     allow_negative: bool,
     required: bool = True,
+    allow_parenthesized_positive: bool = False,
 ) -> Optional[Decimal]:
     raw_value = row.get(field)
     if raw_value is None:
@@ -453,7 +461,7 @@ def _parse_money(
         value = -value
 
     if not allow_negative and value < 0:
-        if negative:
+        if negative and allow_parenthesized_positive:
             return abs(value)
         raise ImportValidationError(f'Column "{field}" must be non-negative.')
 

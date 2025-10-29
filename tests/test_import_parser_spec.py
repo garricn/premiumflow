@@ -96,6 +96,25 @@ def test_load_option_transactions_rejects_negative_commission(tmp_path):
     assert 'Row 2: Column "Commission" must be non-negative.' == str(excinfo.value)
 
 
+def test_load_option_transactions_rejects_parenthesized_price(tmp_path):
+    csv_content = """Activity Date,Process Date,Settle Date,Instrument,Description,Trans Code,Quantity,Price,Amount
+10/7/2025,10/7/2025,10/8/2025,TSLA,TSLA 10/25/2025 Call $200.00,STO,2,(1.25),$250.00
+"""
+    csv_path = tmp_path / "parenthesized_price.csv"
+    csv_path.write_text(csv_content, encoding="utf-8")
+
+    with pytest.raises(ImportValidationError) as excinfo:
+        load_option_transactions(
+            csv_path,
+            account_name="Test Account",
+            regulatory_fee=Decimal("0.04"),
+        )
+
+    assert 'Row 2: Invalid decimal in "Price"' in str(excinfo.value) or "must be non-negative" in str(
+        excinfo.value
+    )
+
+
 def test_load_option_transactions_skips_non_option_rows(tmp_path):
     csv_content = (
         "Activity Date,Process Date,Settle Date,Instrument,Description,Trans Code,Quantity,Price,Amount\n"
