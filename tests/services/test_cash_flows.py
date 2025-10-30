@@ -40,7 +40,6 @@ def _make_parsed_result(transactions: List[NormalizedOptionTransaction]) -> Pars
     return ParsedImportResult(
         account_name="Robinhood IRA",
         account_number="RH-12345",
-        regulatory_fee=Decimal("0.04"),
         transactions=transactions,
     )
 
@@ -70,8 +69,6 @@ def test_summarize_cash_flows_basic_flow():
 
     assert summary.account_name == "Robinhood IRA"
     assert summary.account_number == "RH-12345"
-    assert summary.regulatory_fee == Decimal("0.04")
-
     assert summary.totals.credits == Decimal("240")
     assert summary.totals.debits == Decimal("80")
     assert summary.totals.fees == Decimal("0.12")

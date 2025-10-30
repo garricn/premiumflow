@@ -8,7 +8,6 @@ serialize raw options transactions extracted from CSV input. A deprecated
 
 from __future__ import annotations
 
-from decimal import Decimal, InvalidOperation
 from typing import Iterable, List, Optional
 
 import click
@@ -162,12 +161,6 @@ def _apply_import_options(func):
             help="Optional account identifier to echo in output.",
         ),
         click.option(
-            "--regulatory-fee",
-            default="0.04",
-            show_default=True,
-            help="Per-contract regulatory fee (USD) when commission data is absent.",
-        ),
-        click.option(
             "--json-output", "json_output", is_flag=True, help="Emit JSON instead of table output"
         ),
     ]
@@ -188,7 +181,6 @@ def _run_import(
     open_only,
     account_name,
     account_number,
-    regulatory_fee,
     json_output,
     console_label: str,
 ) -> None:
@@ -197,16 +189,10 @@ def _run_import(
     console = Console()
 
     try:
-        regulatory_fee_value = Decimal(str(regulatory_fee))
-    except (InvalidOperation, TypeError, ValueError) as exc:
-        raise click.BadParameter("--regulatory-fee must be a decimal value.") from exc
-
-    try:
         parsed = load_option_transactions(
             csv_file,
             account_name=account_name,
             account_number=account_number,
-            regulatory_fee=regulatory_fee_value,
         )
     except ImportValidationError as exc:
         ctx.fail(str(exc))
@@ -303,7 +289,6 @@ def import_transactions(
     open_only,
     account_name,
     account_number,
-    regulatory_fee,
     json_output,
 ):
     """Import and display raw options transactions from CSV."""
@@ -317,7 +302,6 @@ def import_transactions(
         open_only=open_only,
         account_name=account_name,
         account_number=account_number,
-        regulatory_fee=regulatory_fee,
         json_output=json_output,
         console_label="Importing",
     )
@@ -334,7 +318,6 @@ def ingest(
     open_only,
     account_name,
     account_number,
-    regulatory_fee,
     json_output,
 ):
     """Deprecated alias for ``premiumflow import``."""
@@ -353,7 +336,6 @@ def ingest(
         open_only=open_only,
         account_name=account_name,
         account_number=account_number,
-        regulatory_fee=regulatory_fee,
         json_output=json_output,
         console_label="Importing",
     )

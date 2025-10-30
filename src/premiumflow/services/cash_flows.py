@@ -57,7 +57,6 @@ class CashFlowSummary:
 
     account_name: str
     account_number: Optional[str]
-    regulatory_fee: Decimal
     rows: List[CashFlowRow]
     totals: CashFlowTotals
 
@@ -127,7 +126,6 @@ def summarize_cash_flows(parsed: ParsedImportResult) -> CashFlowSummary:
     return CashFlowSummary(
         account_name=parsed.account_name,
         account_number=parsed.account_number,
-        regulatory_fee=parsed.regulatory_fee,
         rows=rows,
         totals=totals,
     )

@@ -1,7 +1,6 @@
 """Tests for the import command module."""
 
 import json
-from decimal import Decimal
 from pathlib import Path
 
 from click.testing import CliRunner
@@ -181,20 +180,6 @@ def test_import_command_requires_account_name(tmp_path):
     assert "Missing option '--account-name'" in result.output
 
 
-def test_import_command_rejects_invalid_reg_fee(tmp_path):
-    """Invalid regulatory fee values should raise a Click error."""
-    csv_path = _write_sample_csv(tmp_path)
-    runner = CliRunner()
-
-    result = runner.invoke(
-        import_transactions,
-        ["--file", str(csv_path), "--account-name", "Test Account", "--regulatory-fee", "abc"],
-    )
-
-    assert result.exit_code != 0
-    assert "--regulatory-fee must be a decimal value." in result.output
-
-
 def test_import_command_surfaces_parser_errors(monkeypatch, tmp_path):
     """Import validation failures should be reported to the CLI."""
     csv_path = _write_sample_csv(tmp_path)
@@ -215,20 +200,18 @@ def test_import_command_surfaces_parser_errors(monkeypatch, tmp_path):
 
 
 def test_import_command_passes_account_metadata(monkeypatch, tmp_path):
-    """CLI should forward account metadata and fee overrides to the parser."""
+    """CLI should forward account metadata to the parser."""
     csv_path = _write_sample_csv(tmp_path)
     runner = CliRunner()
     captured = {}
 
-    def _fake_loader(csv_file, *, account_name, account_number, regulatory_fee):
+    def _fake_loader(csv_file, *, account_name, account_number):
         captured["csv_file"] = csv_file
         captured["account_name"] = account_name
         captured["account_number"] = account_number
-        captured["reg_fee"] = regulatory_fee
         return ParsedImportResult(
             account_name=account_name,
             account_number=account_number,
-            regulatory_fee=regulatory_fee,
             transactions=[],
         )
 
@@ -243,8 +226,6 @@ def test_import_command_passes_account_metadata(monkeypatch, tmp_path):
             "Primary",
             "--account-number",
             "ACCT-123",
-            "--regulatory-fee",
-            "0.02",
             "--json-output",
         ],
     )
@@ -253,7 +234,6 @@ def test_import_command_passes_account_metadata(monkeypatch, tmp_path):
     assert captured["csv_file"] == str(csv_path)
     assert captured["account_name"] == "Primary"
     assert captured["account_number"] == "ACCT-123"
-    assert captured["reg_fee"] == Decimal("0.02")
 
 
 def test_import_command_infers_price_from_amount(tmp_path):

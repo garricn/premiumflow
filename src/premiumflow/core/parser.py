@@ -50,7 +50,6 @@ class ParsedImportResult:
 
     account_name: str
     account_number: Optional[str]
-    regulatory_fee: Decimal
     transactions: List[NormalizedOptionTransaction]
 
 
@@ -115,7 +114,6 @@ def load_option_transactions(
     *,
     account_name: str,
     account_number: Optional[str] = None,
-    regulatory_fee: Decimal,
 ) -> ParsedImportResult:
     """
     Validate and normalize option transactions from a CSV file.
@@ -128,14 +126,12 @@ def load_option_transactions(
         Required CLI-supplied account label; must contain non-whitespace characters.
     account_number:
         Optional account identifier. When provided, must contain non-whitespace characters.
-    regulatory_fee:
-        Retained for backward compatibility. Currently ignored and treated as ``Decimal(\"0\")``.
 
     Returns
     -------
     ParsedImportResult
-        Aggregated account metadata and the list of normalized option rows (filtered
-        to ``ALLOWED_OPTION_CODES``).
+        Aggregated account metadata and the list of normalized option rows
+        (filtered to ``ALLOWED_OPTION_CODES``).
 
     Raises
     ------
@@ -148,8 +144,6 @@ def load_option_transactions(
     normalized_account_name, normalized_account_number = _validate_account_metadata(
         account_name, account_number
     )
-    reg_fee = Decimal("0.00")
-
     with open(csv_file, "r", encoding="utf-8") as handle:
         reader = csv.DictReader(handle)
         if reader.fieldnames is None:
@@ -160,7 +154,7 @@ def load_option_transactions(
                 continue  # skip blank lines
 
             try:
-                normalized_row = _normalize_row(row, reg_fee, index)
+                normalized_row = _normalize_row(row, index)
             except ImportValidationError as exc:
                 raise ImportValidationError(f"Row {index}: {exc}") from exc
 
@@ -170,14 +164,11 @@ def load_option_transactions(
     return ParsedImportResult(
         account_name=normalized_account_name,
         account_number=normalized_account_number,
-        regulatory_fee=reg_fee,
         transactions=normalized,
     )
 
 
-def _normalize_row(
-    row: Dict[str, str], regulatory_fee: Decimal, row_number: int
-) -> Optional[NormalizedOptionTransaction]:
+def _normalize_row(row: Dict[str, str], row_number: int) -> Optional[NormalizedOptionTransaction]:
     """Normalize a CSV row; returns None for non-option transactions."""
 
     trans_code = _parse_trans_code(row, row_number)

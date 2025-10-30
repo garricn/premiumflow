@@ -73,7 +73,6 @@ def analyze(csv_file, output_format, open_only, target):
         parsed = load_option_transactions(
             csv_file,
             account_name=Path(csv_file).stem or "Analysis Account",
-            regulatory_fee=Decimal("0.04"),
         )
         transactions = parsed.transactions
         console.print(f"[green]Found {len(transactions)} options transactions[/green]")

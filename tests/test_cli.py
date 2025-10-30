@@ -605,6 +605,5 @@ def _load_transaction_dicts(csv_path: str) -> list[dict]:
     parsed = load_option_transactions(
         csv_path,
         account_name="Test Account",
-        regulatory_fee=Decimal("0.04"),
     )
     return normalized_to_csv_dicts(parsed.transactions)

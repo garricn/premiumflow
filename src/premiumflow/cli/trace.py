@@ -6,7 +6,6 @@ Provides the CLI entry point that displays the history of a roll chain.
 
 from __future__ import annotations
 
-from decimal import Decimal
 from pathlib import Path
 
 import click
@@ -95,7 +94,6 @@ def trace(display_name, csv_file, target):
         parsed = load_option_transactions(
             csv_file,
             account_name=Path(csv_file).stem or "Trace Account",
-            regulatory_fee=Decimal("0.04"),
         )
         raw_transactions = normalized_to_csv_dicts(parsed.transactions)
         chains = detect_roll_chains(raw_transactions)
