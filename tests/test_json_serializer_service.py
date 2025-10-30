@@ -1,8 +1,11 @@
 """Tests for JSON serializer service."""
 
 import unittest
+from datetime import date
 from decimal import Decimal
 
+from premiumflow.core.parser import NormalizedOptionTransaction
+from premiumflow.services.cash_flows import CashFlowRow, CashFlowSummary, CashFlowTotals
 from premiumflow.services.json_serializer import (
     build_ingest_payload,
     is_open_chain,
@@ -190,22 +193,47 @@ class TestJsonSerializer(unittest.TestCase):
 
     def test_build_ingest_payload_complete(self):
         """Test building complete ingest payload."""
-        transactions = [
-            {
-                "Activity Date": "2025-01-15",
-                "Instrument": "TSLA",
-                "Description": "TSLA $500 Call",
-                "Trans Code": "STO",
-                "Quantity": "1",
-                "Price": "$5.00",
-                "Amount": "$500.00",
-            }
-        ]
-        display_rows = [
-            {
-                "target_close": "$100.00, $150.00",
-            }
-        ]
+        txn = NormalizedOptionTransaction(
+            activity_date=date(2025, 1, 15),
+            process_date=None,
+            settle_date=None,
+            instrument="TSLA",
+            description="TSLA $500 Call",
+            trans_code="STO",
+            quantity=1,
+            price=Decimal("5.00"),
+            amount=Decimal("500.00"),
+            strike=Decimal("500.00"),
+            option_type="CALL",
+            expiration=date(2025, 2, 21),
+            action="SELL",
+            fees=Decimal("0.04"),
+            raw={},
+        )
+        row = CashFlowRow(
+            transaction=txn,
+            credit=Decimal("500.00"),
+            debit=Decimal("0"),
+            fee=Decimal("0.04"),
+            running_credits=Decimal("500.00"),
+            running_debits=Decimal("0"),
+            running_fees=Decimal("0.04"),
+            running_net_premium=Decimal("500.00"),
+            running_net_pnl=Decimal("499.96"),
+        )
+        summary = CashFlowSummary(
+            account_name="Test Account",
+            account_number="ACCT-123",
+            regulatory_fee=Decimal("0.04"),
+            rows=[row],
+            totals=CashFlowTotals(
+                credits=Decimal("500.00"),
+                debits=Decimal("0"),
+                fees=Decimal("0.04"),
+                net_premium=Decimal("500.00"),
+                net_pnl=Decimal("499.96"),
+            ),
+        )
         chains = [
             {
                 "symbol": "TSLA",
@@ -214,12 +242,11 @@ class TestJsonSerializer(unittest.TestCase):
                 "transactions": [],
             }
         ]
-        target_percents = [Decimal("0.5"), Decimal("0.7")]
+        target_percents = [Decimal("0.5"), Decimal("0.6"), Decimal("0.7")]
 
         result = build_ingest_payload(
             csv_file="test.csv",
-            transactions=transactions,
-            display_rows=display_rows,
+            summary=summary,
             chains=chains,
             target_percents=target_percents,
             options_only=True,
@@ -233,15 +260,31 @@ class TestJsonSerializer(unittest.TestCase):
         self.assertEqual(result["filters"]["ticker"], "TSLA")
         self.assertEqual(result["filters"]["strategy"], "calls")
         self.assertEqual(result["filters"]["open_only"], False)
-        self.assertEqual(result["target_percents"], ["0.5", "0.7"])
+        self.assertEqual(result["target_percents"], ["0.5", "0.6", "0.7"])
+        self.assertEqual(result["account"]["name"], "Test Account")
+        self.assertEqual(result["account"]["number"], "ACCT-123")
+        self.assertEqual(result["cash_flow"]["credits"], "500")
         self.assertEqual(len(result["transactions"]), 1)
         self.assertEqual(len(result["chains"]), 1)
-        self.assertEqual(result["transactions"][0]["targets"], "$100.00, $150.00")
+        txn_payload = result["transactions"][0]
+        self.assertEqual(txn_payload["credit"], "500")
+        self.assertEqual(txn_payload["targets"], ["2.5", "2", "1.5"])
 
     def test_build_ingest_payload_open_only(self):
         """Test building ingest payload with open_only filter."""
-        transactions = []
-        display_rows = []
+        summary = CashFlowSummary(
+            account_name="Test Account",
+            account_number=None,
+            regulatory_fee=Decimal("0.04"),
+            rows=[],
+            totals=CashFlowTotals(
+                credits=Decimal("0"),
+                debits=Decimal("0"),
+                fees=Decimal("0"),
+                net_premium=Decimal("0"),
+                net_pnl=Decimal("0"),
+            ),
+        )
         chains = [
             {"symbol": "TSLA", "status": "OPEN", "transactions": []},
             {"symbol": "AAPL", "status": "CLOSED", "transactions": []},
@@ -250,8 +293,7 @@ class TestJsonSerializer(unittest.TestCase):
 
         result = build_ingest_payload(
             csv_file="test.csv",
-            transactions=transactions,
-            display_rows=display_rows,
+            summary=summary,
             chains=chains,
             target_percents=target_percents,
             options_only=False,
@@ -267,10 +309,22 @@ class TestJsonSerializer(unittest.TestCase):
 
     def test_build_ingest_payload_minimal(self):
         """Test building ingest payload with minimal data."""
+        summary = CashFlowSummary(
+            account_name="Test Account",
+            account_number=None,
+            regulatory_fee=Decimal("0"),
+            rows=[],
+            totals=CashFlowTotals(
+                credits=Decimal("0"),
+                debits=Decimal("0"),
+                fees=Decimal("0"),
+                net_premium=Decimal("0"),
+                net_pnl=Decimal("0"),
+            ),
+        )
         result = build_ingest_payload(
             csv_file="test.csv",
-            transactions=[],
-            display_rows=[],
+            summary=summary,
             chains=[],
             target_percents=[],
             options_only=False,

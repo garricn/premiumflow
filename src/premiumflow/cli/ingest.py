@@ -18,84 +18,150 @@ from rich.table import Table
 from ..core.parser import (
     ImportValidationError,
     NormalizedOptionTransaction,
+    ParsedImportResult,
     load_option_transactions,
 )
+from ..services.cash_flows import CashFlowSummary, summarize_cash_flows
 from ..services.chain_builder import detect_roll_chains
-from ..services.display import format_percent
+from ..services.display import format_currency, format_percent, format_target_close_prices
 from ..services.json_serializer import build_ingest_payload
-from ..services.targets import calculate_target_percents
-from ..services.transactions import (
-    filter_open_positions,
-    filter_transactions_by_option_type,
-    filter_transactions_by_ticker,
-)
-from .utils import parse_target_range, prepare_transactions_for_display
+from ..services.targets import calculate_target_percents, compute_target_close_prices
+from .utils import parse_target_range
 
 
-def _format_money(value: Decimal) -> str:
+def _format_money_string(value: Decimal) -> str:
     quantized = value.quantize(Decimal("0.01"))
     if quantized < 0:
         return f"(${abs(quantized):,.2f})"
     return f"${quantized:,.2f}"
 
 
-def _format_quantity(quantity: int) -> str:
-    if quantity < 0:
-        return f"({abs(quantity)})"
-    return str(quantity)
+def _transaction_key_from_txn(txn: NormalizedOptionTransaction) -> tuple:
+    return (
+        (txn.instrument or "").strip().upper(),
+        txn.option_type,
+        txn.expiration,
+        txn.strike,
+        (txn.description or "").strip(),
+    )
 
 
-def _to_csv_transaction(txn: NormalizedOptionTransaction) -> dict[str, str]:
-    amount_display: Optional[str]
-    if txn.amount is None:
-        amount_display = ""
-    else:
-        amount_display = _format_money(txn.amount)
+def _filter_by_ticker(
+    transactions: Iterable[NormalizedOptionTransaction],
+    ticker_symbol: Optional[str],
+) -> List[NormalizedOptionTransaction]:
+    if not ticker_symbol:
+        return list(transactions)
+    ticker_key = ticker_symbol.strip().upper()
+    return [txn for txn in transactions if (txn.instrument or "").strip().upper() == ticker_key]
 
-    commission_display = _format_money(txn.fees) if txn.fees else ""
 
-    return {
-        "Activity Date": txn.activity_date.strftime("%m/%d/%Y"),
-        "Process Date": txn.process_date.strftime("%m/%d/%Y") if txn.process_date else "",
-        "Settle Date": txn.settle_date.strftime("%m/%d/%Y") if txn.settle_date else "",
-        "Instrument": txn.instrument,
-        "Description": txn.description,
-        "Trans Code": txn.trans_code,
-        "Quantity": _format_quantity(txn.quantity),
-        "Price": _format_money(txn.price),
-        "Amount": amount_display,
-        "Commission": commission_display,
-    }
+def _filter_by_strategy(
+    transactions: Iterable[NormalizedOptionTransaction], strategy: Optional[str]
+) -> List[NormalizedOptionTransaction]:
+    transactions = list(transactions)
+    if strategy == "calls":
+        return [txn for txn in transactions if txn.option_type == "CALL"]
+    if strategy == "puts":
+        return [txn for txn in transactions if txn.option_type == "PUT"]
+    return transactions
+
+
+def _filter_open_transactions(
+    transactions: Iterable[NormalizedOptionTransaction],
+) -> tuple[List[NormalizedOptionTransaction], int]:
+    transactions = list(transactions)
+    net_by_key: dict[tuple, int] = {}
+    for txn in transactions:
+        key = _transaction_key_from_txn(txn)
+        delta = txn.quantity if txn.action == "BUY" else -txn.quantity
+        net_by_key[key] = net_by_key.get(key, 0) + delta
+
+    open_keys = {key for key, net in net_by_key.items() if net != 0}
+    if not open_keys:
+        return [], 0
+
+    filtered = [txn for txn in transactions if _transaction_key_from_txn(txn) in open_keys]
+    return filtered, len(open_keys)
+
+
+def _create_parsed_result(
+    parsed: ParsedImportResult, transactions: Iterable[NormalizedOptionTransaction]
+) -> ParsedImportResult:
+    return ParsedImportResult(
+        account_name=parsed.account_name,
+        account_number=parsed.account_number,
+        regulatory_fee=parsed.regulatory_fee,
+        transactions=list(transactions),
+    )
 
 
 def _transactions_to_csv_dicts(
     transactions: Iterable[NormalizedOptionTransaction],
 ) -> List[dict[str, str]]:
-    return [_to_csv_transaction(txn) for txn in transactions]
+    rows: List[dict[str, str]] = []
+    for txn in transactions:
+        notional = txn.price * txn.quantity
+        signed_amount = notional if txn.action == "SELL" else -notional
+        rows.append(
+            {
+                "Activity Date": txn.activity_date.strftime("%m/%d/%Y"),
+                "Process Date": txn.process_date.strftime("%m/%d/%Y") if txn.process_date else "",
+                "Settle Date": txn.settle_date.strftime("%m/%d/%Y") if txn.settle_date else "",
+                "Instrument": txn.instrument,
+                "Description": txn.description,
+                "Trans Code": txn.trans_code,
+                "Quantity": str(txn.quantity),
+                "Price": _format_money_string(txn.price),
+                "Amount": _format_money_string(signed_amount),
+                "Commission": _format_money_string(txn.fees) if txn.fees else "",
+            }
+        )
+    return rows
 
 
-def _emit_transactions_table(table_rows: Iterable[dict[str, str]], target_label: str) -> Table:
-    """Create a Rich table for the import command."""
-    table = Table(title="Options Transactions", expand=True)
+def _build_cash_flow_table(
+    summary: CashFlowSummary,
+    target_percents: List[Decimal],
+    target_label: str,
+) -> Table:
+    table = Table(title=f"Options Transactions – {summary.account_name}", expand=True)
     table.add_column("Date", style="cyan")
-    table.add_column("Symbol", style="magenta")
+    table.add_column("Symbol", style="magenta", no_wrap=True)
     table.add_column("Expiration", style="magenta")
     table.add_column("Code", style="green")
     table.add_column("Quantity", justify="right")
     table.add_column("Price", justify="right")
+    table.add_column("Credit", justify="right")
+    table.add_column("Debit", justify="right")
+    table.add_column("Fee", justify="right")
+    table.add_column("Net Premium", justify="right")
+    table.add_column("Net P&L", justify="right")
     table.add_column(target_label, justify="right")
     table.add_column("Description", style="yellow")
 
-    for row in table_rows:
+    for row in summary.rows:
+        txn = row.transaction
+        target_prices = compute_target_close_prices(
+            txn.trans_code,
+            format(txn.price, "f"),
+            target_percents,
+        )
+
         table.add_row(
-            row["date"],
-            row["symbol"],
-            row["expiration"],
-            row["code"],
-            row["quantity"],
-            row["price"],
-            row["target_close"],
-            row["description"],
+            txn.activity_date.isoformat(),
+            (txn.instrument or "").strip(),
+            txn.expiration.isoformat(),
+            txn.trans_code,
+            str(txn.quantity),
+            format_currency(txn.price),
+            format_currency(row.credit),
+            format_currency(row.debit),
+            format_currency(row.fee),
+            format_currency(row.running_net_premium),
+            format_currency(row.running_net_pnl),
+            format_target_close_prices(target_prices),
+            txn.description,
         )
 
     return table
@@ -206,32 +272,17 @@ def _run_import(
     if emit_text:
         console.print(f"[blue]{console_label} {csv_file}...[/blue]")
 
-    csv_transactions = _transactions_to_csv_dicts(parsed.transactions)
-
-    calls_only = strategy == "calls"
-    puts_only = strategy == "puts"
-
-    try:
-        filtered_by_ticker = filter_transactions_by_ticker(csv_transactions, ticker_symbol)
-        filtered_transactions = filter_transactions_by_option_type(
-            filtered_by_ticker,
-            calls_only=calls_only,
-            puts_only=puts_only,
-        )
-    except ValueError as exc:
-        ctx.fail(str(exc))
-        return
-
-    chain_source_transactions = list(filtered_transactions)
+    transactions = list(parsed.transactions)
+    filtered_transactions = _filter_by_ticker(transactions, ticker_symbol)
 
     if ticker_symbol:
         ticker_key = ticker_symbol.strip().upper()
         if not filtered_transactions:
+            empty_summary = summarize_cash_flows(_create_parsed_result(parsed, []))
             if json_output:
-                empty_payload = build_ingest_payload(
+                payload = build_ingest_payload(
                     csv_file=csv_file,
-                    transactions=[],
-                    display_rows=[],
+                    summary=empty_summary,
                     chains=[],
                     target_percents=target_percents,
                     options_only=options_only,
@@ -239,7 +290,7 @@ def _run_import(
                     strategy=strategy,
                     open_only=open_only,
                 )
-                console.print_json(data=empty_payload)
+                console.print_json(data=payload)
             else:
                 console.print(
                     f"[yellow]No options transactions found for ticker {ticker_key}[/yellow]"
@@ -253,38 +304,24 @@ def _run_import(
         if emit_text:
             console.print(f"[green]Found {len(filtered_transactions)} options transactions[/green]")
 
+    filtered_transactions = _filter_by_strategy(filtered_transactions, strategy)
+    chain_source_transactions = _transactions_to_csv_dicts(filtered_transactions)
+
+    open_position_count = 0
     if open_only:
-        filtered_transactions = filter_open_positions(filtered_transactions)
+        filtered_transactions, open_position_count = _filter_open_transactions(
+            filtered_transactions
+        )
         if emit_text:
-            console.print(f"[cyan]Open positions: {len(filtered_transactions)}[/cyan]")
+            console.print(f"[cyan]Open positions: {open_position_count}[/cyan]")
 
-    display_rows = prepare_transactions_for_display(filtered_transactions, target_percents)
-
-    if not filtered_transactions:
-        if json_output:
-            chains_for_json = detect_roll_chains(chain_source_transactions)
-            payload = build_ingest_payload(
-                csv_file=csv_file,
-                transactions=filtered_transactions,
-                display_rows=display_rows,
-                chains=chains_for_json,
-                target_percents=target_percents,
-                options_only=options_only,
-                ticker=ticker_symbol,
-                strategy=strategy,
-                open_only=open_only,
-            )
-            console.print_json(data=payload)
-        elif emit_text:
-            console.print("[yellow]No transactions match the provided filters.[/yellow]")
-        return
+    filtered_summary = summarize_cash_flows(_create_parsed_result(parsed, filtered_transactions))
+    chains_for_json = detect_roll_chains(chain_source_transactions)
 
     if json_output:
-        chains_for_json = detect_roll_chains(chain_source_transactions)
         payload = build_ingest_payload(
             csv_file=csv_file,
-            transactions=filtered_transactions,
-            display_rows=display_rows,
+            summary=filtered_summary,
             chains=chains_for_json,
             target_percents=target_percents,
             options_only=options_only,
@@ -295,8 +332,28 @@ def _run_import(
         console.print_json(data=payload)
         return
 
-    transactions_table = _emit_transactions_table(display_rows, target_label)
-    console.print(transactions_table)
+    if not filtered_summary.rows:
+        console.print("[yellow]No transactions match the provided filters.[/yellow]")
+        return
+
+    account_line = f"[green]Account:[/green] {filtered_summary.account_name}"
+    if filtered_summary.account_number:
+        account_line += f" ({filtered_summary.account_number})"
+    account_line += f" · Reg Fee: {format_currency(filtered_summary.regulatory_fee)}"
+    console.print(account_line)
+
+    table = _build_cash_flow_table(filtered_summary, target_percents, target_label)
+    console.print(table)
+
+    totals = filtered_summary.totals
+    console.print(
+        "[bold magenta]Totals:[/bold magenta] "
+        f"Credits {format_currency(totals.credits)} · "
+        f"Debits {format_currency(totals.debits)} · "
+        f"Fees {format_currency(totals.fees)} · "
+        f"Net Premium {format_currency(totals.net_premium)} · "
+        f"Net P&L {format_currency(totals.net_pnl)}"
+    )
 
 
 @click.command(name="import")
