@@ -3,10 +3,19 @@
 import json
 from pathlib import Path
 
+import pytest
 from click.testing import CliRunner
 
 from premiumflow.cli.ingest import import_transactions, ingest
 from premiumflow.core.parser import ImportValidationError, ParsedImportResult
+
+
+@pytest.fixture(autouse=True)
+def _stub_store_import(monkeypatch):
+    def _fake_store(*args, **kwargs):
+        return 1
+
+    monkeypatch.setattr("premiumflow.cli.ingest.store_import_result", _fake_store)
 
 
 def _write_sample_csv(tmp_path: Path) -> Path:
@@ -204,6 +213,7 @@ def test_import_command_passes_account_metadata(monkeypatch, tmp_path):
     csv_path = _write_sample_csv(tmp_path)
     runner = CliRunner()
     captured = {}
+    persistence_calls = {}
 
     def _fake_loader(csv_file, *, account_name, account_number):
         captured["csv_file"] = csv_file
@@ -216,6 +226,13 @@ def test_import_command_passes_account_metadata(monkeypatch, tmp_path):
         )
 
     monkeypatch.setattr("premiumflow.cli.ingest.load_option_transactions", _fake_loader)
+
+    def _fake_store(parsed_result, **kwargs):
+        persistence_calls["parsed"] = parsed_result
+        persistence_calls["kwargs"] = kwargs
+        return 42
+
+    monkeypatch.setattr("premiumflow.cli.ingest.store_import_result", _fake_store)
 
     result = runner.invoke(
         import_transactions,
@@ -234,6 +251,13 @@ def test_import_command_passes_account_metadata(monkeypatch, tmp_path):
     assert captured["csv_file"] == str(csv_path)
     assert captured["account_name"] == "Primary"
     assert captured["account_number"] == "ACCT-123"
+    assert persistence_calls["parsed"].account_name == "Primary"
+    kwargs = persistence_calls["kwargs"]
+    assert kwargs["source_path"] == str(csv_path)
+    assert kwargs["options_only"] is True
+    assert kwargs["ticker"] is None
+    assert kwargs["strategy"] is None
+    assert kwargs["open_only"] is False
 
 
 def test_import_command_infers_price_from_amount(tmp_path):

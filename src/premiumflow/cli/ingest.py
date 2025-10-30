@@ -19,6 +19,7 @@ from ..core.parser import (
     NormalizedOptionTransaction,
     load_option_transactions,
 )
+from ..persistence import store_import_result
 from ..services.chain_builder import detect_roll_chains
 from ..services.display import format_currency
 from ..services.json_serializer import build_ingest_payload
@@ -201,6 +202,21 @@ def _run_import(
     emit_text = not json_output
     if emit_text:
         console.print(f"[blue]{console_label} {csv_file}...[/blue]")
+
+    try:
+        store_import_result(
+            parsed,
+            source_path=str(csv_file),
+            options_only=bool(options_only),
+            ticker=(ticker_symbol.strip().upper() if ticker_symbol else None),
+            strategy=strategy,
+            open_only=bool(open_only),
+        )
+    except Exception as exc:  # pragma: no cover - warning path only
+        if emit_text:
+            console.print(
+                f"[yellow]Warning: Failed to persist import data ({exc}). Continuing without storage.[/yellow]"
+            )
 
     transactions = list(parsed.transactions)
     filtered_transactions = _filter_by_ticker(transactions, ticker_symbol)

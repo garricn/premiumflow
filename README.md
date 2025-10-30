@@ -136,3 +136,10 @@ for txn in result.transactions:
 when provided must also contain non-whitespace characters. The import parser no longer infers fees or
 reads commission columns; all `NormalizedOptionTransaction.fees` values default to `Decimal("0")`, leaving
 fee handling to downstream tooling.
+
+### Persistence
+
+Running `premiumflow import` writes the normalized rows to a SQLite database so that subsequent tools and
+the forthcoming web UI can read from a durable source. By default the database lives at
+`~/.premiumflow/premiumflow.db`; set the `PREMIUMFLOW_DB_PATH` environment variable to point the CLI at a
+different location. Deleting the file removes all stored imports.

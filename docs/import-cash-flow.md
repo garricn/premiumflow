@@ -83,6 +83,14 @@ fields such as `quantity` remain numeric. The CLI table still formats values for
 `Amount` is blank, the table displays `--` while the JSON payload emits `null` so downstream
 consumers can distinguish missing data.
 
+## Persistence
+
+Every successful run of `premiumflow import` (and the deprecated `premiumflow ingest`) now writes the
+canonical rows to a SQLite database located at `~/.premiumflow/premiumflow.db`. Set the
+`PREMIUMFLOW_DB_PATH` environment variable to override the location or delete the file to reset the
+stored history during development. Future CLI features and the web UI will read from the same store so
+imports only need to happen once.
+
 ## Troubleshooting
 
 - `Missing option '--account-name'`: the flag is required for every import.
