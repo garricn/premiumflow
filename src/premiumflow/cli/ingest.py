@@ -8,7 +8,8 @@ serialize raw options transactions extracted from CSV input. A deprecated
 
 from __future__ import annotations
 
-from typing import Iterable, List, Optional
+import sqlite3
+from typing import Iterable, List, Literal, Optional
 
 import click
 from rich.console import Console
@@ -19,7 +20,7 @@ from ..core.parser import (
     NormalizedOptionTransaction,
     load_option_transactions,
 )
-from ..persistence import store_import_result
+from ..persistence import DuplicateImportError, StoreResult, store_import_result
 from ..services.chain_builder import detect_roll_chains
 from ..services.display import format_currency
 from ..services.json_serializer import build_ingest_payload
@@ -162,6 +163,16 @@ def _apply_import_options(func):
             help="Optional account identifier to echo in output.",
         ),
         click.option(
+            "--skip-existing",
+            is_flag=True,
+            help="Skip persistence when this file has already been imported for the account.",
+        ),
+        click.option(
+            "--replace-existing",
+            is_flag=True,
+            help="Replace persisted data when this file has already been imported.",
+        ),
+        click.option(
             "--json-output", "json_output", is_flag=True, help="Emit JSON instead of table output"
         ),
     ]
@@ -182,12 +193,22 @@ def _run_import(
     open_only,
     account_name,
     account_number,
+    skip_existing,
+    replace_existing,
     json_output,
     console_label: str,
 ) -> None:
     """Shared implementation used by both import and ingest commands."""
 
     console = Console()
+
+    if skip_existing and replace_existing:
+        ctx.fail("--skip-existing and --replace-existing cannot be used together.")
+        return
+
+    duplicate_strategy: Literal["error", "skip", "replace"] = (
+        "skip" if skip_existing else "replace" if replace_existing else "error"
+    )
 
     try:
         parsed = load_option_transactions(
@@ -204,19 +225,29 @@ def _run_import(
         console.print(f"[blue]{console_label} {csv_file}...[/blue]")
 
     try:
-        store_import_result(
+        store_result = store_import_result(
             parsed,
             source_path=str(csv_file),
             options_only=bool(options_only),
             ticker=(ticker_symbol.strip().upper() if ticker_symbol else None),
             strategy=strategy,
             open_only=bool(open_only),
+            duplicate_strategy=duplicate_strategy,
         )
-    except Exception as exc:  # pragma: no cover - warning path only
+    except DuplicateImportError as exc:
+        ctx.fail(str(exc))
+        return
+    except sqlite3.Error as exc:  # pragma: no cover - storage warning only
+        store_result = StoreResult(import_id=-1, status="skipped")
         if emit_text:
             console.print(
                 f"[yellow]Warning: Failed to persist import data ({exc}). Continuing without storage.[/yellow]"
             )
+
+    if emit_text and store_result.status == "skipped" and duplicate_strategy == "skip":
+        console.print("[yellow]Import already persisted; skipping new storage.[/yellow]")
+    elif emit_text and store_result.status == "replaced":
+        console.print("[cyan]Existing persisted import replaced with new data.[/cyan]")
 
     transactions = list(parsed.transactions)
     filtered_transactions = _filter_by_ticker(transactions, ticker_symbol)
@@ -305,6 +336,8 @@ def import_transactions(
     open_only,
     account_name,
     account_number,
+    skip_existing,
+    replace_existing,
     json_output,
 ):
     """Import and display raw options transactions from CSV."""
@@ -318,6 +351,8 @@ def import_transactions(
         open_only=open_only,
         account_name=account_name,
         account_number=account_number,
+        skip_existing=skip_existing,
+        replace_existing=replace_existing,
         json_output=json_output,
         console_label="Importing",
     )
@@ -334,6 +369,8 @@ def ingest(
     open_only,
     account_name,
     account_number,
+    skip_existing,
+    replace_existing,
     json_output,
 ):
     """Deprecated alias for ``premiumflow import``."""
@@ -352,6 +389,8 @@ def ingest(
         open_only=open_only,
         account_name=account_name,
         account_number=account_number,
+        skip_existing=skip_existing,
+        replace_existing=replace_existing,
         json_output=json_output,
         console_label="Importing",
     )

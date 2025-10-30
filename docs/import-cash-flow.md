@@ -91,6 +91,10 @@ canonical rows to a SQLite database located at `~/.premiumflow/premiumflow.db`. 
 stored history during development. Future CLI features and the web UI will read from the same store so
 imports only need to happen once.
 
+- Pass `--skip-existing` to leave the persisted data untouched when the same file is ingested again, or
+  `--replace-existing` to overwrite the stored copy. Without either flag the command aborts if a matching
+  import already exists for the account. Duplicate detection is keyed by account and file path.
+
 ## Troubleshooting
 
 - `Missing option '--account-name'`: the flag is required for every import.
