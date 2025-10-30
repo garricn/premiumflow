@@ -96,6 +96,21 @@ def _create_parsed_result(
     )
 
 
+def _sort_transactions(
+    transactions: Iterable[NormalizedOptionTransaction],
+) -> List[NormalizedOptionTransaction]:
+    indexed = list(enumerate(transactions))
+    indexed.sort(
+        key=lambda item: (
+            item[1].activity_date,
+            item[1].process_date or item[1].activity_date,
+            item[1].settle_date or item[1].activity_date,
+            item[0],
+        )
+    )
+    return [txn for _, txn in indexed]
+
+
 def _transactions_to_csv_dicts(
     transactions: Iterable[NormalizedOptionTransaction],
 ) -> List[dict[str, str]]:
@@ -308,6 +323,7 @@ def _run_import(
             console.print(f"[green]Found {len(filtered_transactions)} options transactions[/green]")
 
     filtered_transactions = _filter_by_strategy(filtered_transactions, strategy)
+    filtered_transactions = _sort_transactions(filtered_transactions)
     chain_source_transactions = _transactions_to_csv_dicts(filtered_transactions)
 
     open_position_count = 0
@@ -315,8 +331,10 @@ def _run_import(
         filtered_transactions, open_position_count = _filter_open_transactions(
             filtered_transactions
         )
+        filtered_transactions = _sort_transactions(filtered_transactions)
         if emit_text:
             console.print(f"[cyan]Open positions: {open_position_count}[/cyan]")
+        chain_source_transactions = _transactions_to_csv_dicts(filtered_transactions)
 
     filtered_summary = summarize_cash_flows(_create_parsed_result(parsed, filtered_transactions))
     chains_for_json = detect_roll_chains(chain_source_transactions)
