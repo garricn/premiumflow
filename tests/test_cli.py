@@ -502,9 +502,12 @@ def test_import_json_output(tmp_path):
     assert payload["filters"]["ticker"] == "PLTR"
     assert payload["filters"]["options_only"] is True
     assert isinstance(payload["target_percents"][0], str)
+    assert payload["account"]["name"] == "Test Account"
+    assert payload["cash_flow"]["credits"] != ""
     assert payload["transactions"]
     first_txn = payload["transactions"][0]
     assert "targets" in first_txn
+    assert "credit" in first_txn
 
 
 def test_import_strategy_calls_only(tmp_path):

@@ -73,6 +73,10 @@ def test_import_command_table_output(tmp_path):
     assert "Importing" in result.output
     assert "Options Transactions" in result.output
     assert "TSLA" in result.output
+    assert "Account:" in result.output
+    assert "Credit" in result.output
+    assert "Net Premium" in result.output
+    assert "Totals:" in result.output
 
 
 def test_import_command_json_output(tmp_path):
@@ -89,7 +93,13 @@ def test_import_command_json_output(tmp_path):
     payload = json.loads(result.output)
     assert payload["source_file"] == str(csv_path)
     assert payload["filters"]["options_only"] is True
-    assert payload["transactions"]  # Should include parsed transactions
+    assert payload["account"]["name"] == "Test Account"
+    assert payload["account"]["number"] is None
+    assert payload["cash_flow"]["credits"] == "400"
+    assert payload["cash_flow"]["net_premium"] == "200"
+    first_txn = payload["transactions"][0]
+    assert first_txn["credit"] == "300"
+    assert first_txn["targets"]
 
 
 def test_import_command_filters_by_ticker(tmp_path):
@@ -253,7 +263,7 @@ def test_import_command_infers_price_from_amount(tmp_path):
     assert result.exit_code == 0
     payload = json.loads(result.output)
     first_txn = payload["transactions"][0]
-    assert first_txn["price"] == "$3.00"
+    assert first_txn["price"] == "3"
 
 
 def test_import_command_allows_assignment_with_blank_price(tmp_path):
@@ -275,7 +285,7 @@ def test_import_command_allows_assignment_with_blank_price(tmp_path):
     assert result.exit_code == 0
     payload = json.loads(result.output)
     first_txn = payload["transactions"][0]
-    assert first_txn["price"] == "$0.00"
+    assert first_txn["price"] == "0"
 
 
 def test_import_skips_rows_without_option_trans_code(tmp_path):
