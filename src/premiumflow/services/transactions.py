@@ -134,6 +134,12 @@ def _format_money_string(value: Decimal) -> str:
 def normalized_to_csv_dicts(
     transactions: Iterable[NormalizedOptionTransaction],
 ) -> List[Dict[str, str]]:
+    """Convert normalized transactions into CSV-style dicts.
+
+    Values are serialized as strings (for example, Price ``$3.00`` or Amount ``($200.00)``) to match
+    the legacy CSV format consumed by chain detection and display helpers.
+    """
+
     rows: List[Dict[str, str]] = []
     for txn in transactions:
         if txn.amount is not None:

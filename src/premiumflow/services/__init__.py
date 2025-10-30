@@ -30,6 +30,7 @@ from .json_serializer import (
     serialize_decimal,
     serialize_transaction,
 )
+from .transactions import normalized_to_csv_dicts
 
 __all__ = [
     "detect_roll_chains",
@@ -60,4 +61,5 @@ __all__ = [
     "CashFlowSummary",
     "CashFlowTotals",
     "CashFlowRow",
+    "normalized_to_csv_dicts",
 ]
