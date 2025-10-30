@@ -8,14 +8,16 @@ position specification.
 from __future__ import annotations
 
 from decimal import Decimal
+from pathlib import Path
 from typing import List
 
 import click
 from rich.console import Console
 from rich.table import Table
 
-from ..core.parser import get_options_transactions, parse_lookup_input
+from ..core.parser import load_option_transactions, parse_lookup_input
 from ..services.options import parse_option_description
+from ..services.transactions import normalized_to_csv_dicts
 
 
 def _build_results_table(position_spec: str, transactions: List[dict]) -> Table:
@@ -63,7 +65,12 @@ def lookup(position_spec, csv_file):
         except ValueError as exc:
             raise click.BadParameter(str(exc)) from exc
 
-        transactions = get_options_transactions(csv_file)
+        parsed = load_option_transactions(
+            csv_file,
+            account_name=Path(csv_file).stem or "Lookup Account",
+            regulatory_fee=Decimal("0.04"),
+        )
+        transactions = normalized_to_csv_dicts(parsed.transactions)
         target_symbol = symbol.upper()
         target_option = "Call" if option_type.upper() == "C" else "Put"
         strike_decimal = Decimal(str(strike))

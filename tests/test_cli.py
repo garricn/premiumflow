@@ -7,12 +7,13 @@ from click.testing import CliRunner
 
 from premiumflow.cli.commands import main as premiumflow_cli
 from premiumflow.cli.utils import prepare_transactions_for_display
-from premiumflow.core.parser import get_options_transactions
+from premiumflow.core.parser import load_option_transactions
 from premiumflow.services.targets import calculate_target_percents
 from premiumflow.services.transactions import (
     filter_open_positions,
     filter_transactions_by_option_type,
     filter_transactions_by_ticker,
+    normalized_to_csv_dicts,
 )
 
 
@@ -90,7 +91,7 @@ def test_import_reports_missing_ticker(tmp_path):
 def test_filter_transactions_by_ticker(tmp_path):
     """Ticker filter returns only matching instruments."""
     sample_csv = _write_sample_csv(tmp_path)
-    transactions = get_options_transactions(str(sample_csv))
+    transactions = _load_transaction_dicts(str(sample_csv))
 
     filtered = filter_transactions_by_ticker(transactions, "TMC")
 
@@ -101,7 +102,7 @@ def test_filter_transactions_by_ticker(tmp_path):
 def test_filter_transactions_calls_only(tmp_path):
     """Call filter keeps only call legs from the selection."""
     sample_csv = _write_sample_csv(tmp_path)
-    transactions = get_options_transactions(str(sample_csv))
+    transactions = _load_transaction_dicts(str(sample_csv))
 
     pltr_transactions = filter_transactions_by_ticker(transactions, "PLTR")
     calls_only = filter_transactions_by_option_type(pltr_transactions, calls_only=True)
@@ -114,7 +115,7 @@ def test_filter_transactions_calls_only(tmp_path):
 def test_filter_transactions_puts_only(tmp_path):
     """Put filter keeps only put legs from the selection."""
     sample_csv = _write_sample_csv(tmp_path)
-    transactions = get_options_transactions(str(sample_csv))
+    transactions = _load_transaction_dicts(str(sample_csv))
 
     pltr_transactions = filter_transactions_by_ticker(transactions, "PLTR")
     puts_only = filter_transactions_by_option_type(pltr_transactions, puts_only=True)
@@ -134,7 +135,7 @@ def test_filter_open_positions_and_display_format(tmp_path):
     csv_path = tmp_path / "open_only.csv"
     csv_path.write_text(csv_content, encoding="utf-8")
 
-    transactions = get_options_transactions(str(csv_path))
+    transactions = _load_transaction_dicts(str(csv_path))
     open_positions = filter_open_positions(transactions)
 
     assert len(open_positions) == 1
@@ -276,7 +277,7 @@ def test_filter_open_positions_aggregates_partial_fills():
 def test_prepare_transactions_for_display_honors_target_range(tmp_path):
     """Target percent range adjusts BTC/STC guidance."""
     sample_csv = _write_sample_csv(tmp_path)
-    transactions = get_options_transactions(str(sample_csv))
+    transactions = _load_transaction_dicts(str(sample_csv))
     pltr_calls = filter_transactions_by_option_type(
         filter_transactions_by_ticker(transactions, "PLTR"),
         calls_only=True,
@@ -597,3 +598,12 @@ def test_filter_open_positions_includes_partially_closed_short_positions():
     assert (
         short_position["Quantity"] == "-1"
     ), f"Expected negative quantity for short position, got {short_position['Quantity']}"
+
+
+def _load_transaction_dicts(csv_path: str) -> list[dict]:
+    parsed = load_option_transactions(
+        csv_path,
+        account_name="Test Account",
+        regulatory_fee=Decimal("0.04"),
+    )
+    return normalized_to_csv_dicts(parsed.transactions)

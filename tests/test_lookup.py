@@ -10,9 +10,10 @@ from pathlib import Path
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from premiumflow.core.parser import get_options_transactions, parse_lookup_input
+from premiumflow.core.parser import load_option_transactions, parse_lookup_input
 from premiumflow.services.chain_builder import detect_roll_chains
 from premiumflow.services.options import parse_option_description
+from premiumflow.services.transactions import normalized_to_csv_dicts
 
 
 class TestLookupFunctionality(unittest.TestCase):
@@ -86,7 +87,12 @@ class TestLookupFunctionality(unittest.TestCase):
         )
         symbol, strike, option_type, expiration = parse_lookup_input(lookup_str)
 
-        transactions = get_options_transactions(csv_path)
+        parsed = load_option_transactions(
+            csv_path,
+            account_name="Lookup Account",
+            regulatory_fee=Decimal("0.04"),
+        )
+        transactions = normalized_to_csv_dicts(parsed.transactions)
         chains = detect_roll_chains(transactions)
 
         strike_decimal = Decimal(str(strike))

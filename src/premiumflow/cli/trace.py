@@ -6,12 +6,15 @@ Provides the CLI entry point that displays the history of a roll chain.
 
 from __future__ import annotations
 
+from decimal import Decimal
+from pathlib import Path
+
 import click
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from ..core.parser import get_options_transactions
+from ..core.parser import load_option_transactions
 from ..services.analysis import calculate_target_price_range
 from ..services.chain_builder import detect_roll_chains
 from ..services.display import (
@@ -22,6 +25,7 @@ from ..services.display import (
     format_price_range,
     format_realized_pnl,
 )
+from ..services.transactions import normalized_to_csv_dicts
 from .utils import parse_target_range
 
 
@@ -88,7 +92,12 @@ def trace(display_name, csv_file, target):
 
     try:
         console.print(f"[blue]Tracing {display_name} in {csv_file}[/blue]")
-        raw_transactions = get_options_transactions(csv_file)
+        parsed = load_option_transactions(
+            csv_file,
+            account_name=Path(csv_file).stem or "Trace Account",
+            regulatory_fee=Decimal("0.04"),
+        )
+        raw_transactions = normalized_to_csv_dicts(parsed.transactions)
         chains = detect_roll_chains(raw_transactions)
 
         display_key = display_name.strip().lower()
