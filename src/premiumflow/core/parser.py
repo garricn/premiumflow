@@ -14,6 +14,7 @@ from typing import Dict, List, Optional
 from .models import Transaction
 
 ALLOWED_OPTION_CODES = {"STO", "STC", "BTO", "BTC", "OASGN"}
+CONTRACT_MULTIPLIER = Decimal("100")
 
 
 class ImportValidationError(ValueError):
@@ -260,7 +261,7 @@ def load_option_transactions(
             raise ImportValidationError("CSV file is empty or missing a header row.")
 
         for index, row in enumerate(reader, start=2):  # header counted as row 1
-            if not row or not any(value and value.strip() for value in row.values()):
+            if _row_is_blank(row):
                 continue  # skip blank lines
 
             try:
@@ -285,7 +286,7 @@ def _normalize_row(
     """Normalize a CSV row; returns None for non-option transactions."""
 
     trans_code = _parse_trans_code(row, row_number)
-    if trans_code not in ALLOWED_OPTION_CODES:
+    if not trans_code or trans_code not in ALLOWED_OPTION_CODES:
         return None
 
     activity_date = _parse_date_field(row, "Activity Date", row_number)
@@ -293,12 +294,20 @@ def _normalize_row(
     settle_date = _parse_optional_date_field(row, "Settle Date", row_number)
     instrument = _require_field(row, "Instrument", row_number)
     description = _normalize_description(row, row_number)
-    quantity = _parse_quantity(row, "Quantity", row_number)
-    price_value = _parse_money(row, "Price", row_number, allow_negative=False)
-    if price_value is None:
-        raise ImportValidationError('Column "Price" cannot be blank.')
-    price = price_value
     amount = _parse_money(row, "Amount", row_number, allow_negative=True, required=False)
+    quantity = _parse_quantity(row, "Quantity", row_number)
+
+    price_value = _parse_money(
+        row,
+        "Price",
+        row_number,
+        allow_negative=False,
+        required=False,
+    )
+    if price_value is None:
+        price = _infer_price_from_amount(amount, quantity, trans_code, row_number)
+    else:
+        price = price_value
 
     commission = _parse_money(
         row,
@@ -336,13 +345,13 @@ def _normalize_row(
     )
 
 
-def _parse_trans_code(row: Dict[str, str], row_number: int) -> str:
+def _parse_trans_code(row: Dict[str, str], row_number: int) -> Optional[str]:
     trans_code_raw = row.get("Trans Code")
     if trans_code_raw is None:
         raise ImportValidationError('Missing required column "Trans Code".')
     trans_code = trans_code_raw.strip().upper()
     if not trans_code:
-        raise ImportValidationError('Column "Trans Code" cannot be blank.')
+        return None
     return trans_code
 
 
@@ -466,6 +475,47 @@ def _parse_money(
         raise ImportValidationError(f'Column "{field}" must be non-negative.')
 
     return value
+
+
+def _infer_price_from_amount(
+    amount: Optional[Decimal], quantity: int, trans_code: str, row_number: int
+) -> Decimal:
+    """
+    Derive a per-contract price when broker exports omit the explicit Price field.
+
+    Robinhood occasionally omits prices for assignments/exercises but still
+    provides an ``Amount``. Infer the price by dividing the absolute cash flow
+    by the contract count and standard multiplier. This preserves downstream
+    calculations that expect a per-contract price while accepting the raw CSV.
+    """
+
+    if amount is None:
+        if trans_code == "OASGN":
+            return Decimal("0.00")
+        raise ImportValidationError('Column "Price" cannot be blank.')
+
+    contracts = abs(quantity)
+    if contracts == 0:
+        raise ImportValidationError(
+            'Column "Price" cannot be inferred because "Quantity" evaluates to zero.'
+        )
+
+    inferred = abs(amount) / (Decimal(contracts) * CONTRACT_MULTIPLIER)
+    return inferred.quantize(Decimal("0.01"))
+
+
+def _row_is_blank(row: Dict[str, str]) -> bool:
+    if not row:
+        return True
+
+    for value in row.values():
+        if isinstance(value, list):
+            if any(item and item.strip() for item in value):
+                return False
+            continue
+        if value and value.strip():
+            return False
+    return True
 
 
 def _parse_option_details(description: str, row_number: int) -> tuple[str, Decimal, date]:

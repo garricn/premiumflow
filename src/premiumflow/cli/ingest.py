@@ -8,13 +8,18 @@ serialize raw options transactions extracted from CSV input. A deprecated
 
 from __future__ import annotations
 
-from typing import Iterable
+from decimal import Decimal, InvalidOperation
+from typing import Iterable, List, Optional
 
 import click
 from rich.console import Console
 from rich.table import Table
 
-from ..core.parser import get_options_transactions
+from ..core.parser import (
+    ImportValidationError,
+    NormalizedOptionTransaction,
+    load_option_transactions,
+)
 from ..services.chain_builder import detect_roll_chains
 from ..services.display import format_percent
 from ..services.json_serializer import build_ingest_payload
@@ -25,6 +30,48 @@ from ..services.transactions import (
     filter_transactions_by_ticker,
 )
 from .utils import parse_target_range, prepare_transactions_for_display
+
+
+def _format_money(value: Decimal) -> str:
+    quantized = value.quantize(Decimal("0.01"))
+    if quantized < 0:
+        return f"(${abs(quantized):,.2f})"
+    return f"${quantized:,.2f}"
+
+
+def _format_quantity(quantity: int) -> str:
+    if quantity < 0:
+        return f"({abs(quantity)})"
+    return str(quantity)
+
+
+def _to_csv_transaction(txn: NormalizedOptionTransaction) -> dict[str, str]:
+    amount_display: Optional[str]
+    if txn.amount is None:
+        amount_display = ""
+    else:
+        amount_display = _format_money(txn.amount)
+
+    commission_display = _format_money(txn.fees) if txn.fees else ""
+
+    return {
+        "Activity Date": txn.activity_date.strftime("%m/%d/%Y"),
+        "Process Date": txn.process_date.strftime("%m/%d/%Y") if txn.process_date else "",
+        "Settle Date": txn.settle_date.strftime("%m/%d/%Y") if txn.settle_date else "",
+        "Instrument": txn.instrument,
+        "Description": txn.description,
+        "Trans Code": txn.trans_code,
+        "Quantity": _format_quantity(txn.quantity),
+        "Price": _format_money(txn.price),
+        "Amount": amount_display,
+        "Commission": commission_display,
+    }
+
+
+def _transactions_to_csv_dicts(
+    transactions: Iterable[NormalizedOptionTransaction],
+) -> List[dict[str, str]]:
+    return [_to_csv_transaction(txn) for txn in transactions]
 
 
 def _emit_transactions_table(table_rows: Iterable[dict[str, str]], target_label: str) -> Table:
@@ -88,6 +135,21 @@ def _apply_import_options(func):
             help="Target profit range as fraction of entry price / credit (e.g. 0.5-0.7)",
         ),
         click.option(
+            "--account-name",
+            required=True,
+            help="Human-readable account label to attach to this import (required).",
+        ),
+        click.option(
+            "--account-number",
+            help="Optional account identifier to echo in output.",
+        ),
+        click.option(
+            "--regulatory-fee",
+            default="0.04",
+            show_default=True,
+            help="Per-contract regulatory fee (USD) when commission data is absent.",
+        ),
+        click.option(
             "--json-output", "json_output", is_flag=True, help="Emit JSON instead of table output"
         ),
     ]
@@ -107,6 +169,9 @@ def _run_import(
     csv_file,
     open_only,
     target,
+    account_name,
+    account_number,
+    regulatory_fee,
     json_output,
     console_label: str,
 ) -> None:
@@ -114,76 +179,88 @@ def _run_import(
 
     console = Console()
     target_bounds = parse_target_range(target)
+    target_percents = calculate_target_percents(target_bounds)
+    target_label = (
+        "Target (" + ", ".join(format_percent(value) for value in target_percents) + ")"
+        if target_percents
+        else "Target"
+    )
 
     try:
-        emit_text = not json_output
+        regulatory_fee_value = Decimal(str(regulatory_fee))
+    except (InvalidOperation, TypeError, ValueError) as exc:
+        raise click.BadParameter("--regulatory-fee must be a decimal value.") from exc
 
-        if emit_text:
-            console.print(f"[blue]{console_label} {csv_file}...[/blue]")
-
-        transactions = get_options_transactions(csv_file)
-        target_percents = calculate_target_percents(target_bounds)
-        target_label = (
-            "Target (" + ", ".join(format_percent(value) for value in target_percents) + ")"
+    try:
+        parsed = load_option_transactions(
+            csv_file,
+            account_name=account_name,
+            account_number=account_number,
+            regulatory_fee=regulatory_fee_value,
         )
+    except ImportValidationError as exc:
+        ctx.fail(str(exc))
+        return
 
-        calls_only = strategy == "calls"
-        puts_only = strategy == "puts"
+    emit_text = not json_output
+    if emit_text:
+        console.print(f"[blue]{console_label} {csv_file}...[/blue]")
 
-        try:
-            filtered_by_ticker = filter_transactions_by_ticker(transactions, ticker_symbol)
-            filtered_transactions = filter_transactions_by_option_type(
-                filtered_by_ticker,
-                calls_only=calls_only,
-                puts_only=puts_only,
-            )
-        except ValueError as exc:
-            ctx.fail(str(exc))
+    csv_transactions = _transactions_to_csv_dicts(parsed.transactions)
 
-        chain_source_transactions = list(filtered_transactions)
+    calls_only = strategy == "calls"
+    puts_only = strategy == "puts"
 
-        if ticker_symbol:
-            ticker_key = ticker_symbol.strip().upper()
-            if not filtered_by_ticker:
-                if json_output:
-                    empty_payload = build_ingest_payload(
-                        csv_file=csv_file,
-                        transactions=[],
-                        display_rows=[],
-                        chains=[],
-                        target_percents=target_percents,
-                        options_only=options_only,
-                        ticker=ticker_symbol,
-                        strategy=strategy,
-                        open_only=open_only,
-                    )
-                    console.print_json(data=empty_payload)
-                else:
-                    console.print(
-                        f"[yellow]No options transactions found for ticker {ticker_key}[/yellow]"
-                    )
-                return
-            if emit_text:
-                console.print(
-                    f"[green]Filtered to {len(filtered_by_ticker)} {ticker_key} options transactions[/green]"
+    try:
+        filtered_by_ticker = filter_transactions_by_ticker(csv_transactions, ticker_symbol)
+        filtered_transactions = filter_transactions_by_option_type(
+            filtered_by_ticker,
+            calls_only=calls_only,
+            puts_only=puts_only,
+        )
+    except ValueError as exc:
+        ctx.fail(str(exc))
+        return
+
+    chain_source_transactions = list(filtered_transactions)
+
+    if ticker_symbol:
+        ticker_key = ticker_symbol.strip().upper()
+        if not filtered_transactions:
+            if json_output:
+                empty_payload = build_ingest_payload(
+                    csv_file=csv_file,
+                    transactions=[],
+                    display_rows=[],
+                    chains=[],
+                    target_percents=target_percents,
+                    options_only=options_only,
+                    ticker=ticker_symbol,
+                    strategy=strategy,
+                    open_only=open_only,
                 )
-        else:
-            if emit_text:
+                console.print_json(data=empty_payload)
+            else:
                 console.print(
-                    f"[green]Found {len(filtered_transactions)} options transactions[/green]"
+                    f"[yellow]No options transactions found for ticker {ticker_key}[/yellow]"
                 )
-
-        if open_only:
-            filtered_transactions = filter_open_positions(filtered_transactions)
-            if emit_text:
-                console.print(f"[cyan]Open positions: {len(filtered_transactions)}[/cyan]")
-
-        display_rows = prepare_transactions_for_display(filtered_transactions, target_percents)
-
-        if not filtered_transactions and emit_text:
-            console.print("[yellow]No transactions match the provided filters.[/yellow]")
             return
+        if emit_text:
+            console.print(
+                f"[green]Filtered to {len(filtered_transactions)} {ticker_key} options transactions[/green]"
+            )
+    else:
+        if emit_text:
+            console.print(f"[green]Found {len(filtered_transactions)} options transactions[/green]")
 
+    if open_only:
+        filtered_transactions = filter_open_positions(filtered_transactions)
+        if emit_text:
+            console.print(f"[cyan]Open positions: {len(filtered_transactions)}[/cyan]")
+
+    display_rows = prepare_transactions_for_display(filtered_transactions, target_percents)
+
+    if not filtered_transactions:
         if json_output:
             chains_for_json = detect_roll_chains(chain_source_transactions)
             payload = build_ingest_payload(
@@ -198,22 +275,44 @@ def _run_import(
                 open_only=open_only,
             )
             console.print_json(data=payload)
-            return
+        elif emit_text:
+            console.print("[yellow]No transactions match the provided filters.[/yellow]")
+        return
 
-        transactions_table = _emit_transactions_table(display_rows, target_label)
-        console.print(transactions_table)
+    if json_output:
+        chains_for_json = detect_roll_chains(chain_source_transactions)
+        payload = build_ingest_payload(
+            csv_file=csv_file,
+            transactions=filtered_transactions,
+            display_rows=display_rows,
+            chains=chains_for_json,
+            target_percents=target_percents,
+            options_only=options_only,
+            ticker=ticker_symbol,
+            strategy=strategy,
+            open_only=open_only,
+        )
+        console.print_json(data=payload)
+        return
 
-    except click.ClickException:
-        raise
-    except Exception as exc:
-        console.print(f"[red]Error: {exc}[/red]")
-        raise click.Abort() from exc
+    transactions_table = _emit_transactions_table(display_rows, target_label)
+    console.print(transactions_table)
 
 
 @click.command(name="import")
 @_apply_import_options
 def import_transactions(
-    ctx, options_only, ticker_symbol, strategy, csv_file, open_only, target, json_output
+    ctx,
+    options_only,
+    ticker_symbol,
+    strategy,
+    csv_file,
+    open_only,
+    target,
+    account_name,
+    account_number,
+    regulatory_fee,
+    json_output,
 ):
     """Import and display raw options transactions from CSV."""
 
@@ -225,6 +324,9 @@ def import_transactions(
         csv_file=csv_file,
         open_only=open_only,
         target=target,
+        account_name=account_name,
+        account_number=account_number,
+        regulatory_fee=regulatory_fee,
         json_output=json_output,
         console_label="Importing",
     )
@@ -232,7 +334,19 @@ def import_transactions(
 
 @click.command(name="ingest")
 @_apply_import_options
-def ingest(ctx, options_only, ticker_symbol, strategy, csv_file, open_only, target, json_output):
+def ingest(
+    ctx,
+    options_only,
+    ticker_symbol,
+    strategy,
+    csv_file,
+    open_only,
+    target,
+    account_name,
+    account_number,
+    regulatory_fee,
+    json_output,
+):
     """Deprecated alias for ``premiumflow import``."""
 
     click.echo(
@@ -248,6 +362,9 @@ def ingest(ctx, options_only, ticker_symbol, strategy, csv_file, open_only, targ
         csv_file=csv_file,
         open_only=open_only,
         target=target,
+        account_name=account_name,
+        account_number=account_number,
+        regulatory_fee=regulatory_fee,
         json_output=json_output,
         console_label="Importing",
     )
