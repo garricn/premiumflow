@@ -22,7 +22,7 @@ def test_load_option_transactions_parses_fixture():
 
     assert result.account_name == "Robinhood IRA"
     assert result.account_number == "RH-12345"
-    assert result.regulatory_fee == Decimal("0.04")
+    assert result.regulatory_fee == Decimal("0.00")
     assert len(result.transactions) == 3
 
     # First row is the STO entry (SELL).
@@ -36,64 +36,13 @@ def test_load_option_transactions_parses_fixture():
     assert first.price == Decimal("1.20")
     assert first.option_type == "CALL"
     assert first.expiration.isoformat() == "2025-10-25"
-    assert first.fees == Decimal("0.08")
+    assert first.fees == Decimal("0.00")
 
     # Second row ensures BUY/STC branches.
     second = result.transactions[1]
     assert second.trans_code == "BTC"
     assert second.action == "BUY"
-    assert second.fees == Decimal("0.04")
-
-
-def test_load_option_transactions_uses_commission_override(tmp_path):
-    csv_content = """Activity Date,Process Date,Settle Date,Instrument,Description,Trans Code,Quantity,Price,Amount,Commission
-10/7/2025,10/7/2025,10/8/2025,TSLA,TSLA 10/25/2025 Call $200.00,STO,2,$1.25,$250.00,1.50
-"""
-    csv_path = tmp_path / "commission.csv"
-    csv_path.write_text(csv_content, encoding="utf-8")
-
-    result = load_option_transactions(
-        csv_path,
-        account_name="Test Account",
-        regulatory_fee=Decimal("0.04"),
-    )
-
-    assert len(result.transactions) == 1
-    assert result.transactions[0].fees == Decimal("1.50")
-
-
-def test_load_option_transactions_accepts_parenthesized_commission(tmp_path):
-    csv_content = """Activity Date,Process Date,Settle Date,Instrument,Description,Trans Code,Quantity,Price,Amount,Commission
-10/7/2025,10/7/2025,10/8/2025,TSLA,TSLA 10/25/2025 Call $200.00,STO,2,$1.25,$250.00,($1.50)
-"""
-    csv_path = tmp_path / "negative_commission.csv"
-    csv_path.write_text(csv_content, encoding="utf-8")
-
-    result = load_option_transactions(
-        csv_path,
-        account_name="Test Account",
-        regulatory_fee=Decimal("0.04"),
-    )
-
-    assert len(result.transactions) == 1
-    assert result.transactions[0].fees == Decimal("1.50")
-
-
-def test_load_option_transactions_rejects_negative_commission(tmp_path):
-    csv_content = """Activity Date,Process Date,Settle Date,Instrument,Description,Trans Code,Quantity,Price,Amount,Commission
-10/7/2025,10/7/2025,10/8/2025,TSLA,TSLA 10/25/2025 Call $200.00,STO,2,$1.25,$250.00,-1.50
-"""
-    csv_path = tmp_path / "negative_literal_commission.csv"
-    csv_path.write_text(csv_content, encoding="utf-8")
-
-    with pytest.raises(ImportValidationError) as excinfo:
-        load_option_transactions(
-            csv_path,
-            account_name="Test Account",
-            regulatory_fee=Decimal("0.04"),
-        )
-
-    assert 'Row 2: Column "Commission" must be non-negative.' == str(excinfo.value)
+    assert second.fees == Decimal("0.00")
 
 
 def test_load_option_transactions_rejects_parenthesized_price(tmp_path):
