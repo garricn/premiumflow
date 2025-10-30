@@ -165,6 +165,8 @@ def test_store_import_skip_existing(tmp_path, monkeypatch):
     with sqlite3.connect(db_path) as conn:
         imports = conn.execute("SELECT COUNT(*) FROM imports").fetchone()[0]
         assert imports == 1
+        txn_count = conn.execute("SELECT COUNT(*) FROM option_transactions").fetchone()[0]
+        assert txn_count == len(parsed.transactions)
     assert initial.status == "inserted"
     assert skipped.status == "skipped"
 
@@ -199,8 +201,14 @@ def test_store_import_replace_existing(tmp_path, monkeypatch):
     )
 
     with sqlite3.connect(db_path) as conn:
-        imports = conn.execute("SELECT options_only, open_only FROM imports").fetchall()
-        assert imports == [(0, 1)]
+        imports = conn.execute("SELECT id, options_only, open_only FROM imports").fetchall()
+        assert [(row[1], row[2]) for row in imports] == [(0, 1)]
+        import_id = imports[0][0]
+        txn_count = conn.execute(
+            "SELECT COUNT(*) FROM option_transactions WHERE import_id = ?",
+            (import_id,),
+        ).fetchone()[0]
+        assert txn_count == len(parsed.transactions)
 
     assert initial.status == "inserted"
     assert replaced.status == "replaced"

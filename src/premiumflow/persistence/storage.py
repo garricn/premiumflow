@@ -75,6 +75,7 @@ class SQLiteStorage:
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self._db_path)
         conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON;")
         return conn
 
     def _ensure_initialized(self) -> None:
@@ -106,8 +107,6 @@ class SQLiteStorage:
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_imports_account_id ON imports(account_id);
-                CREATE UNIQUE INDEX IF NOT EXISTS idx_imports_account_path
-                    ON imports(account_id, source_path);
 
                 CREATE TABLE IF NOT EXISTS option_transactions (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -136,6 +135,20 @@ class SQLiteStorage:
                     ON option_transactions(instrument);
                 CREATE INDEX IF NOT EXISTS idx_transactions_expiration
                     ON option_transactions(expiration);
+                """
+            )
+            conn.execute(
+                """
+                DELETE FROM imports
+                WHERE id NOT IN (
+                    SELECT MIN(id) FROM imports GROUP BY account_id, source_path
+                );
+                """
+            )
+            conn.execute(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_imports_account_path
+                    ON imports(account_id, source_path);
                 """
             )
         self._initialized = True
