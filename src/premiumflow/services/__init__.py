@@ -28,6 +28,7 @@ from .json_serializer import (
     build_ingest_payload,
     serialize_chain,
     serialize_decimal,
+    serialize_normalized_transaction,
     serialize_transaction,
 )
 from .transactions import normalized_to_csv_dicts
@@ -50,6 +51,7 @@ __all__ = [
     "calculate_target_price_range",
     "serialize_decimal",
     "serialize_transaction",
+    "serialize_normalized_transaction",
     "serialize_chain",
     "build_ingest_payload",
     "is_open_chain",

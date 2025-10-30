@@ -502,13 +502,14 @@ def test_import_json_output(tmp_path):
     payload = json.loads(result.output)
     assert payload["filters"]["ticker"] == "PLTR"
     assert payload["filters"]["options_only"] is True
-    assert isinstance(payload["target_percents"][0], str)
     assert payload["account"]["name"] == "Test Account"
-    assert payload["cash_flow"]["credits"] != ""
+    assert "target_percents" not in payload
     assert payload["transactions"]
     first_txn = payload["transactions"][0]
-    assert "targets" in first_txn
-    assert "credit" in first_txn
+    assert first_txn["instrument"] == "PLTR"
+    assert "credit" not in first_txn
+    assert "amount" in first_txn
+    assert all(txn["instrument"] == "PLTR" for txn in payload["transactions"])
 
 
 def test_import_strategy_calls_only(tmp_path):
