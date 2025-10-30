@@ -126,7 +126,6 @@ result = load_option_transactions(
     "all_transactions.csv",
     account_name="Robinhood IRA",
     account_number="RH-12345",
-    regulatory_fee=Decimal("0.04"),
 )
 
 for txn in result.transactions:
@@ -134,6 +133,6 @@ for txn in result.transactions:
 ```
 
 `account_name` is required and must contain non-whitespace characters. `account_number` is optional, but
-when provided must also contain non-whitespace characters. Commissions supplied in the CSV override the
-regulatory fee and accept parenthesized values such as `(1.50)`; negative numbers like `-1.50` continue to
-raise `ImportValidationError`.
+when provided must also contain non-whitespace characters. The import parser no longer infers fees or
+reads commission columns; all `NormalizedOptionTransaction.fees` values default to `Decimal("0")`, leaving
+fee handling to downstream tooling.

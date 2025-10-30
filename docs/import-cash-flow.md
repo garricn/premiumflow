@@ -87,7 +87,7 @@ consumers can distinguish missing data.
 
 - `Missing option '--account-name'`: the flag is required for every import.
 - `Row N: Column "Price" cannot be blank.`: supply the broker price or confirm the row is an option assignment; PremiumFlow will infer a zero price for `OASGN` entries when both `Price` and `Amount` are empty.
-- Commissions supplied in the CSV accept parenthesized syntax `(1.50)`; when absent, the parser relies on the CLI's fallback regulatory-fee value.
+- Broker commissions are currently ignored. Downstream tooling should compute fees if they are required for reporting.
 
 ## Future Enhancements
 

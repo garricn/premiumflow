@@ -90,7 +90,6 @@ class TestLookupFunctionality(unittest.TestCase):
         parsed = load_option_transactions(
             csv_path,
             account_name="Lookup Account",
-            regulatory_fee=Decimal("0.04"),
         )
         transactions = normalized_to_csv_dicts(parsed.transactions)
         chains = detect_roll_chains(transactions)
