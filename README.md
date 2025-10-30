@@ -106,6 +106,11 @@ uv run premiumflow lookup "TSLA 500C 2025-02-21"
 uv run premiumflow trace "TSLA $550 Call" all_transactions.csv
 ```
 
+### Cash-Flow Import Guide
+
+The hardened `premiumflow import` workflow (required flags, validation behavior, cash-flow metrics, sample
+output, and troubleshooting) is documented in [docs/import-cash-flow.md](docs/import-cash-flow.md).
+
 ### Parser API
 
 If you need to work directly with the import parser, call `premiumflow.core.parser.load_option_transactions`

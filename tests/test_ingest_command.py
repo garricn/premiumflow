@@ -50,6 +50,16 @@ def _write_assignment_without_price_csv(tmp_path: Path) -> Path:
     return csv_path
 
 
+def _write_unsorted_csv(tmp_path: Path) -> Path:
+    csv_content = """Activity Date,Process Date,Settle Date,Instrument,Description,Trans Code,Quantity,Price,Amount
+9/15/2025,9/15/2025,9/17/2025,AAPL,AAPL 10/17/2025 Put $150.00,STC,1,$1.00,$100.00
+9/1/2025,9/1/2025,9/3/2025,TSLA,TSLA 10/17/2025 Call $515.00,STO,1,$3.00,$300.00
+"""
+    csv_path = tmp_path / "unsorted.csv"
+    csv_path.write_text(csv_content, encoding="utf-8")
+    return csv_path
+
+
 def _write_non_option_row_csv(tmp_path: Path) -> Path:
     csv_content = """Activity Date,Process Date,Settle Date,Instrument,Description,Trans Code,Quantity,Price,Amount
 9/22/2025,9/22/2025,9/23/2025,AMD,AMD CUSIP: 007903107,Sell,200,$161.66,$32,331.17
@@ -313,3 +323,25 @@ def test_import_skips_rows_without_option_trans_code(tmp_path):
     payload = json.loads(result.output)
     assert len(payload["transactions"]) == 1
     assert payload["transactions"][0]["instrument"] == "TSLA"
+
+
+def test_import_command_sorts_transactions_by_date(tmp_path):
+    """Transactions are sorted chronologically before computing cash flows."""
+    csv_path = _write_unsorted_csv(tmp_path)
+    runner = CliRunner()
+
+    result = runner.invoke(
+        import_transactions,
+        [
+            "--file",
+            str(csv_path),
+            "--account-name",
+            "Test Account",
+            "--json-output",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    dates = [txn["activity_date"] for txn in payload["transactions"]]
+    assert dates == sorted(dates)
