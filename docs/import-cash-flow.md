@@ -79,7 +79,9 @@ Key fields in the payload:
 
 Decimal-backed fields (price, amount, strike) are stringified to preserve precision, while integer
 fields such as `quantity` remain numeric. The CLI table still formats values for readability
-(currency symbols, comma separators, parentheses to denote negatives).
+(currency symbols, comma separators, parentheses to denote negatives). When a CSV field such as
+`Amount` is blank, the table displays `--` while the JSON payload emits `null` so downstream
+consumers can distinguish missing data.
 
 ## Troubleshooting
 
