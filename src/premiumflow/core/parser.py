@@ -129,13 +129,13 @@ def load_option_transactions(
     account_number:
         Optional account identifier. When provided, must contain non-whitespace characters.
     regulatory_fee:
-        Default per-contract regulatory fee to use when Commission data is absent.
+        Retained for backward compatibility. Currently ignored and treated as ``Decimal(\"0\")``.
 
     Returns
     -------
     ParsedImportResult
-        Aggregated account metadata, normalized regulatory fee, and the list of
-        normalized option rows (filtered to ``ALLOWED_OPTION_CODES``).
+        Aggregated account metadata and the list of normalized option rows (filtered
+        to ``ALLOWED_OPTION_CODES``).
 
     Raises
     ------
@@ -148,7 +148,7 @@ def load_option_transactions(
     normalized_account_name, normalized_account_number = _validate_account_metadata(
         account_name, account_number
     )
-    reg_fee = _coerce_regulatory_fee(regulatory_fee)
+    reg_fee = Decimal("0.00")
 
     with open(csv_file, "r", encoding="utf-8") as handle:
         reader = csv.DictReader(handle)
@@ -204,22 +204,10 @@ def _normalize_row(
     else:
         price = price_value
 
-    commission = _parse_money(
-        row,
-        "Commission",
-        row_number,
-        allow_negative=False,
-        required=False,
-        allow_parenthesized_positive=True,
-    )
-
     option_type, strike, expiration = _parse_option_details(description, row_number)
     action = "SELL" if trans_code in {"STO", "STC"} else "BUY"
 
-    if commission is not None:
-        fees = commission
-    else:
-        fees = regulatory_fee * abs(quantity)
+    fees = Decimal("0.00")
 
     return NormalizedOptionTransaction(
         activity_date=activity_date,
@@ -267,17 +255,6 @@ def _validate_account_metadata(
         raise ImportValidationError("--account-number cannot be blank.")
 
     return normalized_name, normalized_number
-
-
-def _coerce_regulatory_fee(value: Decimal) -> Decimal:
-    try:
-        fee = value if isinstance(value, Decimal) else Decimal(str(value))
-    except (InvalidOperation, ValueError, TypeError) as exc:
-        raise ImportValidationError(f"Invalid regulatory fee value: {value!r}") from exc
-
-    if fee < 0:
-        raise ImportValidationError("Regulatory fee must be non-negative.")
-    return fee
 
 
 def _require_field(row: Dict[str, str], field: str, row_number: int) -> str:
