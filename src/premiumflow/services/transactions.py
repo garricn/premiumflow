@@ -137,7 +137,8 @@ def normalized_to_csv_dicts(
     """Convert normalized transactions into CSV-style dicts.
 
     Values are serialized as strings (for example, Price ``$3.00`` or Amount ``($200.00)``) to match
-    the legacy CSV format consumed by chain detection and display helpers.
+    the legacy CSV format consumed by chain detection and display helpers. Numeric strings preserve
+    two decimal places so downstream formatting stays consistent.
     """
 
     rows: List[Dict[str, str]] = []

@@ -79,6 +79,10 @@ Key fields in the payload:
 }
 ```
 
+JSON numbers are emitted as strings to preserve Decimal precision (no rounding) and to keep the
+payload friendly for downstream tooling. In contrast, the table output you see on the CLI is formatted
+for readability (currency symbols, comma separators, parentheses to denote negatives).
+
 ## Troubleshooting
 
 - `Missing option '--account-name'`: the flag is required for every import.
