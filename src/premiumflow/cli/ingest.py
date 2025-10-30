@@ -18,16 +18,12 @@ from rich.table import Table
 from ..core.parser import (
     ImportValidationError,
     NormalizedOptionTransaction,
-    ParsedImportResult,
     load_option_transactions,
 )
-from ..services.cash_flows import CashFlowSummary, summarize_cash_flows
 from ..services.chain_builder import detect_roll_chains
-from ..services.display import format_currency, format_percent, format_target_close_prices
+from ..services.display import format_currency
 from ..services.json_serializer import build_ingest_payload
-from ..services.targets import calculate_target_percents, compute_target_close_prices
 from ..services.transactions import normalized_to_csv_dicts
-from .utils import parse_target_range
 
 
 def _transaction_key_from_txn(txn: NormalizedOptionTransaction) -> tuple:
@@ -79,17 +75,6 @@ def _filter_open_transactions(
     return filtered, len(open_keys)
 
 
-def _create_parsed_result(
-    parsed: ParsedImportResult, transactions: Iterable[NormalizedOptionTransaction]
-) -> ParsedImportResult:
-    return ParsedImportResult(
-        account_name=parsed.account_name,
-        account_number=parsed.account_number,
-        regulatory_fee=parsed.regulatory_fee,
-        transactions=list(transactions),
-    )
-
-
 def _sort_transactions(
     transactions: Iterable[NormalizedOptionTransaction],
 ) -> List[NormalizedOptionTransaction]:
@@ -105,47 +90,35 @@ def _sort_transactions(
     return [txn for _, txn in indexed]
 
 
-def _build_cash_flow_table(
-    summary: CashFlowSummary,
-    target_percents: List[Decimal],
-    target_label: str,
+def _build_transaction_table(
+    account_name: str,
+    transactions: Iterable[NormalizedOptionTransaction],
 ) -> Table:
-    table = Table(title=f"Options Transactions – {summary.account_name}", expand=True)
+    table = Table(title=f"Options Transactions – {account_name}", expand=True)
     table.add_column("Date", style="cyan")
     table.add_column("Symbol", style="magenta", no_wrap=True)
     table.add_column("Expiration", style="magenta")
+    table.add_column("Strike", justify="right")
+    table.add_column("Type", style="magenta")
+    table.add_column("Action", style="green")
     table.add_column("Code", style="green")
     table.add_column("Quantity", justify="right")
     table.add_column("Price", justify="right")
-    table.add_column("Credit", justify="right")
-    table.add_column("Debit", justify="right")
-    table.add_column("Fee", justify="right")
-    table.add_column("Net Premium", justify="right")
-    table.add_column("Net P&L", justify="right")
-    table.add_column(target_label, justify="right")
+    table.add_column("Amount", justify="right")
     table.add_column("Description", style="yellow")
 
-    for row in summary.rows:
-        txn = row.transaction
-        target_prices = compute_target_close_prices(
-            txn.trans_code,
-            format(txn.price, "f"),
-            target_percents,
-        )
-
+    for txn in transactions:
         table.add_row(
             txn.activity_date.isoformat(),
             (txn.instrument or "").strip(),
             txn.expiration.isoformat(),
+            format_currency(txn.strike),
+            txn.option_type,
+            txn.action,
             txn.trans_code,
             str(txn.quantity),
             format_currency(txn.price),
-            format_currency(row.credit),
-            format_currency(row.debit),
-            format_currency(row.fee),
-            format_currency(row.running_net_premium),
-            format_currency(row.running_net_pnl),
-            format_target_close_prices(target_prices),
+            format_currency(txn.amount) if txn.amount is not None else "--",
             txn.description,
         )
 
@@ -178,12 +151,6 @@ def _apply_import_options(func):
         ),
         click.option(
             "--open-only", is_flag=True, help="Show only open option positions (no closing trades)"
-        ),
-        click.option(
-            "--target",
-            default="0.5-0.7",
-            show_default=True,
-            help="Target profit range as fraction of entry price / credit (e.g. 0.5-0.7)",
         ),
         click.option(
             "--account-name",
@@ -219,7 +186,6 @@ def _run_import(
     strategy,
     csv_file,
     open_only,
-    target,
     account_name,
     account_number,
     regulatory_fee,
@@ -229,13 +195,6 @@ def _run_import(
     """Shared implementation used by both import and ingest commands."""
 
     console = Console()
-    target_bounds = parse_target_range(target)
-    target_percents = calculate_target_percents(target_bounds)
-    target_label = (
-        "Target (" + ", ".join(format_percent(value) for value in target_percents) + ")"
-        if target_percents
-        else "Target"
-    )
 
     try:
         regulatory_fee_value = Decimal(str(regulatory_fee))
@@ -263,13 +222,13 @@ def _run_import(
     if ticker_symbol:
         ticker_key = ticker_symbol.strip().upper()
         if not filtered_transactions:
-            empty_summary = summarize_cash_flows(_create_parsed_result(parsed, []))
             if json_output:
                 payload = build_ingest_payload(
                     csv_file=csv_file,
-                    summary=empty_summary,
+                    account_name=parsed.account_name,
+                    account_number=parsed.account_number,
+                    transactions=[],
                     chains=[],
-                    target_percents=target_percents,
                     options_only=options_only,
                     ticker=ticker_symbol,
                     strategy=strategy,
@@ -303,15 +262,15 @@ def _run_import(
             console.print(f"[cyan]Open positions: {open_position_count}[/cyan]")
         chain_source_transactions = normalized_to_csv_dicts(filtered_transactions)
 
-    filtered_summary = summarize_cash_flows(_create_parsed_result(parsed, filtered_transactions))
     chains_for_json = detect_roll_chains(chain_source_transactions)
 
     if json_output:
         payload = build_ingest_payload(
             csv_file=csv_file,
-            summary=filtered_summary,
+            account_name=parsed.account_name,
+            account_number=parsed.account_number,
+            transactions=filtered_transactions,
             chains=chains_for_json,
-            target_percents=target_percents,
             options_only=options_only,
             ticker=ticker_symbol,
             strategy=strategy,
@@ -320,28 +279,17 @@ def _run_import(
         console.print_json(data=payload)
         return
 
-    if not filtered_summary.rows:
+    if not filtered_transactions:
         console.print("[yellow]No transactions match the provided filters.[/yellow]")
         return
 
-    account_line = f"[green]Account:[/green] {filtered_summary.account_name}"
-    if filtered_summary.account_number:
-        account_line += f" ({filtered_summary.account_number})"
-    account_line += f" · Reg Fee: {format_currency(filtered_summary.regulatory_fee)}"
+    account_line = f"[green]Account:[/green] {parsed.account_name}"
+    if parsed.account_number:
+        account_line += f" ({parsed.account_number})"
     console.print(account_line)
 
-    table = _build_cash_flow_table(filtered_summary, target_percents, target_label)
+    table = _build_transaction_table(parsed.account_name, filtered_transactions)
     console.print(table)
-
-    totals = filtered_summary.totals
-    console.print(
-        "[bold magenta]Totals:[/bold magenta] "
-        f"Credits {format_currency(totals.credits)} · "
-        f"Debits {format_currency(totals.debits)} · "
-        f"Fees {format_currency(totals.fees)} · "
-        f"Net Premium {format_currency(totals.net_premium)} · "
-        f"Net P&L {format_currency(totals.net_pnl)}"
-    )
 
 
 @click.command(name="import")
@@ -353,7 +301,6 @@ def import_transactions(
     strategy,
     csv_file,
     open_only,
-    target,
     account_name,
     account_number,
     regulatory_fee,
@@ -368,7 +315,6 @@ def import_transactions(
         strategy=strategy,
         csv_file=csv_file,
         open_only=open_only,
-        target=target,
         account_name=account_name,
         account_number=account_number,
         regulatory_fee=regulatory_fee,
@@ -386,7 +332,6 @@ def ingest(
     strategy,
     csv_file,
     open_only,
-    target,
     account_name,
     account_number,
     regulatory_fee,
@@ -406,7 +351,6 @@ def ingest(
         strategy=strategy,
         csv_file=csv_file,
         open_only=open_only,
-        target=target,
         account_name=account_name,
         account_number=account_number,
         regulatory_fee=regulatory_fee,

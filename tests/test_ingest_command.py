@@ -84,9 +84,11 @@ def test_import_command_table_output(tmp_path):
     assert "Options Transactions" in result.output
     assert "TSLA" in result.output
     assert "Account:" in result.output
-    assert "Credit" in result.output
-    assert "Net Premium" in result.output
-    assert "Totals:" in result.output
+    assert "Credit" not in result.output
+    assert "Net Premium" not in result.output
+    assert "Totals:" not in result.output
+    assert "Fees" not in result.output
+    assert "Reg Fee" not in result.output
 
 
 def test_import_command_json_output(tmp_path):
@@ -105,11 +107,11 @@ def test_import_command_json_output(tmp_path):
     assert payload["filters"]["options_only"] is True
     assert payload["account"]["name"] == "Test Account"
     assert payload["account"]["number"] is None
-    assert payload["cash_flow"]["credits"] == "400"
-    assert payload["cash_flow"]["net_premium"] == "200"
+    assert "cash_flow" not in payload
     first_txn = payload["transactions"][0]
-    assert first_txn["credit"] == "300"
-    assert first_txn["targets"]
+    assert first_txn["instrument"] == "TSLA"
+    assert first_txn["price"] == "3"
+    assert first_txn["amount"] == "300"
 
 
 def test_import_command_filters_by_ticker(tmp_path):
@@ -140,8 +142,8 @@ def test_import_command_open_only(tmp_path):
     assert "Open positions:" in result.output
 
 
-def test_import_command_invalid_target_range(tmp_path):
-    """Invalid target range raises Click error."""
+def test_import_command_rejects_target_option(tmp_path):
+    """Deprecated target option should be rejected."""
     csv_path = _write_sample_csv(tmp_path)
     runner = CliRunner()
 
@@ -151,7 +153,7 @@ def test_import_command_invalid_target_range(tmp_path):
     )
 
     assert result.exit_code != 0
-    assert "Invalid target range format" in result.output
+    assert "No such option" in result.output
 
 
 def test_ingest_alias_warns(tmp_path):
