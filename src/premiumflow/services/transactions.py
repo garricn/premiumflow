@@ -1,6 +1,9 @@
 """Transaction filtering helpers."""
 
+from decimal import Decimal
 from typing import Any, Dict, Iterable, List, Optional, Tuple
+
+from ..core.parser import NormalizedOptionTransaction
 
 
 def filter_transactions_by_ticker(
@@ -119,3 +122,44 @@ def filter_open_positions(transactions: Iterable[Dict[str, Any]]) -> List[Dict[s
                 processed_positions.add(key)
 
     return open_positions
+
+
+def _format_money_string(value: Decimal) -> str:
+    quantized = value.quantize(Decimal("0.01"))
+    if quantized < 0:
+        return f"(${abs(quantized):,.2f})"
+    return f"${quantized:,.2f}"
+
+
+def normalized_to_csv_dicts(
+    transactions: Iterable[NormalizedOptionTransaction],
+) -> List[Dict[str, str]]:
+    """Convert normalized transactions into CSV-style dicts.
+
+    Values are serialized as strings (for example, Price ``$3.00`` or Amount ``($200.00)``) to match
+    the legacy CSV format consumed by chain detection and display helpers.
+    """
+
+    rows: List[Dict[str, str]] = []
+    for txn in transactions:
+        if txn.amount is not None:
+            signed_amount = txn.amount
+        else:
+            notional = txn.price * Decimal(txn.quantity) * Decimal("100")
+            signed_amount = notional if txn.action == "SELL" else -notional
+
+        rows.append(
+            {
+                "Activity Date": txn.activity_date.strftime("%m/%d/%Y"),
+                "Process Date": txn.process_date.strftime("%m/%d/%Y") if txn.process_date else "",
+                "Settle Date": txn.settle_date.strftime("%m/%d/%Y") if txn.settle_date else "",
+                "Instrument": txn.instrument,
+                "Description": txn.description,
+                "Trans Code": txn.trans_code,
+                "Quantity": str(txn.quantity),
+                "Price": _format_money_string(txn.price),
+                "Amount": _format_money_string(signed_amount),
+                "Commission": _format_money_string(txn.fees) if txn.fees else "",
+            }
+        )
+    return rows

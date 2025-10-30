@@ -26,14 +26,8 @@ from ..services.chain_builder import detect_roll_chains
 from ..services.display import format_currency, format_percent, format_target_close_prices
 from ..services.json_serializer import build_ingest_payload
 from ..services.targets import calculate_target_percents, compute_target_close_prices
+from ..services.transactions import normalized_to_csv_dicts
 from .utils import parse_target_range
-
-
-def _format_money_string(value: Decimal) -> str:
-    quantized = value.quantize(Decimal("0.01"))
-    if quantized < 0:
-        return f"(${abs(quantized):,.2f})"
-    return f"${quantized:,.2f}"
 
 
 def _transaction_key_from_txn(txn: NormalizedOptionTransaction) -> tuple:
@@ -109,33 +103,6 @@ def _sort_transactions(
         )
     )
     return [txn for _, txn in indexed]
-
-
-def _transactions_to_csv_dicts(
-    transactions: Iterable[NormalizedOptionTransaction],
-) -> List[dict[str, str]]:
-    rows: List[dict[str, str]] = []
-    for txn in transactions:
-        if txn.amount is not None:
-            signed_amount = txn.amount
-        else:
-            notional = txn.price * Decimal(txn.quantity) * Decimal("100")
-            signed_amount = notional if txn.action == "SELL" else -notional
-        rows.append(
-            {
-                "Activity Date": txn.activity_date.strftime("%m/%d/%Y"),
-                "Process Date": txn.process_date.strftime("%m/%d/%Y") if txn.process_date else "",
-                "Settle Date": txn.settle_date.strftime("%m/%d/%Y") if txn.settle_date else "",
-                "Instrument": txn.instrument,
-                "Description": txn.description,
-                "Trans Code": txn.trans_code,
-                "Quantity": str(txn.quantity),
-                "Price": _format_money_string(txn.price),
-                "Amount": _format_money_string(signed_amount),
-                "Commission": _format_money_string(txn.fees) if txn.fees else "",
-            }
-        )
-    return rows
 
 
 def _build_cash_flow_table(
@@ -324,7 +291,7 @@ def _run_import(
 
     filtered_transactions = _filter_by_strategy(filtered_transactions, strategy)
     filtered_transactions = _sort_transactions(filtered_transactions)
-    chain_source_transactions = _transactions_to_csv_dicts(filtered_transactions)
+    chain_source_transactions = normalized_to_csv_dicts(filtered_transactions)
 
     open_position_count = 0
     if open_only:
@@ -334,7 +301,7 @@ def _run_import(
         filtered_transactions = _sort_transactions(filtered_transactions)
         if emit_text:
             console.print(f"[cyan]Open positions: {open_position_count}[/cyan]")
-        chain_source_transactions = _transactions_to_csv_dicts(filtered_transactions)
+        chain_source_transactions = normalized_to_csv_dicts(filtered_transactions)
 
     filtered_summary = summarize_cash_flows(_create_parsed_result(parsed, filtered_transactions))
     chains_for_json = detect_roll_chains(chain_source_transactions)

@@ -15,7 +15,7 @@ from .core.parser import (
     is_call_option,
     is_options_transaction,
     is_put_option,
-    parse_csv_file,
+    load_option_transactions,
     parse_lookup_input,
 )
 from .formatters.output import format_roll_chain_summary
@@ -37,7 +37,6 @@ def find_chain_by_position(position_spec, chains):
 __all__ = [
     "Transaction",
     "RollChain",
-    "parse_csv_file",
     "detect_roll_chains",
     "calculate_pnl",
     "calculate_breakeven",
@@ -47,5 +46,6 @@ __all__ = [
     "is_put_option",
     "format_position_spec",
     "parse_lookup_input",
+    "load_option_transactions",
     "find_chain_by_position",
 ]

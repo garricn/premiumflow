@@ -8,6 +8,7 @@ from CSV transaction data.
 from __future__ import annotations
 
 from decimal import Decimal
+from pathlib import Path
 from typing import Tuple
 
 import click
@@ -15,7 +16,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from ..core.parser import get_options_transactions, parse_csv_file
+from ..core.parser import load_option_transactions
 from ..services.analysis import (
     calculate_target_price_range,
     is_open_chain,
@@ -32,6 +33,7 @@ from ..services.display import (
     format_realized_pnl,
 )
 from ..services.targets import calculate_target_percents
+from ..services.transactions import normalized_to_csv_dicts
 
 
 def parse_target_range(target: str) -> Tuple[Decimal, Decimal]:
@@ -68,11 +70,16 @@ def analyze(csv_file, output_format, open_only, target):
     try:
         # Parse CSV file
         console.print(f"[blue]Parsing {csv_file}...[/blue]")
-        transactions = parse_csv_file(csv_file)
+        parsed = load_option_transactions(
+            csv_file,
+            account_name=Path(csv_file).stem or "Analysis Account",
+            regulatory_fee=Decimal("0.04"),
+        )
+        transactions = parsed.transactions
         console.print(f"[green]Found {len(transactions)} options transactions[/green]")
 
-        # Get raw transaction data for chain detection
-        raw_transactions = get_options_transactions(csv_file)
+        # Convert normalized transactions for chain detection
+        raw_transactions = normalized_to_csv_dicts(transactions)
 
         # Detect roll chains
         console.print("[blue]Detecting roll chains...[/blue]")
