@@ -101,8 +101,11 @@ def _transactions_to_csv_dicts(
 ) -> List[dict[str, str]]:
     rows: List[dict[str, str]] = []
     for txn in transactions:
-        notional = txn.price * txn.quantity
-        signed_amount = notional if txn.action == "SELL" else -notional
+        if txn.amount is not None:
+            signed_amount = txn.amount
+        else:
+            notional = txn.price * Decimal(txn.quantity) * Decimal("100")
+            signed_amount = notional if txn.action == "SELL" else -notional
         rows.append(
             {
                 "Activity Date": txn.activity_date.strftime("%m/%d/%Y"),
