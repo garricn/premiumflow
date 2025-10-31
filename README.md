@@ -143,3 +143,7 @@ Running `premiumflow import` writes the normalized rows to a SQLite database so 
 the forthcoming web UI can read from a durable source. By default the database lives at
 `~/.premiumflow/premiumflow.db`; set the `PREMIUMFLOW_DB_PATH` environment variable to point the CLI at a
 different location. Deleting the file removes all stored imports.
+
+- Use `--skip-existing` to leave the persisted data untouched when importing the same file again, or
+  `--replace-existing` to overwrite the stored copy. Without either flag, duplicate imports terminate with
+  a helpful message. Duplicate detection is keyed by account and file path.

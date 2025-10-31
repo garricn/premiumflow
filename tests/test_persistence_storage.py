@@ -65,7 +65,7 @@ def test_store_import_creates_records(tmp_path, monkeypatch):
         ]
     )
 
-    storage_module.store_import_result(
+    result = storage_module.store_import_result(
         parsed,
         source_path=str(csv_path),
         options_only=True,
@@ -75,6 +75,7 @@ def test_store_import_creates_records(tmp_path, monkeypatch):
     )
 
     assert db_path.exists()
+    assert result.status == "inserted"
 
     with sqlite3.connect(db_path) as conn:
         accounts = conn.execute("SELECT name, number FROM accounts").fetchall()
@@ -105,7 +106,7 @@ def test_store_import_reuses_account(tmp_path, monkeypatch):
 
     parsed = _make_parsed([_make_transaction()])
 
-    storage_module.store_import_result(
+    first = storage_module.store_import_result(
         parsed,
         source_path=str(csv_one),
         options_only=True,
@@ -113,8 +114,7 @@ def test_store_import_reuses_account(tmp_path, monkeypatch):
         strategy=None,
         open_only=False,
     )
-
-    storage_module.store_import_result(
+    second = storage_module.store_import_result(
         parsed,
         source_path=str(csv_two),
         options_only=False,
@@ -131,3 +131,84 @@ def test_store_import_reuses_account(tmp_path, monkeypatch):
             "SELECT options_only, open_only FROM imports ORDER BY id"
         ).fetchall()
         assert [tuple(row) for row in import_rows] == [(1, 0), (0, 1)]
+    assert first.status == "inserted"
+    assert second.status == "inserted"
+
+
+def test_store_import_skip_existing(tmp_path, monkeypatch):
+    db_path = tmp_path / "premiumflow.db"
+    csv_path = tmp_path / "sample.csv"
+    csv_path.write_text("sample", encoding="utf-8")
+    monkeypatch.setenv(storage_module.DB_ENV_VAR, str(db_path))
+
+    parsed = _make_parsed([_make_transaction()])
+
+    initial = storage_module.store_import_result(
+        parsed,
+        source_path=str(csv_path),
+        options_only=True,
+        ticker=None,
+        strategy=None,
+        open_only=False,
+    )
+
+    skipped = storage_module.store_import_result(
+        parsed,
+        source_path=str(csv_path),
+        options_only=True,
+        ticker=None,
+        strategy=None,
+        open_only=False,
+        duplicate_strategy="skip",
+    )
+
+    with sqlite3.connect(db_path) as conn:
+        imports = conn.execute("SELECT COUNT(*) FROM imports").fetchone()[0]
+        assert imports == 1
+        txn_count = conn.execute("SELECT COUNT(*) FROM option_transactions").fetchone()[0]
+        assert txn_count == len(parsed.transactions)
+    assert initial.status == "inserted"
+    assert skipped.status == "skipped"
+
+
+def test_store_import_replace_existing(tmp_path, monkeypatch):
+    db_path = tmp_path / "premiumflow.db"
+    csv_path = tmp_path / "sample.csv"
+    csv_path.write_text("one", encoding="utf-8")
+    monkeypatch.setenv(storage_module.DB_ENV_VAR, str(db_path))
+
+    parsed = _make_parsed([_make_transaction()])
+
+    initial = storage_module.store_import_result(
+        parsed,
+        source_path=str(csv_path),
+        options_only=True,
+        ticker=None,
+        strategy=None,
+        open_only=False,
+    )
+
+    csv_path.write_text("two", encoding="utf-8")
+
+    replaced = storage_module.store_import_result(
+        parsed,
+        source_path=str(csv_path),
+        options_only=False,
+        ticker="TSLA",
+        strategy="calls",
+        open_only=True,
+        duplicate_strategy="replace",
+    )
+
+    with sqlite3.connect(db_path) as conn:
+        imports = conn.execute("SELECT id, options_only, open_only FROM imports").fetchall()
+        assert [(row[1], row[2]) for row in imports] == [(0, 1)]
+        import_id = imports[0][0]
+        txn_count = conn.execute(
+            "SELECT COUNT(*) FROM option_transactions WHERE import_id = ?",
+            (import_id,),
+        ).fetchone()[0]
+        assert txn_count == len(parsed.transactions)
+
+    assert initial.status == "inserted"
+    assert replaced.status == "replaced"

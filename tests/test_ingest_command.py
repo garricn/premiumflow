@@ -8,12 +8,13 @@ from click.testing import CliRunner
 
 from premiumflow.cli.ingest import import_transactions, ingest
 from premiumflow.core.parser import ImportValidationError, ParsedImportResult
+from premiumflow.persistence.storage import DuplicateImportError, StoreResult
 
 
 @pytest.fixture(autouse=True)
 def _stub_store_import(monkeypatch):
     def _fake_store(*args, **kwargs):
-        return 1
+        return StoreResult(import_id=1, status="inserted")
 
     monkeypatch.setattr("premiumflow.cli.ingest.store_import_result", _fake_store)
 
@@ -230,7 +231,7 @@ def test_import_command_passes_account_metadata(monkeypatch, tmp_path):
     def _fake_store(parsed_result, **kwargs):
         persistence_calls["parsed"] = parsed_result
         persistence_calls["kwargs"] = kwargs
-        return 42
+        return StoreResult(import_id=42, status="inserted")
 
     monkeypatch.setattr("premiumflow.cli.ingest.store_import_result", _fake_store)
 
@@ -253,6 +254,7 @@ def test_import_command_passes_account_metadata(monkeypatch, tmp_path):
     assert captured["account_number"] == "ACCT-123"
     assert persistence_calls["parsed"].account_name == "Primary"
     kwargs = persistence_calls["kwargs"]
+    assert kwargs["duplicate_strategy"] == "error"
     assert kwargs["source_path"] == str(csv_path)
     assert kwargs["options_only"] is True
     assert kwargs["ticker"] is None
@@ -280,6 +282,87 @@ def test_import_command_infers_price_from_amount(tmp_path):
     payload = json.loads(result.output)
     first_txn = payload["transactions"][0]
     assert first_txn["price"] == "3"
+
+
+def test_import_command_duplicate_error(monkeypatch, tmp_path):
+    csv_path = _write_sample_csv(tmp_path)
+    runner = CliRunner()
+
+    def _fake_loader(csv_file, *, account_name, account_number):
+        return ParsedImportResult(
+            account_name=account_name, account_number=account_number, transactions=[]
+        )
+
+    monkeypatch.setattr("premiumflow.cli.ingest.load_option_transactions", _fake_loader)
+
+    def _fake_store(*args, **kwargs):
+        raise DuplicateImportError("Primary", "ACCT-123")
+
+    monkeypatch.setattr("premiumflow.cli.ingest.store_import_result", _fake_store)
+
+    result = runner.invoke(
+        import_transactions,
+        ["--file", str(csv_path), "--account-name", "Primary", "--account-number", "ACCT-123"],
+    )
+
+    assert result.exit_code != 0
+    assert "already recorded" in result.output
+
+
+def test_import_command_skip_existing(monkeypatch, tmp_path):
+    csv_path = _write_sample_csv(tmp_path)
+    runner = CliRunner()
+    persistence_calls = {}
+
+    def _fake_loader(csv_file, *, account_name, account_number):
+        return ParsedImportResult(
+            account_name=account_name, account_number=account_number, transactions=[]
+        )
+
+    monkeypatch.setattr("premiumflow.cli.ingest.load_option_transactions", _fake_loader)
+
+    def _fake_store(parsed_result, **kwargs):
+        persistence_calls.update(kwargs)
+        return StoreResult(import_id=99, status="skipped")
+
+    monkeypatch.setattr("premiumflow.cli.ingest.store_import_result", _fake_store)
+
+    result = runner.invoke(
+        import_transactions,
+        ["--file", str(csv_path), "--account-name", "Primary", "--skip-existing"],
+    )
+
+    assert result.exit_code == 0
+    assert "Import already persisted" in result.output
+    assert persistence_calls["duplicate_strategy"] == "skip"
+
+
+def test_import_command_replace_existing(monkeypatch, tmp_path):
+    csv_path = _write_sample_csv(tmp_path)
+    runner = CliRunner()
+    persistence_calls = {}
+
+    def _fake_loader(csv_file, *, account_name, account_number):
+        return ParsedImportResult(
+            account_name=account_name, account_number=account_number, transactions=[]
+        )
+
+    monkeypatch.setattr("premiumflow.cli.ingest.load_option_transactions", _fake_loader)
+
+    def _fake_store(parsed_result, **kwargs):
+        persistence_calls.update(kwargs)
+        return StoreResult(import_id=100, status="replaced")
+
+    monkeypatch.setattr("premiumflow.cli.ingest.store_import_result", _fake_store)
+
+    result = runner.invoke(
+        import_transactions,
+        ["--file", str(csv_path), "--account-name", "Primary", "--replace-existing"],
+    )
+
+    assert result.exit_code == 0
+    assert "Existing persisted import replaced with new data." in result.output
+    assert persistence_calls["duplicate_strategy"] == "replace"
 
 
 def test_import_command_allows_assignment_with_blank_price(tmp_path):

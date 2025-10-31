@@ -11,7 +11,7 @@ from decimal import Decimal
 from functools import lru_cache
 from hashlib import sha256
 from pathlib import Path
-from typing import Optional, Union
+from typing import Literal, Optional, Union
 
 from ..core.parser import ParsedImportResult
 
@@ -37,6 +37,29 @@ class ImportContext:
     open_only: bool
 
 
+StoreStatus = Literal["inserted", "skipped", "replaced"]
+
+
+@dataclass(frozen=True)
+class StoreResult:
+    """Outcome produced when persisting an import."""
+
+    import_id: int
+    status: StoreStatus
+
+
+class DuplicateImportError(RuntimeError):
+    """Raised when a duplicate import is detected and duplication policy is 'error'."""
+
+    def __init__(self, account_name: str, account_number: Optional[str]) -> None:
+        identifier = (
+            account_name if account_number is None else f"{account_name} ({account_number})"
+        )
+        super().__init__(
+            f"Import already recorded for account {identifier}. Use --skip-existing or --replace-existing to continue."
+        )
+
+
 class SQLiteStorage:
     """Thin wrapper around a SQLite database used to persist imports."""
 
@@ -52,6 +75,7 @@ class SQLiteStorage:
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self._db_path)
         conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON;")
         return conn
 
     def _ensure_initialized(self) -> None:
@@ -113,10 +137,33 @@ class SQLiteStorage:
                     ON option_transactions(expiration);
                 """
             )
+            # Clean up any legacy duplicates that may exist from versions prior to
+            # the unique constraint so schema migrations succeed without manual
+            # intervention.
+            conn.execute(
+                """
+                DELETE FROM imports
+                WHERE id NOT IN (
+                    SELECT MIN(id) FROM imports GROUP BY account_id, source_path
+                );
+                """
+            )
+            conn.execute(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_imports_account_path
+                    ON imports(account_id, source_path);
+                """
+            )
         self._initialized = True
 
-    def store_import(self, parsed: ParsedImportResult, context: ImportContext) -> int:
-        """Persist an import and return the generated import id."""
+    def store_import(
+        self,
+        parsed: ParsedImportResult,
+        context: ImportContext,
+        *,
+        duplicate_strategy: Literal["error", "skip", "replace"] = "error",
+    ) -> StoreResult:
+        """Persist an import and return the generated import id along with status."""
         self._ensure_initialized()
         source_hash = _hash_file(context.source_path)
         imported_at = datetime.utcnow().isoformat(timespec="seconds") + "Z"
@@ -124,6 +171,18 @@ class SQLiteStorage:
             account_id = self._get_or_create_account(
                 conn, parsed.account_name, parsed.account_number
             )
+            existing = conn.execute(
+                "SELECT id FROM imports WHERE account_id = ? AND source_path = ?",
+                (account_id, context.source_path),
+            ).fetchone()
+            if existing:
+                existing_id = int(existing["id"])
+                if duplicate_strategy == "skip":
+                    return StoreResult(import_id=existing_id, status="skipped")
+                if duplicate_strategy == "replace":
+                    conn.execute("DELETE FROM imports WHERE id = ?", (existing_id,))
+                else:
+                    raise DuplicateImportError(parsed.account_name, parsed.account_number)
             cur = conn.execute(
                 """
                 INSERT INTO imports (
@@ -181,7 +240,8 @@ class SQLiteStorage:
                     """,
                     rows_to_insert,
                 )
-        return int(import_id)
+            status: StoreStatus = "replaced" if existing else "inserted"
+        return StoreResult(import_id=int(import_id), status=status)
 
     def _get_or_create_account(
         self, conn: sqlite3.Connection, name: str, number: Optional[str]
@@ -208,10 +268,12 @@ def _hash_file(path: str) -> str:
     try:
         data = file_path.read_bytes()
     except FileNotFoundError:
+        # Fallback to hashing the string path when the file is no longer available.
         data = path.encode("utf-8")
     return sha256(data).hexdigest()
 
 
+# Values are stored as TEXT in SQLite to preserve Decimal precision.
 NumberLike = Union[Decimal, float, int]
 
 
@@ -237,7 +299,8 @@ def store_import_result(
     ticker: Optional[str],
     strategy: Optional[str],
     open_only: bool,
-) -> int:
+    duplicate_strategy: Literal["error", "skip", "replace"] = "error",
+) -> StoreResult:
     """Persist the supplied import result using the default storage."""
     storage = get_storage()
     context = ImportContext(
@@ -247,4 +310,4 @@ def store_import_result(
         strategy=strategy,
         open_only=open_only,
     )
-    return storage.store_import(parsed, context)
+    return storage.store_import(parsed, context, duplicate_strategy=duplicate_strategy)
