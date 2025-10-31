@@ -12,8 +12,56 @@
       <p>Welcome to the PremiumFlow web interface. Uploads and history views will appear here.</p>
     </header>
     <main>
+      {% if message %}
+      <section class="notice notice-{{ message.type }}">
+        <h2>{{ message.title }}</h2>
+        <p>{{ message.body }}</p>
+      </section>
+      {% endif %}
       <section>
-        <p>This placeholder page confirms the FastAPI + Jinja stack is wired up.</p>
+        <form action="/upload" method="post" enctype="multipart/form-data" class="upload-form">
+          <fieldset>
+            <legend>Upload CSV</legend>
+            <label class="field">
+              <span>Account name</span>
+              <input
+                type="text"
+                name="account_name"
+                value="{{ form.account_name }}"
+                required
+              />
+            </label>
+            <label class="field">
+              <span>Account number (optional)</span>
+              <input
+                type="text"
+                name="account_number"
+                value="{{ form.account_number }}"
+              />
+            </label>
+            <label class="field">
+              <span>CSV file</span>
+              <input type="file" name="csv_file" accept=".csv" required />
+            </label>
+            <label class="field">
+              <span>Duplicate handling</span>
+              <select name="duplicate_strategy">
+                <option value="error" {% if form.duplicate_strategy == "error" %}selected{% endif %}>
+                  Error on duplicate (default)
+                </option>
+                <option value="skip" {% if form.duplicate_strategy == "skip" %}selected{% endif %}>
+                  Skip existing import
+                </option>
+                <option value="replace" {% if form.duplicate_strategy == "replace" %}selected{% endif %}>
+                  Replace existing import
+                </option>
+              </select>
+            </label>
+          </fieldset>
+          <input type="hidden" name="options_only" value="true" />
+          <input type="hidden" name="open_only" value="false" />
+          <button type="submit">Upload CSV</button>
+        </form>
       </section>
     </main>
   </body>
