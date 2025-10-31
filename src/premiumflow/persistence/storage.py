@@ -107,6 +107,7 @@ class SQLiteStorage:
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_imports_account_id ON imports(account_id);
+                CREATE INDEX IF NOT EXISTS idx_imports_imported_at ON imports(imported_at);
 
                 CREATE TABLE IF NOT EXISTS option_transactions (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -135,6 +136,8 @@ class SQLiteStorage:
                     ON option_transactions(instrument);
                 CREATE INDEX IF NOT EXISTS idx_transactions_expiration
                     ON option_transactions(expiration);
+                CREATE INDEX IF NOT EXISTS idx_transactions_activity_date
+                    ON option_transactions(activity_date);
                 """
             )
             # Clean up any legacy duplicates that may exist from versions prior to

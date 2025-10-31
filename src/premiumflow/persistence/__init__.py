@@ -1,5 +1,6 @@
 """Persistence utilities for PremiumFlow."""
 
+from .repository import SQLiteRepository, StoredImport, StoredTransaction
 from .storage import (
     DuplicateImportError,
     SQLiteStorage,
@@ -10,8 +11,11 @@ from .storage import (
 
 __all__ = [
     "DuplicateImportError",
+    "SQLiteRepository",
     "SQLiteStorage",
     "StoreResult",
+    "StoredImport",
+    "StoredTransaction",
     "get_storage",
     "store_import_result",
 ]
