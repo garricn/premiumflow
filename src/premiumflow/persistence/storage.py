@@ -137,6 +137,9 @@ class SQLiteStorage:
                     ON option_transactions(expiration);
                 """
             )
+            # Clean up any legacy duplicates that may exist from versions prior to
+            # the unique constraint so schema migrations succeed without manual
+            # intervention.
             conn.execute(
                 """
                 DELETE FROM imports
