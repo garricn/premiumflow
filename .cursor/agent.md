@@ -1,5 +1,7 @@
 # PremiumFlow Project Agent Guidelines
 
+- IGNORE the AGENTS.md file at project root.
+
 ## Identity & Signature
 
 - Scope: Sign PR reviews, issue comments, and automated PR/thread notes. Do not include the signature in PR or issue titles.

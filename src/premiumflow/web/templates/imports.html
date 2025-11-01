@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{ title }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='site.css') }}" />
+  </head>
+  <body>
+    <header>
+      <h1>Import history</h1>
+      <nav class="top-nav">
+        <a href="{{ url_for('index') }}">Upload CSV</a>
+      </nav>
+      <p>Review previously uploaded Robinhood CSV files and their metadata.</p>
+    </header>
+    <main>
+      <section class="filters">
+        <form method="get" class="filters-form">
+          <label class="field">
+            <span>Account name</span>
+            <input type="text" name="account_name" value="{{ filters.account_name }}" />
+          </label>
+          <label class="field">
+            <span>Account number</span>
+            <input type="text" name="account_number" value="{{ filters.account_number }}" />
+          </label>
+          <div class="filter-actions">
+            <button type="submit">Apply filters</button>
+            {% if filters.account_name or filters.account_number %}
+            <a class="link-button" href="{{ url_for('imports_history') }}">Reset</a>
+            {% endif %}
+          </div>
+        </form>
+      </section>
+      <section>
+        {% if history %}
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th scope="col">Imported at</th>
+              <th scope="col">Account</th>
+              <th scope="col">Rows</th>
+              <th scope="col">Options only</th>
+              <th scope="col">Open only</th>
+              <th scope="col">Ticker</th>
+              <th scope="col">Strategy</th>
+              <th scope="col">Source file</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in history %}
+            <tr>
+              <td>
+                <a href="{{ url_for('view_import', import_id=item.id) }}">{{ item.imported_at }}</a>
+              </td>
+              <td>
+                {{ item.account_name }}
+                {% if item.account_number %}
+                <span class="account-number">({{ item.account_number }})</span>
+                {% endif %}
+              </td>
+              <td>{{ item.row_count }}</td>
+              <td>{{ "Yes" if item.options_only else "No" }}</td>
+              <td>{{ "Yes" if item.open_only else "No" }}</td>
+              <td>{{ item.ticker or "—" }}</td>
+              <td>{{ item.strategy or "—" }}</td>
+              <td title="{{ item.source_path }}">{{ item.source_filename }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <p class="empty-state">No imports have been recorded yet.</p>
+        {% endif %}
+      </section>
+      {% if history %}
+      <section class="pager">
+        {% if pagination.has_previous %}
+        <a class="pager-link" href="{{ url_for('imports_history') }}?{{ pagination.previous_query }}">
+          ← Newer imports
+        </a>
+        {% endif %}
+        <span class="pager-info">Page {{ pagination.page }}</span>
+        {% if pagination.has_next %}
+        <a class="pager-link" href="{{ url_for('imports_history') }}?{{ pagination.next_query }}">
+          Older imports →
+        </a>
+        {% endif %}
+      </section>
+      {% endif %}
+    </main>
+  </body>
+</html>

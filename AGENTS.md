@@ -33,6 +33,7 @@
 - Commit subjects are imperative and concise (e.g., “Add cash-flow aggregation service”). Run pre-commit hooks before committing.
 - PRs should link issues (`Resolves #NN`), summarize changes, and list verification commands. Provide CLI output screenshots when UX changes.
 - Use focused branches (`feature/<issue>-short-description`) and rebase/sync with `main` frequently.
+- DO NOT force push unless specifically requested to
 
 ## Agent-Specific Instructions
 

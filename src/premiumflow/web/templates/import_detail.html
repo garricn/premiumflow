@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{ title }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='site.css') }}" />
+  </head>
+  <body>
+    <header>
+      <h1>Import {{ import_record.id }}</h1>
+      <nav class="top-nav">
+        <a href="{{ url_for('imports_history') }}">Back to history</a>
+        <a href="{{ url_for('index') }}">Upload CSV</a>
+      </nav>
+      <p>Account: {{ account_label }}</p>
+    </header>
+    <main>
+      <section class="import-metadata">
+        <dl class="import-summary">
+          <div>
+            <dt>Imported at</dt>
+            <dd>{{ imported_at }}</dd>
+          </div>
+          <div>
+            <dt>Rows</dt>
+            <dd>{{ import_record.row_count }}</dd>
+          </div>
+          <div>
+            <dt>Options only</dt>
+            <dd>{{ "Yes" if import_record.options_only else "No" }}</dd>
+          </div>
+          <div>
+            <dt>Open only</dt>
+            <dd>{{ "Yes" if import_record.open_only else "No" }}</dd>
+          </div>
+          <div>
+            <dt>Ticker</dt>
+            <dd>{{ import_record.ticker or "—" }}</dd>
+          </div>
+          <div>
+            <dt>Strategy</dt>
+            <dd>{{ import_record.strategy or "—" }}</dd>
+          </div>
+          <div>
+            <dt>Source path</dt>
+            <dd>{{ import_record.source_path }}</dd>
+          </div>
+        </dl>
+      </section>
+      <section>
+        <h2>Transactions</h2>
+        {% if transactions %}
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th scope="col">Activity date</th>
+              <th scope="col">Instrument</th>
+              <th scope="col">Action</th>
+              <th scope="col">Quantity</th>
+              <th scope="col">Price</th>
+              <th scope="col">Amount</th>
+              <th scope="col">Fees</th>
+              <th scope="col">Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for txn in transactions %}
+            <tr>
+              <td>{{ txn.activity_date }}</td>
+              <td>{{ txn.instrument }}</td>
+              <td>{{ txn.action }} ({{ txn.trans_code }})</td>
+              <td>{{ txn.quantity }}</td>
+              <td>{{ txn.price }}</td>
+              <td>{{ txn.amount or "—" }}</td>
+              <td>{{ txn.fees }}</td>
+              <td>{{ txn.description }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <p class="empty-state">This import did not persist any transactions.</p>
+        {% endif %}
+      </section>
+    </main>
+  </body>
+</html>
