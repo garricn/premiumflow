@@ -182,3 +182,56 @@ def test_fetch_transactions_respects_status_flag(tmp_path, repository):
 
     closed_transactions = repository.fetch_transactions(status="closed")
     assert {txn.instrument for txn in closed_transactions} == {"TSLA"}
+
+
+def test_fetch_import_activity_ranges(tmp_path, repository):
+    _seed_import(
+        tmp_path,
+        csv_name="one.csv",
+        transactions=[
+            _make_transaction(instrument="TSLA", activity_date=date(2025, 9, 1)),
+            _make_transaction(instrument="TSLA", activity_date=date(2025, 9, 3)),
+        ],
+        ticker="TSLA",
+    )
+    _seed_import(
+        tmp_path,
+        csv_name="two.csv",
+        transactions=[_make_transaction(instrument="AAPL", activity_date=date(2025, 9, 5))],
+        ticker="AAPL",
+    )
+
+    imports = repository.list_imports(order="asc")
+    first_id = imports[0].id
+    second_id = imports[1].id
+
+    ranges = repository.fetch_import_activity_ranges([first_id, second_id])
+
+    assert ranges[first_id] == ("2025-09-01", "2025-09-03")
+    assert ranges[second_id] == ("2025-09-05", "2025-09-05")
+    assert repository.fetch_import_activity_ranges([]) == {}
+
+
+def test_delete_import_removes_record_and_transactions(tmp_path, repository):
+    _seed_import(
+        tmp_path,
+        csv_name="keep.csv",
+        transactions=[_make_transaction(instrument="TSLA")],
+        ticker="TSLA",
+    )
+    _seed_import(
+        tmp_path,
+        csv_name="remove.csv",
+        transactions=[_make_transaction(instrument="AAPL")],
+        ticker="AAPL",
+    )
+
+    imports = repository.list_imports(order="asc")
+    remove_id = imports[0].id
+
+    assert repository.delete_import(remove_id) is True
+    remaining = repository.list_imports()
+    assert all(import_record.id != remove_id for import_record in remaining)
+
+    # second delete should report missing record
+    assert repository.delete_import(remove_id) is False

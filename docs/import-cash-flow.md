@@ -85,7 +85,7 @@ consumers can distinguish missing data.
 
 ## Persistence
 
-Every successful run of `premiumflow import` (and the deprecated `premiumflow ingest`) now writes the
+Every successful run of `premiumflow import` now writes the
 canonical rows to a SQLite database located at `~/.premiumflow/premiumflow.db`. Set the
 `PREMIUMFLOW_DB_PATH` environment variable to override the location or delete the file to reset the
 stored history during development. Future CLI features and the web UI will read from the same store so

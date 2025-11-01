@@ -2,14 +2,14 @@
 Import command for PremiumFlow CLI.
 
 This module provides the primary ``import`` command used to display and
-serialize raw options transactions extracted from CSV input. A deprecated
-``ingest`` alias is kept temporarily for backward compatibility.
+serialize raw options transactions extracted from CSV input.
 """
 
 from __future__ import annotations
 
 import sqlite3
-from typing import Iterable, List, Literal, Optional
+from pathlib import Path
+from typing import Dict, Iterable, List, Literal, Optional, Sequence, Tuple
 
 import click
 from rich.console import Console
@@ -20,7 +20,12 @@ from ..core.parser import (
     NormalizedOptionTransaction,
     load_option_transactions,
 )
-from ..persistence import DuplicateImportError, StoreResult, store_import_result
+from ..persistence import (
+    DuplicateImportError,
+    SQLiteRepository,
+    StoreResult,
+    store_import_result,
+)
 from ..services.chain_builder import detect_roll_chains
 from ..services.display import format_currency
 from ..services.json_serializer import build_ingest_payload
@@ -127,7 +132,7 @@ def _build_transaction_table(
 
 
 def _apply_import_options(func):
-    """Attach the shared options used by both import and ingest commands."""
+    """Attach the shared options used by the CLI import command and its subcommands."""
 
     option_decorators = [
         click.option(
@@ -145,8 +150,8 @@ def _apply_import_options(func):
         click.option(
             "--file",
             "csv_file",
-            type=click.Path(exists=True),
-            default="all_transactions.csv",
+            type=click.Path(path_type=Path),
+            default=Path("all_transactions.csv"),
             show_default=True,
             help="CSV file to import",
         ),
@@ -155,8 +160,7 @@ def _apply_import_options(func):
         ),
         click.option(
             "--account-name",
-            required=True,
-            help="Human-readable account label to attach to this import (required).",
+            help="Human-readable account label to attach to this import (required when importing).",
         ),
         click.option(
             "--account-number",
@@ -198,9 +202,22 @@ def _run_import(
     json_output,
     console_label: str,
 ) -> None:
-    """Shared implementation used by both import and ingest commands."""
+    """Shared implementation used by the CLI import command."""
 
     console = Console()
+
+    if not account_name or not account_name.strip():
+        ctx.fail("--account-name is required when importing transactions.")
+        return
+
+    account_name = account_name.strip()
+    account_number = account_number.strip() if account_number else None
+
+    csv_file = Path(csv_file)
+
+    if not csv_file.exists():
+        ctx.fail(f"CSV file not found: {csv_file}")
+        return
 
     if skip_existing and replace_existing:
         ctx.fail("--skip-existing and --replace-existing cannot be used together.")
@@ -212,7 +229,7 @@ def _run_import(
 
     try:
         parsed = load_option_transactions(
-            csv_file,
+            str(csv_file),
             account_name=account_name,
             account_number=account_number,
         )
@@ -257,7 +274,7 @@ def _run_import(
         if not filtered_transactions:
             if json_output:
                 payload = build_ingest_payload(
-                    csv_file=csv_file,
+                    csv_file=str(csv_file),
                     account_name=parsed.account_name,
                     account_number=parsed.account_number,
                     transactions=[],
@@ -299,7 +316,7 @@ def _run_import(
 
     if json_output:
         payload = build_ingest_payload(
-            csv_file=csv_file,
+            csv_file=str(csv_file),
             account_name=parsed.account_name,
             account_number=parsed.account_number,
             transactions=filtered_transactions,
@@ -325,9 +342,9 @@ def _run_import(
     console.print(table)
 
 
-@click.command(name="import")
+@click.group(name="import", invoke_without_command=True)
 @_apply_import_options
-def import_transactions(
+def import_group(
     ctx,
     options_only,
     ticker_symbol,
@@ -340,7 +357,11 @@ def import_transactions(
     replace_existing,
     json_output,
 ):
-    """Import and display raw options transactions from CSV."""
+    """Import and manage stored option CSV ingests."""
+
+    if ctx.invoked_subcommand is not None:
+        ctx.ensure_object(dict)
+        return
 
     _run_import(
         ctx,
@@ -358,39 +379,101 @@ def import_transactions(
     )
 
 
-@click.command(name="ingest")
-@_apply_import_options
-def ingest(
-    ctx,
-    options_only,
-    ticker_symbol,
-    strategy,
-    csv_file,
-    open_only,
-    account_name,
-    account_number,
-    skip_existing,
-    replace_existing,
-    json_output,
-):
-    """Deprecated alias for ``premiumflow import``."""
+def _format_account_label(import_record) -> str:
+    if import_record.account_number:
+        return f"{import_record.account_name} ({import_record.account_number})"
+    return import_record.account_name
 
-    click.echo(
-        "[deprecated] 'premiumflow ingest' is deprecated; use 'premiumflow import' instead.",
-        err=True,
-    )
 
-    _run_import(
-        ctx,
-        options_only=options_only,
-        ticker_symbol=ticker_symbol,
-        strategy=strategy,
-        csv_file=csv_file,
-        open_only=open_only,
+def _activity_ranges_for(
+    repo: SQLiteRepository, import_ids: Sequence[int]
+) -> Dict[int, Tuple[Optional[str], Optional[str]]]:
+    if not import_ids:
+        return {}
+    return repo.fetch_import_activity_ranges(import_ids)
+
+
+@import_group.command("list")
+@click.option("--account-name", help="Filter imports by account name.")
+@click.option("--account-number", help="Filter imports by account number.")
+@click.option("--limit", type=int, help="Maximum number of rows to display.")
+@click.option(
+    "--offset", type=int, default=0, show_default=True, help="Rows to skip before listing."
+)
+@click.option(
+    "--order",
+    type=click.Choice(["asc", "desc"], case_sensitive=False),
+    default="desc",
+    show_default=True,
+    help="Sort order for imports based on imported_at.",
+)
+def list_imports_command(account_name, account_number, limit, offset, order):
+    """List stored imports with optional filters."""
+
+    repo = SQLiteRepository()
+    order = (order or "desc").lower()
+    imports = repo.list_imports(
         account_name=account_name,
         account_number=account_number,
-        skip_existing=skip_existing,
-        replace_existing=replace_existing,
-        json_output=json_output,
-        console_label="Importing",
+        limit=limit,
+        offset=offset,
+        order=order,
     )
+
+    console = Console()
+    if not imports:
+        console.print("[yellow]No stored imports match the provided filters.[/yellow]")
+        return
+
+    ranges = _activity_ranges_for(repo, [item.id for item in imports])
+
+    table = Table(title="Stored Imports", expand=True)
+    table.add_column("ID", justify="right")
+    table.add_column("Account")
+    table.add_column("Rows", justify="right")
+    table.add_column("Imported At")
+    table.add_column("Activity Start")
+    table.add_column("Activity End")
+    table.add_column("Options Only", justify="center")
+    table.add_column("Open Only", justify="center")
+    table.add_column("Ticker", justify="center")
+    table.add_column("Strategy", justify="center")
+    table.add_column("Source")
+
+    for import_record in imports:
+        first_date, last_date = ranges.get(import_record.id, (None, None))
+        table.add_row(
+            str(import_record.id),
+            _format_account_label(import_record),
+            str(import_record.row_count),
+            import_record.imported_at,
+            first_date or "—",
+            last_date or "—",
+            "Yes" if import_record.options_only else "No",
+            "Yes" if import_record.open_only else "No",
+            import_record.ticker or "—",
+            import_record.strategy or "—",
+            Path(import_record.source_path).name,
+        )
+
+    console.print(table)
+
+
+@import_group.command("delete")
+@click.argument("import_id", type=int)
+@click.option("--yes", "confirm_delete", is_flag=True, help="Delete without confirmation.")
+def delete_import_command(import_id: int, confirm_delete: bool) -> None:
+    """Delete a stored import by identifier."""
+
+    repo = SQLiteRepository()
+
+    if not confirm_delete:
+        if not click.confirm(f"Delete import {import_id}? This cannot be undone."):
+            click.echo("Aborted.")
+            return
+
+    deleted = repo.delete_import(import_id)
+    if deleted:
+        click.echo(f"Deleted import {import_id}.")
+    else:
+        raise click.ClickException(f"No import found with id {import_id}.")

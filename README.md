@@ -102,6 +102,8 @@ uv lock                                      # refresh everything after edits
 ```bash
 uv run premiumflow analyze transactions.csv
 uv run premiumflow import --json-output
+uv run premiumflow import list
+uv run premiumflow import delete 42 --yes
 uv run premiumflow lookup "TSLA 500C 2025-02-21"
 uv run premiumflow trace "TSLA $550 Call" all_transactions.csv
 ```
@@ -139,7 +141,8 @@ when provided must also contain non-whitespace characters.
 Running `premiumflow import` writes the normalized rows to a SQLite database so that subsequent tools and
 the forthcoming web UI can read from a durable source. By default the database lives at
 `~/.premiumflow/premiumflow.db`; set the `PREMIUMFLOW_DB_PATH` environment variable to point the CLI at a
-different location. Deleting the file removes all stored imports.
+different location. Deleting the file removes all stored imports. Use `premiumflow import list` to review
+persisted ingests and `premiumflow import delete <id>` to remove one without touching the entire database.
 
 - Use `--skip-existing` to leave the persisted data untouched when importing the same file again, or
   `--replace-existing` to overwrite the stored copy. Without either flag, duplicate imports terminate with

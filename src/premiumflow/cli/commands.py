@@ -9,7 +9,7 @@ from __future__ import annotations
 import click
 
 from .analyze import analyze
-from .ingest import import_transactions, ingest
+from .import_command import import_group
 from .lookup import lookup
 from .trace import trace
 
@@ -23,8 +23,7 @@ def main():
 
 # Register CLI subcommands
 main.add_command(analyze)
-main.add_command(import_transactions)
-main.add_command(ingest)
+main.add_command(import_group)
 main.add_command(lookup)
 main.add_command(trace)
 

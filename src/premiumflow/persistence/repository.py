@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
-from typing import List, Literal, Optional, Sequence
+from typing import Dict, List, Literal, Optional, Sequence, Tuple
 
 from .storage import SQLiteStorage, get_storage
 
@@ -142,6 +142,29 @@ class SQLiteRepository:
             return None
         return _row_to_stored_import(row)
 
+    def fetch_import_activity_ranges(
+        self, import_ids: Sequence[int]
+    ) -> Dict[int, Tuple[Optional[str], Optional[str]]]:
+        """Return activity date ranges for each requested import id."""
+
+        if not import_ids:
+            return {}
+
+        self._storage._ensure_initialized()  # type: ignore[attr-defined]
+        placeholders = ", ".join("?" for _ in import_ids)
+        sql = f"""
+            SELECT import_id, MIN(activity_date) AS first_activity_date, MAX(activity_date) AS last_activity_date
+            FROM option_transactions
+            WHERE import_id IN ({placeholders})
+            GROUP BY import_id
+        """
+        with self._storage._connect() as conn:  # type: ignore[attr-defined]
+            rows = conn.execute(sql, tuple(int(import_id) for import_id in import_ids)).fetchall()
+        ranges: Dict[int, Tuple[Optional[str], Optional[str]]] = {}
+        for row in rows:
+            ranges[int(row["import_id"])] = (row["first_activity_date"], row["last_activity_date"])
+        return ranges
+
     def fetch_transactions(
         self,
         *,
@@ -228,6 +251,15 @@ class SQLiteRepository:
         with self._storage._connect() as conn:  # type: ignore[attr-defined]
             rows = conn.execute(sql, params).fetchall()
         return [_row_to_stored_transaction(row) for row in rows]
+
+    def delete_import(self, import_id: int) -> bool:
+        """Delete an import and associated transactions. Returns True when a row was removed."""
+
+        self._storage._ensure_initialized()  # type: ignore[attr-defined]
+        with self._storage._connect() as conn:  # type: ignore[attr-defined]
+            cursor = conn.execute("DELETE FROM imports WHERE id = ?", (int(import_id),))
+            deleted = cursor.rowcount or 0
+        return deleted > 0
 
 
 def _row_to_stored_import(row) -> StoredImport:
