@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from premiumflow.cli.ingest import import_transactions, ingest
+from premiumflow.cli.import_command import import_group
 from premiumflow.core.parser import ImportValidationError, ParsedImportResult
 from premiumflow.persistence.storage import DuplicateImportError, StoreResult
 
@@ -16,7 +16,7 @@ def _stub_store_import(monkeypatch):
     def _fake_store(*args, **kwargs):
         return StoreResult(import_id=1, status="inserted")
 
-    monkeypatch.setattr("premiumflow.cli.ingest.store_import_result", _fake_store)
+    monkeypatch.setattr("premiumflow.cli.import_command.store_import_result", _fake_store)
 
 
 def _write_sample_csv(tmp_path: Path) -> Path:
@@ -84,7 +84,7 @@ def test_import_command_table_output(tmp_path):
     runner = CliRunner()
 
     result = runner.invoke(
-        import_transactions,
+        import_group,
         ["--file", str(csv_path), "--account-name", "Test Account"],
     )
 
@@ -106,7 +106,7 @@ def test_import_command_json_output(tmp_path):
     runner = CliRunner()
 
     result = runner.invoke(
-        import_transactions,
+        import_group,
         ["--file", str(csv_path), "--account-name", "Test Account", "--json-output"],
     )
 
@@ -129,7 +129,7 @@ def test_import_command_filters_by_ticker(tmp_path):
     runner = CliRunner()
 
     result = runner.invoke(
-        import_transactions,
+        import_group,
         ["--file", str(csv_path), "--account-name", "Test Account", "--ticker", "ZZZ"],
     )
 
@@ -143,7 +143,7 @@ def test_import_command_open_only(tmp_path):
     runner = CliRunner()
 
     result = runner.invoke(
-        import_transactions,
+        import_group,
         ["--file", str(csv_path), "--account-name", "Test Account", "--open-only"],
     )
 
@@ -157,7 +157,7 @@ def test_import_command_rejects_target_option(tmp_path):
     runner = CliRunner()
 
     result = runner.invoke(
-        import_transactions,
+        import_group,
         ["--file", str(csv_path), "--account-name", "Test Account", "--target", "invalid"],
     )
 
@@ -165,29 +165,15 @@ def test_import_command_rejects_target_option(tmp_path):
     assert "No such option" in result.output
 
 
-def test_ingest_alias_warns(tmp_path):
-    """Legacy ingest alias should emit deprecation warning."""
-    csv_path = _write_sample_csv(tmp_path)
-    runner = CliRunner()
-
-    result = runner.invoke(
-        ingest,
-        ["--file", str(csv_path), "--account-name", "Test Account"],
-    )
-
-    assert result.exit_code == 0
-    assert "deprecated" in (result.stderr or "").lower()
-
-
 def test_import_command_requires_account_name(tmp_path):
     """Missing account name should fail before parsing."""
     csv_path = _write_sample_csv(tmp_path)
     runner = CliRunner()
 
-    result = runner.invoke(import_transactions, ["--file", str(csv_path)])
+    result = runner.invoke(import_group, ["--file", str(csv_path)])
 
     assert result.exit_code != 0
-    assert "Missing option '--account-name'" in result.output
+    assert "--account-name is required" in result.output
 
 
 def test_import_command_surfaces_parser_errors(monkeypatch, tmp_path):
@@ -198,10 +184,10 @@ def test_import_command_surfaces_parser_errors(monkeypatch, tmp_path):
     def _fake_loader(*args, **kwargs):
         raise ImportValidationError("Account name required")
 
-    monkeypatch.setattr("premiumflow.cli.ingest.load_option_transactions", _fake_loader)
+    monkeypatch.setattr("premiumflow.cli.import_command.load_option_transactions", _fake_loader)
 
     result = runner.invoke(
-        import_transactions,
+        import_group,
         ["--file", str(csv_path), "--account-name", "Test Account"],
     )
 
@@ -226,17 +212,17 @@ def test_import_command_passes_account_metadata(monkeypatch, tmp_path):
             transactions=[],
         )
 
-    monkeypatch.setattr("premiumflow.cli.ingest.load_option_transactions", _fake_loader)
+    monkeypatch.setattr("premiumflow.cli.import_command.load_option_transactions", _fake_loader)
 
     def _fake_store(parsed_result, **kwargs):
         persistence_calls["parsed"] = parsed_result
         persistence_calls["kwargs"] = kwargs
         return StoreResult(import_id=42, status="inserted")
 
-    monkeypatch.setattr("premiumflow.cli.ingest.store_import_result", _fake_store)
+    monkeypatch.setattr("premiumflow.cli.import_command.store_import_result", _fake_store)
 
     result = runner.invoke(
-        import_transactions,
+        import_group,
         [
             "--file",
             str(csv_path),
@@ -268,7 +254,7 @@ def test_import_command_infers_price_from_amount(tmp_path):
     runner = CliRunner()
 
     result = runner.invoke(
-        import_transactions,
+        import_group,
         [
             "--file",
             str(csv_path),
@@ -293,15 +279,15 @@ def test_import_command_duplicate_error(monkeypatch, tmp_path):
             account_name=account_name, account_number=account_number, transactions=[]
         )
 
-    monkeypatch.setattr("premiumflow.cli.ingest.load_option_transactions", _fake_loader)
+    monkeypatch.setattr("premiumflow.cli.import_command.load_option_transactions", _fake_loader)
 
     def _fake_store(*args, **kwargs):
         raise DuplicateImportError("Primary", "ACCT-123")
 
-    monkeypatch.setattr("premiumflow.cli.ingest.store_import_result", _fake_store)
+    monkeypatch.setattr("premiumflow.cli.import_command.store_import_result", _fake_store)
 
     result = runner.invoke(
-        import_transactions,
+        import_group,
         ["--file", str(csv_path), "--account-name", "Primary", "--account-number", "ACCT-123"],
     )
 
@@ -319,16 +305,16 @@ def test_import_command_skip_existing(monkeypatch, tmp_path):
             account_name=account_name, account_number=account_number, transactions=[]
         )
 
-    monkeypatch.setattr("premiumflow.cli.ingest.load_option_transactions", _fake_loader)
+    monkeypatch.setattr("premiumflow.cli.import_command.load_option_transactions", _fake_loader)
 
     def _fake_store(parsed_result, **kwargs):
         persistence_calls.update(kwargs)
         return StoreResult(import_id=99, status="skipped")
 
-    monkeypatch.setattr("premiumflow.cli.ingest.store_import_result", _fake_store)
+    monkeypatch.setattr("premiumflow.cli.import_command.store_import_result", _fake_store)
 
     result = runner.invoke(
-        import_transactions,
+        import_group,
         ["--file", str(csv_path), "--account-name", "Primary", "--skip-existing"],
     )
 
@@ -347,16 +333,16 @@ def test_import_command_replace_existing(monkeypatch, tmp_path):
             account_name=account_name, account_number=account_number, transactions=[]
         )
 
-    monkeypatch.setattr("premiumflow.cli.ingest.load_option_transactions", _fake_loader)
+    monkeypatch.setattr("premiumflow.cli.import_command.load_option_transactions", _fake_loader)
 
     def _fake_store(parsed_result, **kwargs):
         persistence_calls.update(kwargs)
         return StoreResult(import_id=100, status="replaced")
 
-    monkeypatch.setattr("premiumflow.cli.ingest.store_import_result", _fake_store)
+    monkeypatch.setattr("premiumflow.cli.import_command.store_import_result", _fake_store)
 
     result = runner.invoke(
-        import_transactions,
+        import_group,
         ["--file", str(csv_path), "--account-name", "Primary", "--replace-existing"],
     )
 
@@ -371,7 +357,7 @@ def test_import_command_allows_assignment_with_blank_price(tmp_path):
     runner = CliRunner()
 
     result = runner.invoke(
-        import_transactions,
+        import_group,
         [
             "--file",
             str(csv_path),
@@ -398,7 +384,7 @@ def test_import_skips_rows_without_option_trans_code(tmp_path):
 
     runner = CliRunner()
     result = runner.invoke(
-        import_transactions,
+        import_group,
         [
             "--file",
             str(csv_path),
@@ -420,7 +406,7 @@ def test_import_command_sorts_transactions_by_date(tmp_path):
     runner = CliRunner()
 
     result = runner.invoke(
-        import_transactions,
+        import_group,
         [
             "--file",
             str(csv_path),
