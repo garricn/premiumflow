@@ -15,6 +15,7 @@ from premiumflow.persistence import repository as repository_module
 from premiumflow.persistence import storage as storage_module
 from premiumflow.persistence.storage import store_import_result
 from premiumflow.web import create_app, dependencies
+from premiumflow.web.app import MIN_PAGE_SIZE
 from premiumflow.web.dependencies import get_repository
 
 FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
@@ -253,6 +254,38 @@ def test_import_history_filters_by_account(client_with_storage, tmp_path):
     assert response.status_code == 200
     assert "Filter Account" in response.text
     assert "Other Account" not in response.text
+
+
+def test_import_history_paginates_results(client_with_storage, tmp_path):
+    total_imports = MIN_PAGE_SIZE + 2
+    for index in range(total_imports):
+        _persist_import(
+            tmp_path,
+            account_name=f"Paginated Account {index}",
+            account_number=f"PAG-{index}",
+            csv_name=f"paged-{index}.csv",
+            transactions=[_make_transaction(instrument=f"TICK{index}")],
+            ticker=f"TICK{index}",
+            strategy=None,
+        )
+
+    first_page = client_with_storage.get("/imports", params={"page_size": MIN_PAGE_SIZE})
+    assert first_page.status_code == 200
+    # Latest MIN_PAGE_SIZE imports should appear on the first page.
+    for index in range(total_imports - 1, total_imports - MIN_PAGE_SIZE - 1, -1):
+        assert f"Paginated Account {index}" in first_page.text
+    assert "Paginated Account 0" not in first_page.text
+    assert "Older imports →" in first_page.text
+    assert "Newer imports" not in first_page.text
+
+    second_page = client_with_storage.get(
+        "/imports", params={"page": 2, "page_size": MIN_PAGE_SIZE}
+    )
+    assert second_page.status_code == 200
+    assert "Paginated Account 0" in second_page.text
+    assert "Paginated Account 1" in second_page.text
+    # Second page should show link back to newer records.
+    assert "← Newer imports" in second_page.text
 
 
 def test_import_detail_shows_transactions(client_with_storage, tmp_path):
