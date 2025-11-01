@@ -42,7 +42,7 @@ def test_trace_command_displays_matching_chain(tmp_path):
     assert "Chain 1" in output
     assert "TSLA 10/17/2025 Call $515.00" in output
     assert "TSLA 11/21/2025 Call $550.00" in output
-    assert "Net P&L (after fees):" in output
+    assert "Net P&L:" in output
 
 
 def test_trace_command_reports_when_no_match(tmp_path):
@@ -65,7 +65,7 @@ def test_trace_command_open_chain_shows_target_range(tmp_path):
 
     assert result.exit_code == 0
     output = result.output
-    assert "Realized P&L (after fees):" in output
+    assert "Realized P&L:" in output
     assert "Target Price: $0.30 - $0.50" in output
 
 

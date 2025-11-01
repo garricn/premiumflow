@@ -38,9 +38,9 @@ def _render_chain_summary(chain: dict, target_bounds: tuple) -> Panel:
     ]
 
     if chain.get("status") == "CLOSED":
-        summary_lines.append(f"Net P&L (after fees): {format_net_pnl(chain)}")
+        summary_lines.append(f"Net P&L: {format_net_pnl(chain)}")
     else:
-        summary_lines.append(f"Realized P&L (after fees): {format_realized_pnl(chain)}")
+        summary_lines.append(f"Realized P&L: {format_realized_pnl(chain)}")
         summary_lines.append(f"Breakeven to close: {format_breakeven(chain)}")
         summary_lines.append(
             f"Target Price: {format_price_range(calculate_target_price_range(chain, target_bounds))}"

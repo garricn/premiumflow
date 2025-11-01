@@ -14,7 +14,6 @@ def _make_transaction(
     action: str,
     quantity: int,
     price: str,
-    fees: str,
     amount: Optional[str] = None,
 ) -> NormalizedOptionTransaction:
     return NormalizedOptionTransaction(
@@ -30,7 +29,6 @@ def _make_transaction(
         option_type="CALL",
         expiration=date(2025, 10, 25),
         action=action,
-        fees=Decimal(fees),
         amount=Decimal(amount) if amount is not None else None,
         raw={},
     )
@@ -51,7 +49,6 @@ def test_summarize_cash_flows_basic_flow():
             action="SELL",
             quantity=2,
             price="1.20",
-            fees="0.08",
             amount="240",
         ),
         _make_transaction(
@@ -59,7 +56,6 @@ def test_summarize_cash_flows_basic_flow():
             action="BUY",
             quantity=1,
             price="0.80",
-            fees="0.04",
             amount="-80",
         ),
     ]
@@ -71,30 +67,25 @@ def test_summarize_cash_flows_basic_flow():
     assert summary.account_number == "RH-12345"
     assert summary.totals.credits == Decimal("240")
     assert summary.totals.debits == Decimal("80")
-    assert summary.totals.fees == Decimal("0.12")
     assert summary.totals.net_premium == Decimal("160")
-    assert summary.totals.net_pnl == Decimal("159.88")
+    assert summary.totals.net_pnl == Decimal("160")
 
     assert len(summary.rows) == 2
     first, second = summary.rows
 
     assert first.credit == Decimal("240")
     assert first.debit == Decimal("0")
-    assert first.fee == Decimal("0.08")
     assert first.running_credits == Decimal("240")
     assert first.running_debits == Decimal("0")
-    assert first.running_fees == Decimal("0.08")
     assert first.running_net_premium == Decimal("240")
-    assert first.running_net_pnl == Decimal("239.92")
+    assert first.running_net_pnl == Decimal("240")
 
     assert second.credit == Decimal("0")
     assert second.debit == Decimal("80")
-    assert second.fee == Decimal("0.04")
     assert second.running_credits == Decimal("240")
     assert second.running_debits == Decimal("80")
-    assert second.running_fees == Decimal("0.12")
     assert second.running_net_premium == Decimal("160")
-    assert second.running_net_pnl == Decimal("159.88")
+    assert second.running_net_pnl == Decimal("160")
 
 
 def test_summarize_cash_flows_handles_assignment_debit():
@@ -104,7 +95,6 @@ def test_summarize_cash_flows_handles_assignment_debit():
             action="SELL",
             quantity=1,
             price="1.00",
-            fees="0.04",
             amount="100",
         ),
         _make_transaction(
@@ -112,7 +102,6 @@ def test_summarize_cash_flows_handles_assignment_debit():
             action="BUY",
             quantity=1,
             price="0.50",
-            fees="0.04",
             amount="-50",
         ),
     ]
@@ -123,8 +112,7 @@ def test_summarize_cash_flows_handles_assignment_debit():
     assert summary.totals.credits == Decimal("100")
     assert summary.totals.debits == Decimal("50")
     assert summary.totals.net_premium == Decimal("50")
-    assert summary.totals.fees == Decimal("0.08")
-    assert summary.totals.net_pnl == Decimal("49.92")
+    assert summary.totals.net_pnl == Decimal("50")
 
     assert summary.rows[1].debit == Decimal("50")
     assert summary.rows[1].credit == Decimal("0")
@@ -138,7 +126,6 @@ def test_summarize_cash_flows_empty_input():
     assert summary.totals == summary.totals.__class__(
         credits=Decimal("0"),
         debits=Decimal("0"),
-        fees=Decimal("0"),
         net_premium=Decimal("0"),
         net_pnl=Decimal("0"),
     )
@@ -152,7 +139,6 @@ def test_summarize_cash_flows_handles_assignment_credit():
             action="SELL",
             quantity=1,
             price="1.00",
-            fees="0.04",
             amount="100",
         ),
         _make_transaction(
@@ -160,7 +146,6 @@ def test_summarize_cash_flows_handles_assignment_credit():
             action="BUY",
             quantity=1,
             price="0.50",
-            fees="0.04",
             amount="150",
         ),
     ]
@@ -169,4 +154,4 @@ def test_summarize_cash_flows_handles_assignment_credit():
     assert summary.totals.credits == Decimal("250")
     assert summary.totals.debits == Decimal("0")
     assert summary.totals.net_premium == Decimal("250")
-    assert summary.totals.net_pnl == Decimal("249.92")
+    assert summary.totals.net_pnl == Decimal("250")

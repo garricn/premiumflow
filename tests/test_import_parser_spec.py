@@ -34,13 +34,11 @@ def test_load_option_transactions_parses_fixture():
     assert first.price == Decimal("1.20")
     assert first.option_type == "CALL"
     assert first.expiration.isoformat() == "2025-10-25"
-    assert first.fees == Decimal("0")
 
     # Second row ensures BUY/STC branches.
     second = result.transactions[1]
     assert second.trans_code == "BTC"
     assert second.action == "BUY"
-    assert second.fees == Decimal("0")
 
 
 def test_load_option_transactions_rejects_parenthesized_price(tmp_path):

@@ -331,9 +331,9 @@ def test_analyze_summary_shows_realized_for_open_chain(tmp_path):
 
     assert result.exit_code == 0
     output = result.output
-    assert "Realized P&L (after fees):" in output
+    assert "Realized P&L:" in output
     assert "Target Price: $0.30 - $0.50" in output
-    assert "Net P&L (after fees):" not in output
+    assert "Net P&L:" not in output
 
 
 def test_analyze_summary_custom_target(tmp_path):
@@ -382,7 +382,7 @@ def test_trace_open_chain_shows_realized(tmp_path):
 
     assert result.exit_code == 0
     output = result.output
-    assert "Realized P&L (after fees):" in output
+    assert "Realized P&L:" in output
     assert "Target Price: $0.30 - $0.50" in output
 
 

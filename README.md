@@ -114,9 +114,8 @@ output, and troubleshooting) is documented in [docs/import-cash-flow.md](docs/im
 ### Parser API
 
 If you need to work directly with the import parser, call `premiumflow.core.parser.load_option_transactions`
-with explicit account metadata and a default regulatory fee. The function now returns a
-`ParsedImportResult` object that bundles the trimmed account name/number, the normalized fee value,
-and the list of normalized option rows.
+with explicit account metadata. The function returns a `ParsedImportResult` object that bundles the
+trimmed account name/number and the list of normalized option rows.
 
 ```python
 from decimal import Decimal
@@ -133,9 +132,7 @@ for txn in result.transactions:
 ```
 
 `account_name` is required and must contain non-whitespace characters. `account_number` is optional, but
-when provided must also contain non-whitespace characters. The import parser no longer infers fees or
-reads commission columns; all `NormalizedOptionTransaction.fees` values default to `Decimal("0")`, leaving
-fee handling to downstream tooling.
+when provided must also contain non-whitespace characters.
 
 ### Persistence
 

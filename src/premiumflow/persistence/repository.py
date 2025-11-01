@@ -50,7 +50,6 @@ class StoredTransaction:
     option_type: str
     expiration: str
     action: str
-    fees: str
     raw_json: str
 
 
@@ -178,7 +177,6 @@ class SQLiteRepository:
             "  t.option_type,",
             "  t.expiration,",
             "  t.action,",
-            "  t.fees,",
             "  t.raw_json",
             "FROM option_transactions AS t",
             "JOIN imports AS i ON t.import_id = i.id",
@@ -268,6 +266,5 @@ def _row_to_stored_transaction(row) -> StoredTransaction:
         option_type=row["option_type"],
         expiration=row["expiration"],
         action=row["action"],
-        fees=row["fees"],
         raw_json=row["raw_json"],
     )

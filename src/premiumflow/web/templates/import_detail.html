@@ -60,7 +60,6 @@
               <th scope="col">Quantity</th>
               <th scope="col">Price</th>
               <th scope="col">Amount</th>
-              <th scope="col">Fees</th>
               <th scope="col">Description</th>
             </tr>
           </thead>
@@ -73,7 +72,6 @@
               <td>{{ txn.quantity }}</td>
               <td>{{ txn.price }}</td>
               <td>{{ txn.amount or "—" }}</td>
-              <td>{{ txn.fees }}</td>
               <td>{{ txn.description }}</td>
             </tr>
             {% endfor %}

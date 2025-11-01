@@ -160,7 +160,6 @@ def normalized_to_csv_dicts(
                 "Quantity": str(txn.quantity),
                 "Price": _format_money_string(txn.price),
                 "Amount": _format_money_string(signed_amount),
-                "Commission": _format_money_string(txn.fees) if txn.fees else "",
             }
         )
     return rows

@@ -141,8 +141,7 @@ def calculate_target_price_range(
     # Calculate realized P&L
     total_credits = chain.get("total_credits") or Decimal("0")
     total_debits = chain.get("total_debits") or Decimal("0")
-    total_fees = chain.get("total_fees") or Decimal("0")
-    realized = total_credits - total_debits - total_fees
+    realized = total_credits - total_debits
 
     contracts = abs(net_contracts)
     if contracts == 0:
@@ -179,7 +178,6 @@ def prepare_chain_display(
         "status": chain.get("status", "UNKNOWN"),
         "credits": format_currency(chain.get("total_credits")),
         "debits": format_currency(chain.get("total_debits")),
-        "fees": format_currency(chain.get("total_fees")),
         "net_pnl": format_net_pnl(chain),
         "breakeven": format_breakeven(chain),
         "target_price": format_price_range(target_price),
@@ -190,7 +188,7 @@ def format_net_pnl(chain: Dict[str, Any]) -> str:
     """Format net P&L for display."""
     if chain.get("status") != "CLOSED":
         return format_realized_pnl(chain)
-    return format_currency(chain.get("net_pnl_after_fees"))
+    return format_currency(chain.get("net_pnl"))
 
 
 def format_realized_pnl(chain: Dict[str, Any]) -> str:
@@ -198,6 +196,5 @@ def format_realized_pnl(chain: Dict[str, Any]) -> str:
     # Calculate realized P&L directly without dependency on analysis service
     total_credits = chain.get("total_credits") or Decimal("0")
     total_debits = chain.get("total_debits") or Decimal("0")
-    total_fees = chain.get("total_fees") or Decimal("0")
-    realized_pnl = total_credits - total_debits - total_fees
+    realized_pnl = total_credits - total_debits
     return format_currency(realized_pnl)
