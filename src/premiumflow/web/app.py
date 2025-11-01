@@ -2,20 +2,55 @@
 
 from __future__ import annotations
 
+import re
+import sqlite3
 from pathlib import Path
+from tempfile import NamedTemporaryFile
+from typing import Literal
 
-from fastapi import Depends, FastAPI, Request
+from fastapi import Depends, FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from ..persistence import SQLiteRepository
+from ..core.parser import ImportValidationError, load_option_transactions
+from ..persistence import (
+    DuplicateImportError,
+    SQLiteRepository,
+    get_storage,
+    store_import_result,
+)
 from .dependencies import get_repository
 
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+
+DuplicateStrategy = Literal["error", "skip", "replace"]
+
+
+def _default_form() -> dict[str, object]:
+    return {
+        "account_name": "",
+        "account_number": "",
+        "duplicate_strategy": "error",
+        "options_only": True,
+        "open_only": False,
+    }
+
+
+def _slugify(value: str) -> str:
+    slug = re.sub(r"[^a-zA-Z0-9]+", "-", value.strip().lower())
+    slug = slug.strip("-")
+    return slug or "account"
+
+
+def _account_folder(name: str, number: str | None) -> str:
+    parts = [_slugify(name)]
+    if number:
+        parts.append(_slugify(number))
+    return "-".join(parts)
 
 
 def create_app() -> FastAPI:
@@ -36,7 +71,198 @@ def create_app() -> FastAPI:
         return templates.TemplateResponse(
             request=request,
             name="index.html",
-            context={"title": "PremiumFlow Web UI"},
+            context={
+                "title": "PremiumFlow Web UI",
+                "message": None,
+                "form": _default_form(),
+            },
+        )
+
+    @app.post("/upload", response_class=HTMLResponse, tags=["ui"])
+    async def upload(
+        request: Request,
+        csv_file: UploadFile = File(...),
+        account_name: str = Form(...),
+        account_number: str = Form(""),
+        duplicate_strategy: DuplicateStrategy = Form("error"),
+        options_only: bool = Form(True),
+        open_only: bool = Form(False),
+        repository: SQLiteRepository = Depends(get_repository),
+    ) -> HTMLResponse:
+        form_values: dict[str, str | bool] = {
+            "account_name": account_name,
+            "account_number": account_number,
+            "duplicate_strategy": duplicate_strategy,
+            "options_only": options_only,
+            "open_only": open_only,
+        }
+
+        message: dict[str, object] | None = None
+
+        if not csv_file.filename:
+            message = {
+                "type": "error",
+                "title": "No file selected",
+                "body": "Choose a Robinhood CSV export before uploading.",
+            }
+        else:
+            normalized_account_name = account_name.strip()
+            normalized_account_number = account_number.strip() or None
+
+            storage = get_storage()
+            uploads_dir = storage.db_path.parent / "uploads"
+            account_dir = uploads_dir / _account_folder(
+                normalized_account_name, normalized_account_number
+            )
+            account_dir.mkdir(parents=True, exist_ok=True)
+
+            safe_name = Path(csv_file.filename).name or "uploaded.csv"
+            final_path = account_dir / safe_name
+
+            existing_imports = repository.list_imports(
+                account_name=normalized_account_name,
+                account_number=normalized_account_number,
+            )
+            has_existing_import = any(
+                imp.source_path == str(final_path) for imp in existing_imports
+            )
+
+            if has_existing_import and duplicate_strategy == "error":
+                message = {
+                    "type": "error",
+                    "title": "Import already recorded",
+                    "body": (
+                        "An import for this account and file already exists. "
+                        "Choose skip or replace to continue."
+                    ),
+                }
+                return templates.TemplateResponse(
+                    request=request,
+                    name="index.html",
+                    context={
+                        "title": "PremiumFlow Web UI",
+                        "message": message,
+                        "form": form_values,
+                    },
+                )
+
+            if has_existing_import and duplicate_strategy == "skip":
+                message = {
+                    "type": "warning",
+                    "title": "Import skipped",
+                    "body": "An identical import already exists; no changes were made.",
+                }
+                return templates.TemplateResponse(
+                    request=request,
+                    name="index.html",
+                    context={
+                        "title": "PremiumFlow Web UI",
+                        "message": message,
+                        "form": form_values,
+                    },
+                )
+
+            try:
+                content = await csv_file.read()
+                if not content:
+                    raise ImportValidationError("The uploaded file is empty.")
+
+                tmp_path: Path | None = None
+                backup_path = None
+                try:
+                    suffix = Path(csv_file.filename or "uploaded.csv").suffix or ".csv"
+                    with NamedTemporaryFile(
+                        delete=False, prefix="upload-", suffix=suffix, dir=uploads_dir
+                    ) as tmp:
+                        tmp.write(content)
+                        tmp_path = Path(tmp.name)
+
+                    parsed = load_option_transactions(
+                        str(tmp_path),
+                        account_name=normalized_account_name,
+                        account_number=normalized_account_number,
+                    )
+
+                    if final_path.exists():
+                        backup_path = final_path.with_suffix(final_path.suffix + ".bak")
+                        if backup_path.exists():
+                            backup_path.unlink()
+                        final_path.replace(backup_path)
+
+                    tmp_path.replace(final_path)
+                    try:
+                        store_result = store_import_result(
+                            parsed,
+                            source_path=str(final_path),
+                            options_only=bool(options_only),
+                            ticker=None,
+                            strategy=None,
+                            open_only=bool(open_only),
+                            duplicate_strategy=duplicate_strategy,
+                        )
+                    except Exception:
+                        if backup_path and backup_path.exists():
+                            backup_path.replace(final_path)
+                        raise
+                    else:
+                        if backup_path and backup_path.exists():
+                            backup_path.unlink(missing_ok=True)
+                finally:
+                    if tmp_path and tmp_path.exists():
+                        tmp_path.unlink(missing_ok=True)
+            except ImportValidationError as exc:
+                message = {
+                    "type": "error",
+                    "title": "Import validation failed",
+                    "body": str(exc),
+                }
+            except DuplicateImportError as exc:
+                message = {
+                    "type": "warning",
+                    "title": "Import skipped",
+                    "body": str(exc),
+                }
+            except (sqlite3.Error, OSError) as exc:
+                message = {
+                    "type": "error",
+                    "title": "Persistence error",
+                    "body": f"Failed to store import: {exc}",
+                }
+            except Exception as exc:  # pragma: no cover - unexpected error
+                message = {
+                    "type": "error",
+                    "title": "Unexpected error",
+                    "body": str(exc),
+                }
+            else:
+                row_count = len(parsed.transactions)
+                if store_result.status == "skipped":
+                    message = {
+                        "type": "warning",
+                        "title": "Import already recorded",
+                        "body": "An identical import already exists; no changes were made.",
+                    }
+                elif store_result.status == "replaced":
+                    message = {
+                        "type": "success",
+                        "title": "Import replaced",
+                        "body": f"Replaced the existing import with {row_count} transactions.",
+                    }
+                else:
+                    message = {
+                        "type": "success",
+                        "title": "Import stored",
+                        "body": f"Imported {row_count} transactions for {parsed.account_name}.",
+                    }
+
+        return templates.TemplateResponse(
+            request=request,
+            name="index.html",
+            context={
+                "title": "PremiumFlow Web UI",
+                "message": message,
+                "form": form_values,
+            },
         )
 
     return app
