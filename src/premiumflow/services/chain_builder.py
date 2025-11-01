@@ -12,7 +12,6 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 from ..core.parser import parse_date
 
-FEE_PER_CONTRACT = Decimal("0.04")
 _CONTRACT_PATTERN = re.compile(
     r"(?P<symbol>\w+)\s+"
     r"(?P<expiration>\d{1,2}/\d{1,2}/\d{4})\s+"
@@ -342,7 +341,6 @@ def build_chain(initial_open, all_txns, rolls, used_txns):
 
     total_credits = Decimal("0")
     total_debits = Decimal("0")
-    total_fees = Decimal("0")
     net_contracts = 0
 
     for txn in chain_txns:
@@ -354,8 +352,6 @@ def build_chain(initial_open, all_txns, rolls, used_txns):
             total_credits += abs(amount)
         elif code in {"BTO", "BTC", "OASGN"}:
             total_debits += abs(amount)
-
-        total_fees += abs(qty) * FEE_PER_CONTRACT
 
         if code == "STO":
             net_contracts -= qty
@@ -369,7 +365,6 @@ def build_chain(initial_open, all_txns, rolls, used_txns):
             net_contracts += qty
 
     net_pnl = total_credits - total_debits
-    net_pnl_after_fees = net_pnl - total_fees
     status = "OPEN" if net_contracts != 0 else "CLOSED"
 
     first_txn = chain_txns[0]
@@ -382,7 +377,7 @@ def build_chain(initial_open, all_txns, rolls, used_txns):
     breakeven_direction = None
     open_contracts = abs(net_contracts)
     if status == "OPEN" and open_contracts > 0:
-        breakeven_price = (total_credits - total_debits - total_fees) / (open_contracts * 100)
+        breakeven_price = (total_credits - total_debits) / (open_contracts * 100)
         breakeven_direction = "or less" if net_contracts < 0 else "or more"
 
     roll_count = 0
@@ -402,9 +397,7 @@ def build_chain(initial_open, all_txns, rolls, used_txns):
         "roll_count": roll_count,
         "total_credits": total_credits,
         "total_debits": total_debits,
-        "total_fees": total_fees,
         "net_pnl": net_pnl,
-        "net_pnl_after_fees": net_pnl_after_fees,
         "initial_position": first_txn.get("Description", ""),
         "final_position": final_position_desc,
         "net_contracts": net_contracts,

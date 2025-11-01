@@ -150,9 +150,7 @@ class TestJsonSerializer(unittest.TestCase):
             "expiration": "2025-02-21",
             "total_credits": Decimal("1000.00"),
             "total_debits": Decimal("500.00"),
-            "total_fees": Decimal("10.00"),
-            "net_pnl": Decimal("490.00"),
-            "net_pnl_after_fees": Decimal("480.00"),
+            "net_pnl": Decimal("500.00"),
             "breakeven_price": Decimal("450.00"),
             "breakeven_direction": "UP",
             "net_contracts": 1,
@@ -176,9 +174,12 @@ class TestJsonSerializer(unittest.TestCase):
         self.assertEqual(result["strike"], "500")
         self.assertEqual(result["total_credits"], "1000")
         self.assertEqual(result["total_debits"], "500")
+        self.assertEqual(result["net_pnl"], "500")
         self.assertEqual(result["net_contracts"], 1)
         self.assertEqual(len(result["transactions"]), 1)
         self.assertEqual(result["transactions"][0]["trans_code"], "STO")
+        self.assertNotIn("total_fees", result)
+        self.assertNotIn("net_pnl_after_fees", result)
 
     def test_serialize_chain_minimal(self):
         """Test serializing a chain with minimal data."""
@@ -207,7 +208,6 @@ class TestJsonSerializer(unittest.TestCase):
             option_type="CALL",
             expiration=date(2025, 2, 21),
             action="SELL",
-            fees=Decimal("0.04"),
             raw={},
         )
 
@@ -235,7 +235,6 @@ class TestJsonSerializer(unittest.TestCase):
             option_type="CALL",
             expiration=date(2025, 2, 21),
             action="SELL",
-            fees=Decimal("0.04"),
             raw={},
         )
         chains = [

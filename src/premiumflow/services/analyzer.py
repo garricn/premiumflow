@@ -26,18 +26,11 @@ def calculate_debits(transactions: List[Transaction]) -> Decimal:
     )
 
 
-def calculate_fees(transactions: List[Transaction]) -> Decimal:
-    """Calculate total fees across all transactions."""
-    return sum((t.total_fees for t in transactions), Decimal("0"))
-
-
 def calculate_pnl(transactions: List[Transaction]) -> Decimal:
     """Calculate net profit/loss for a list of transactions."""
     credits = calculate_credits(transactions)
     debits = calculate_debits(transactions)
-    fees = calculate_fees(transactions)
-
-    return credits - debits - fees
+    return credits - debits
 
 
 def calculate_breakeven(transactions: List[Transaction], strike: Decimal) -> Optional[Decimal]:
@@ -62,8 +55,6 @@ def analyze_roll_chain(chain: RollChain) -> Dict[str, Any]:
         "total_credits": chain.total_credits,
         "total_debits": chain.total_debits,
         "net_pnl": chain.net_pnl,
-        "total_fees": chain.total_fees,
-        "net_pnl_after_fees": chain.net_pnl_after_fees,
         "breakeven_price": chain.breakeven_price,
         "is_closed": chain.is_closed,
         "is_open": chain.is_open,

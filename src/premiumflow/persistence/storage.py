@@ -126,7 +126,6 @@ class SQLiteStorage:
                     option_type TEXT NOT NULL,
                     expiration TEXT NOT NULL,
                     action TEXT NOT NULL,
-                    fees TEXT NOT NULL,
                     raw_json TEXT NOT NULL
                 );
 
@@ -226,7 +225,6 @@ class SQLiteStorage:
                     txn.option_type,
                     txn.expiration.isoformat(),
                     txn.action,
-                    _decimal_to_text(txn.fees),
                     json.dumps(txn.raw, sort_keys=True),
                 )
                 for index, txn in enumerate(parsed.transactions, start=1)
@@ -237,9 +235,9 @@ class SQLiteStorage:
                     INSERT INTO option_transactions (
                         import_id, row_index, activity_date, process_date, settle_date,
                         instrument, description, trans_code, quantity, price, amount,
-                        strike, option_type, expiration, action, fees, raw_json
+                        strike, option_type, expiration, action, raw_json
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     rows_to_insert,
                 )

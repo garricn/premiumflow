@@ -22,7 +22,6 @@ class Transaction(BaseModel):
     price: Decimal = Field(..., description="Price per contract")
     action: str = Field(..., description="'BUY' or 'SELL'")
     date: datetime = Field(..., description="Transaction date")
-    fees: Decimal = Field(default=Decimal("0.04"), description="Fees per contract")
 
     @field_validator("option_type")
     @classmethod
@@ -42,11 +41,6 @@ class Transaction(BaseModel):
     def net_quantity(self) -> int:
         """Net quantity (positive for buy, negative for sell)."""
         return self.quantity if self.action == "BUY" else -self.quantity
-
-    @property
-    def total_fees(self) -> Decimal:
-        """Total fees for this transaction."""
-        return self.fees * abs(self.quantity)
 
     @property
     def position_spec(self) -> str:
@@ -97,21 +91,11 @@ class RollChain(BaseModel):
         return self.total_credits - self.total_debits
 
     @property
-    def total_fees(self) -> Decimal:
-        """Total fees across all transactions."""
-        return sum((t.total_fees for t in self.transactions), Decimal("0"))
-
-    @property
-    def net_pnl_after_fees(self) -> Decimal:
-        """Net P&L after accounting for fees."""
-        return self.net_pnl - self.total_fees
-
-    @property
     def breakeven_price(self) -> Optional[Decimal]:
         """Breakeven price for the position."""
         if self.net_quantity == 0:
             return None
-        return self.strike + (self.net_pnl_after_fees / abs(self.net_quantity))
+        return self.strike + (self.net_pnl / abs(self.net_quantity))
 
     @property
     def is_closed(self) -> bool:

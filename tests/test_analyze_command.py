@@ -138,7 +138,7 @@ def test_analyze_command_custom_target_range(tmp_path):
     result = runner.invoke(analyze, [str(csv_path), "--target", "0.25-0.5"])
 
     assert result.exit_code == 0
-    assert "Target (25%, 37.5%," in result.output
+    assert "Target (25%, 37.5%" in result.output
 
 
 def test_analyze_command_invalid_target_range(tmp_path):
@@ -186,9 +186,9 @@ def test_analyze_command_open_chain_shows_realized_pnl(tmp_path):
     result = runner.invoke(analyze, [str(csv_path), "--format", "summary", "--open-only"])
 
     assert result.exit_code == 0
-    assert "Realized P&L (after fees):" in result.output
+    assert "Realized P&L:" in result.output
     assert "Target Price:" in result.output
-    assert "Net P&L (after fees):" not in result.output
+    assert "Net P&L:" not in result.output
 
 
 def test_analyze_command_closed_chain_shows_net_pnl(tmp_path):
@@ -199,8 +199,8 @@ def test_analyze_command_closed_chain_shows_net_pnl(tmp_path):
     result = runner.invoke(analyze, [str(csv_path), "--format", "summary"])
 
     assert result.exit_code == 0
-    assert "Net P&L (after fees):" in result.output
-    assert "Realized P&L (after fees):" not in result.output
+    assert "Net P&L:" in result.output
+    assert "Realized P&L:" not in result.output
 
 
 def test_analyze_command_custom_target_affects_output(tmp_path):
@@ -274,7 +274,7 @@ def test_analyze_command_combines_flags(tmp_path):
     assert result.exit_code == 0
     assert "Open chains:" in result.output
     assert "Target Price:" in result.output
-    assert "Realized P&L (after fees):" in result.output
+    assert "Realized P&L:" in result.output
 
 
 def test_analyze_command_edge_case_target_ranges(tmp_path):

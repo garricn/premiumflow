@@ -49,10 +49,9 @@ class TestAnalysisService(unittest.TestCase):
         chain = {
             "total_credits": Decimal("500.00"),
             "total_debits": Decimal("400.00"),
-            "total_fees": Decimal("0.16"),
         }
         result = calculate_realized_pnl(chain)
-        expected = Decimal("500.00") - Decimal("400.00") - Decimal("0.16")
+        expected = Decimal("500.00") - Decimal("400.00")
         self.assertEqual(result, expected)
 
     def test_calculate_realized_pnl_missing_values(self):
@@ -68,17 +67,16 @@ class TestAnalysisService(unittest.TestCase):
             "net_contracts": 1,
             "total_credits": Decimal("500.00"),
             "total_debits": Decimal("400.00"),
-            "total_fees": Decimal("0.16"),
         }
         bounds = (Decimal("0.5"), Decimal("0.7"))
 
         result = calculate_target_price_range(chain, bounds)
 
         # Expected: breakeven + (realized_pnl/100) * bounds
-        # realized_pnl = 500 - 400 - 0.16 = 99.84
-        # per_share = 99.84 / 100 = 0.9984
-        # lower = 100 + (0.9984 * 0.5) = 100.50
-        # upper = 100 + (0.9984 * 0.7) = 100.70
+        # realized_pnl = 500 - 400 = 100
+        # per_share = 100 / 100 = 1
+        # lower = 100 + (1 * 0.5) = 100.50
+        # upper = 100 + (1 * 0.7) = 100.70
         self.assertIsNotNone(result)
         low, high = result
         self.assertAlmostEqual(float(low), 100.50, places=1)
@@ -116,7 +114,6 @@ class TestAnalysisService(unittest.TestCase):
             "net_contracts": 1,
             "total_credits": Decimal("300.00"),
             "total_debits": Decimal("400.00"),
-            "total_fees": Decimal("0.16"),
         }
         bounds = (Decimal("0.5"), Decimal("0.7"))
 
@@ -130,7 +127,6 @@ class TestAnalysisService(unittest.TestCase):
             "net_contracts": -1,  # Short position
             "total_credits": Decimal("500.00"),
             "total_debits": Decimal("400.00"),
-            "total_fees": Decimal("0.16"),
         }
         bounds = (Decimal("0.5"), Decimal("0.7"))
 

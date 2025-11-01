@@ -28,8 +28,7 @@ def calculate_realized_pnl(chain: Dict[str, Any]) -> Decimal:
     """Calculate realized P&L for a chain."""
     total_credits = chain.get("total_credits") or Decimal("0")
     total_debits = chain.get("total_debits") or Decimal("0")
-    total_fees = chain.get("total_fees") or Decimal("0")
-    return total_credits - total_debits - total_fees
+    return total_credits - total_debits
 
 
 def calculate_target_price_range(

@@ -1,4 +1,4 @@
-"""Unit tests for P&L calculations including credits, debits, fees, and breakeven."""
+"""Unit tests for P&L calculations including credits, debits, and breakeven."""
 
 import sys
 import unittest
@@ -12,7 +12,7 @@ from premiumflow.services.chain_builder import detect_roll_chains
 
 
 class TestPnLCalculations(unittest.TestCase):
-    """Test P&L calculations including credits, debits, fees, and breakeven."""
+    """Test P&L calculations including credits, debits, and breakeven."""
 
     def setUp(self):
         """Create test data."""
@@ -85,32 +85,20 @@ class TestPnLCalculations(unittest.TestCase):
         actual_pnl = Decimal(str(chain["net_pnl"])).quantize(Decimal("0.01"))
         self.assertEqual(actual_pnl, expected_pnl)
 
-    def test_fees_calculation(self):
-        """Test fees calculation ($0.04 per contract)."""
-        chains = detect_roll_chains(self.closed_chain_txns)
-        chain = chains[0]
-
-        # Fees: 4 transactions * 1 contract * $0.04 = $0.16
-        total_fees = len(chain["transactions"]) * Decimal("0.04")
-        self.assertEqual(total_fees, Decimal("0.16"))
-
     def test_breakeven_calculation_open_chain(self):
         """Test breakeven price calculation for open chain."""
         chains = detect_roll_chains(self.open_chain_txns)
         chain = chains[0]
 
         # Net so far: 299.95 + 1574.95 - 730.04 = 1144.86
-        # Fees: 3 * 0.04 = 0.12
-        # Net after fees: 1144.86 - 0.12 = 1144.74
-        # Breakeven per share: 1144.74 / 100 = $11.4474
+        # Breakeven per share: 1144.86 / 100 = $11.4486
 
         total_credits = Decimal(str(chain["total_credits"]))
         total_debits = Decimal(str(chain["total_debits"]))
-        fees = len(chain["transactions"]) * Decimal("0.04")
-        net_so_far = total_credits - total_debits - fees
+        net_so_far = total_credits - total_debits
         breakeven = net_so_far / Decimal("100")
 
-        self.assertEqual(breakeven, Decimal("11.4474"))
+        self.assertEqual(breakeven, Decimal("11.4486"))
 
 
 if __name__ == "__main__":

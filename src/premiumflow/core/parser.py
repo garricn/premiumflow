@@ -36,7 +36,6 @@ class NormalizedOptionTransaction:
     option_type: str
     expiration: date
     action: str
-    fees: Decimal
     raw: Dict[str, str]
 
     @property
@@ -198,8 +197,6 @@ def _normalize_row(row: Dict[str, str], row_number: int) -> Optional[NormalizedO
     option_type, strike, expiration = _parse_option_details(description, row_number)
     action = "SELL" if trans_code in {"STO", "STC"} else "BUY"
 
-    fees = Decimal("0.00")
-
     return NormalizedOptionTransaction(
         activity_date=activity_date,
         process_date=process_date,
@@ -214,7 +211,6 @@ def _normalize_row(row: Dict[str, str], row_number: int) -> Optional[NormalizedO
         option_type=option_type,
         expiration=expiration,
         action=action,
-        fees=fees,
         raw=dict(row),
     )
 

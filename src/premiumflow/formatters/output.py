@@ -43,8 +43,6 @@ Net Quantity: {chain.net_quantity}
 Total Credits: ${chain.total_credits:,.2f}
 Total Debits: ${chain.total_debits:,.2f}
 Net P&L: ${chain.net_pnl:,.2f}
-Total Fees: ${chain.total_fees:,.2f}
-Net P&L (after fees): ${chain.net_pnl_after_fees:,.2f}
 Breakeven: {breakeven}
 Transactions: {len(chain.transactions)}
 """
@@ -66,7 +64,7 @@ def create_roll_chain_table(chains: List[RollChain]) -> Table:
 
     for chain in chains:
         status = "CLOSED" if chain.is_closed else "OPEN"
-        pnl_color = "green" if chain.net_pnl_after_fees >= 0 else "red"
+        pnl_color = "green" if chain.net_pnl >= 0 else "red"
 
         table.add_row(
             chain.symbol,
@@ -74,7 +72,7 @@ def create_roll_chain_table(chains: List[RollChain]) -> Table:
             chain.option_type,
             status,
             str(chain.net_quantity),
-            f"[{pnl_color}]${chain.net_pnl_after_fees:,.2f}[/{pnl_color}]",
+            f"[{pnl_color}]${chain.net_pnl:,.2f}[/{pnl_color}]",
             f"${chain.breakeven_price:,.2f}" if chain.breakeven_price else "N/A",
             str(len(chain.transactions)),
         )

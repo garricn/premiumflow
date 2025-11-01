@@ -36,7 +36,6 @@ def _make_transaction(**overrides) -> NormalizedOptionTransaction:
         option_type=overrides.get("option_type", "CALL"),
         expiration=overrides.get("expiration", date(2025, 10, 17)),
         action=overrides.get("action", "SELL"),
-        fees=overrides.get("fees", Decimal("0")),
         raw=overrides.get("raw", {"Activity Date": "09/01/2025"}),
     )
 

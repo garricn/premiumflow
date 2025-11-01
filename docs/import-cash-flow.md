@@ -8,13 +8,13 @@ PremiumFlow expects Robinhood-style CSVs with the following headers:
 
 ```
 Activity Date, Process Date, Settle Date, Instrument, Description,
-Trans Code, Quantity, Price, Amount, Commission (optional)
+Trans Code, Quantity, Price, Amount
 ```
 
 During import the parser:
 
 - Requires `--account-name` and trims both the account name and optional `--account-number`.
-- Accepts commissions and prices in either `$1.23` or `(1.23)` format, and infers missing prices from `Amount` when possible (assignments default to `$0.00`).
+- Accepts prices in either `$1.23` or `(1.23)` format, and infers missing prices from `Amount` when possible (assignments default to `$0.00`).
 - Filters to supported option transaction codes (`STO`, `STC`, `BTO`, `BTC`, `OASGN`) and reports row numbers in every `ImportValidationError`.
 - Sorts transactions chronologically (Activity Date → Process Date → Settle Date) so downstream consumers get a stable ordering.
 

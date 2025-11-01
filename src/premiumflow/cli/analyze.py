@@ -124,7 +124,6 @@ def analyze(csv_file, output_format, open_only, target):
                 console.print(f"\n[bold]Chain {i}:[/bold]")
                 credits = format_currency(chain.get("total_credits"))
                 debits = format_currency(chain.get("total_debits"))
-                fees = format_currency(chain.get("total_fees"))
                 body_lines = [
                     f"Display: {ensure_display_name(chain)}",
                     f"Expiration: {chain.get('expiration', '') or 'N/A'}",
@@ -132,13 +131,12 @@ def analyze(csv_file, output_format, open_only, target):
                     f"Period: {chain.get('start_date', 'N/A')} → {chain.get('end_date', 'N/A')}",
                     f"Credits: {credits}",
                     f"Debits: {debits}",
-                    f"Fees: {fees}",
                 ]
 
                 if chain.get("status") == "CLOSED":
-                    body_lines.append(f"Net P&L (after fees): {format_net_pnl(chain)}")
+                    body_lines.append(f"Net P&L: {format_net_pnl(chain)}")
                 else:
-                    body_lines.append(f"Realized P&L (after fees): {format_realized_pnl(chain)}")
+                    body_lines.append(f"Realized P&L: {format_realized_pnl(chain)}")
                     body_lines.append(f"Breakeven to close: {format_breakeven(chain)}")
                     body_lines.append(
                         f"Target Price: {format_price_range(calculate_target_price_range(chain, target_bounds))}"

@@ -3,8 +3,8 @@ Cash-flow aggregation helpers for import processing.
 
 These utilities consume normalized option transactions (produced by
 ``premiumflow.core.parser.load_option_transactions``) and compute per-row cash
-flow metrics alongside overall totals for credits, debits, fees, net premium,
-and net P&L.
+flow metrics alongside overall totals for credits, debits, net premium, and net
+P&L.
 """
 
 from __future__ import annotations
@@ -25,7 +25,6 @@ class CashFlowTotals:
 
     credits: Decimal
     debits: Decimal
-    fees: Decimal
     net_premium: Decimal
     net_pnl: Decimal
 
@@ -43,10 +42,8 @@ class CashFlowRow:
     transaction: NormalizedOptionTransaction
     credit: Decimal
     debit: Decimal
-    fee: Decimal
     running_credits: Decimal
     running_debits: Decimal
-    running_fees: Decimal
     running_net_premium: Decimal
     running_net_pnl: Decimal
 
@@ -80,7 +77,6 @@ def summarize_cash_flows(parsed: ParsedImportResult) -> CashFlowSummary:
 
     running_credits = ZERO
     running_debits = ZERO
-    running_fees = ZERO
 
     rows: List[CashFlowRow] = []
 
@@ -95,20 +91,17 @@ def summarize_cash_flows(parsed: ParsedImportResult) -> CashFlowSummary:
 
         running_credits += credit
         running_debits += debit
-        running_fees += txn.fees
 
         running_net_premium = running_credits - running_debits
-        running_net_pnl = running_net_premium - running_fees
+        running_net_pnl = running_net_premium
 
         rows.append(
             CashFlowRow(
                 transaction=txn,
                 credit=credit,
                 debit=debit,
-                fee=txn.fees,
                 running_credits=running_credits,
                 running_debits=running_debits,
-                running_fees=running_fees,
                 running_net_premium=running_net_premium,
                 running_net_pnl=running_net_pnl,
             )
@@ -118,9 +111,8 @@ def summarize_cash_flows(parsed: ParsedImportResult) -> CashFlowSummary:
     totals = CashFlowTotals(
         credits=running_credits,
         debits=running_debits,
-        fees=running_fees,
         net_premium=net_premium,
-        net_pnl=net_premium - running_fees,
+        net_pnl=net_premium,
     )
 
     return CashFlowSummary(
