@@ -9,6 +9,9 @@
   <body>
     <header>
       <h1>{{ title }}</h1>
+      <nav class="top-nav">
+        <a href="{{ url_for('imports_history') }}">View import history</a>
+      </nav>
       <p>Welcome to the PremiumFlow web interface. Uploads and history views will appear here.</p>
     </header>
     <main>

@@ -117,6 +117,32 @@ class SQLiteRepository:
             rows = conn.execute(sql, params).fetchall()
         return [_row_to_stored_import(row) for row in rows]
 
+    def get_import(self, import_id: int) -> Optional[StoredImport]:
+        """Return a single stored import by identifier, if present."""
+        self._storage._ensure_initialized()  # type: ignore[attr-defined]
+        sql = """
+            SELECT
+              i.id,
+              a.name AS account_name,
+              a.number AS account_number,
+              i.source_path,
+              i.source_hash,
+              i.imported_at,
+              i.options_only,
+              i.ticker,
+              i.strategy,
+              i.open_only,
+              i.row_count
+            FROM imports AS i
+            JOIN accounts AS a ON i.account_id = a.id
+            WHERE i.id = ?
+        """
+        with self._storage._connect() as conn:  # type: ignore[attr-defined]
+            row = conn.execute(sql, (import_id,)).fetchone()
+        if row is None:
+            return None
+        return _row_to_stored_import(row)
+
     def fetch_transactions(
         self,
         *,

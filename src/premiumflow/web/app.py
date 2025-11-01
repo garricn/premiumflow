@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import re
 import sqlite3
+from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Literal
+from urllib.parse import urlencode
 
-from fastapi import Depends, FastAPI, File, Form, Request, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -28,6 +30,10 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 DuplicateStrategy = Literal["error", "skip", "replace"]
+
+DEFAULT_PAGE_SIZE = 20
+MAX_PAGE_SIZE = 100
+MIN_PAGE_SIZE = 5
 
 
 def _default_form() -> dict[str, object]:
@@ -51,6 +57,32 @@ def _account_folder(name: str, number: str | None) -> str:
     if number:
         parts.append(_slugify(number))
     return "-".join(parts)
+
+
+def _format_timestamp(value: str) -> str:
+    """Render persisted timestamps as a human-readable UTC string."""
+    if not value:
+        return value
+    normalized = value
+    if value.endswith("Z"):
+        normalized = value[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return value
+    return parsed.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+
+def _build_query(filters: dict[str, str], *, page: int, page_size: int) -> str:
+    """Construct a query string preserving filters and pagination state."""
+    params: list[tuple[str, str]] = []
+    if filters.get("account_name"):
+        params.append(("account_name", filters["account_name"]))
+    if filters.get("account_number"):
+        params.append(("account_number", filters["account_number"]))
+    params.append(("page", str(page)))
+    params.append(("page_size", str(page_size)))
+    return urlencode(params)
 
 
 def create_app() -> FastAPI:
@@ -262,6 +294,108 @@ def create_app() -> FastAPI:
                 "title": "PremiumFlow Web UI",
                 "message": message,
                 "form": form_values,
+            },
+        )
+
+    @app.get("/imports", response_class=HTMLResponse, tags=["ui"])
+    async def imports_history(
+        request: Request,
+        account_name: str | None = Query(default=None),
+        account_number: str | None = Query(default=None),
+        page: int = Query(default=1, ge=1),
+        page_size: int = Query(default=DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
+        repository: SQLiteRepository = Depends(get_repository),
+    ) -> HTMLResponse:
+        normalized_page_size = max(MIN_PAGE_SIZE, min(page_size, MAX_PAGE_SIZE))
+        account_name_filter = (account_name or "").strip()
+        account_number_filter = (account_number or "").strip()
+
+        filters = {
+            "account_name": account_name_filter,
+            "account_number": account_number_filter,
+        }
+
+        offset = (page - 1) * normalized_page_size
+        records = repository.list_imports(
+            account_name=account_name_filter or None,
+            account_number=account_number_filter or None,
+            limit=normalized_page_size + 1,
+            offset=offset,
+        )
+
+        has_next = len(records) > normalized_page_size
+        displayed_records = records[:normalized_page_size]
+        history = [
+            {
+                "id": record.id,
+                "account_name": record.account_name,
+                "account_number": record.account_number,
+                "imported_at": _format_timestamp(record.imported_at),
+                "row_count": record.row_count,
+                "options_only": record.options_only,
+                "open_only": record.open_only,
+                "ticker": record.ticker,
+                "strategy": record.strategy,
+                "source_path": record.source_path,
+                "source_filename": Path(record.source_path).name,
+            }
+            for record in displayed_records
+        ]
+
+        pagination = {
+            "page": page,
+            "page_size": normalized_page_size,
+            "has_previous": page > 1,
+            "has_next": has_next,
+            "previous_query": (
+                _build_query(filters, page=page - 1, page_size=normalized_page_size)
+                if page > 1
+                else ""
+            ),
+            "next_query": (
+                _build_query(filters, page=page + 1, page_size=normalized_page_size)
+                if has_next
+                else ""
+            ),
+        }
+
+        return templates.TemplateResponse(
+            request=request,
+            name="imports.html",
+            context={
+                "title": "Import history • PremiumFlow Web UI",
+                "filters": filters,
+                "history": history,
+                "pagination": pagination,
+            },
+        )
+
+    @app.get("/imports/{import_id}", response_class=HTMLResponse, tags=["ui"])
+    async def view_import(
+        request: Request,
+        import_id: int,
+        repository: SQLiteRepository = Depends(get_repository),
+    ) -> HTMLResponse:
+        record = repository.get_import(import_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail="Import not found")
+
+        transactions = repository.fetch_transactions(import_ids=[import_id])
+        account_label = (
+            record.account_name
+            if record.account_number is None
+            else f"{record.account_name} ({record.account_number})"
+        )
+
+        return templates.TemplateResponse(
+            request=request,
+            name="import_detail.html",
+            context={
+                "title": f"Import {record.id} • PremiumFlow Web UI",
+                "import_record": record,
+                "imported_at": _format_timestamp(record.imported_at),
+                "account_label": account_label,
+                "transactions": transactions,
             },
         )
 
