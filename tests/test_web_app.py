@@ -380,3 +380,8 @@ def test_delete_import_removes_record_and_shows_message(client_with_storage, tmp
 
     repo = repository_module.SQLiteRepository()
     assert repo.get_import(import_id) is None
+
+
+def test_delete_import_returns_404_for_missing_import(client_with_storage):
+    response = client_with_storage.post("/imports/999999/delete", follow_redirects=False)
+    assert response.status_code == 404
