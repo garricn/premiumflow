@@ -15,6 +15,12 @@
       <p>Review previously uploaded Robinhood CSV files and their metadata.</p>
     </header>
     <main>
+      {% if message %}
+      <section class="notice notice-{{ message.type }}">
+        <h2>{{ message.title }}</h2>
+        <p>{{ message.body }}</p>
+      </section>
+      {% endif %}
       <section class="filters">
         <form method="get" class="filters-form">
           <label class="field">
@@ -41,11 +47,14 @@
               <th scope="col">Imported at</th>
               <th scope="col">Account</th>
               <th scope="col">Rows</th>
+              <th scope="col">Activity start</th>
+              <th scope="col">Activity end</th>
               <th scope="col">Options only</th>
               <th scope="col">Open only</th>
               <th scope="col">Ticker</th>
               <th scope="col">Strategy</th>
               <th scope="col">Source file</th>
+              <th scope="col">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -61,11 +70,27 @@
                 {% endif %}
               </td>
               <td>{{ item.row_count }}</td>
+              <td>{{ item.activity_start or "—" }}</td>
+              <td>{{ item.activity_end or "—" }}</td>
               <td>{{ "Yes" if item.options_only else "No" }}</td>
               <td>{{ "Yes" if item.open_only else "No" }}</td>
               <td>{{ item.ticker or "—" }}</td>
               <td>{{ item.strategy or "—" }}</td>
               <td title="{{ item.source_path }}">{{ item.source_filename }}</td>
+              <td class="cell-actions">
+                <form
+                  method="post"
+                  action="{{ url_for('delete_import', import_id=item.id) }}"
+                  class="action-form"
+                  onsubmit="return confirm('Delete import {{ item.id }} for {{ item.account_label }}? This cannot be undone.');"
+                >
+                  <input type="hidden" name="account_name" value="{{ filters.account_name }}" />
+                  <input type="hidden" name="account_number" value="{{ filters.account_number }}" />
+                  <input type="hidden" name="page" value="{{ pagination.page }}" />
+                  <input type="hidden" name="page_size" value="{{ pagination.page_size }}" />
+                  <button type="submit" class="danger-button">Delete</button>
+                </form>
+              </td>
             </tr>
             {% endfor %}
           </tbody>

@@ -6,6 +6,7 @@ import io
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 from fastapi.testclient import TestClient
@@ -225,6 +226,8 @@ def test_import_history_lists_recent_imports(client_with_storage, tmp_path):
     assert "Import history" in response.text
     assert "History Account A" in response.text
     assert "History Account B" in response.text
+    assert "Activity start" in response.text
+    assert "Activity end" in response.text
     # Ensure the open-only flag is displayed
     assert "Yes" in response.text
 
@@ -253,6 +256,25 @@ def test_import_history_filters_by_account(client_with_storage, tmp_path):
     assert response.status_code == 200
     assert "Filter Account" in response.text
     assert "Other Account" not in response.text
+
+
+def test_import_history_shows_activity_range(client_with_storage, tmp_path):
+    _persist_import(
+        tmp_path,
+        account_name="Range Account",
+        account_number="RANGE-1",
+        csv_name="range.csv",
+        transactions=[
+            _make_transaction(activity_date=date(2024, 9, 2)),
+            _make_transaction(activity_date=date(2024, 9, 5)),
+        ],
+    )
+
+    response = client_with_storage.get("/imports")
+    assert response.status_code == 200
+    assert "2024-09-02" in response.text
+    assert "2024-09-05" in response.text
+    assert "Delete" in response.text
 
 
 def test_import_history_paginates_results(client_with_storage, tmp_path):
@@ -317,8 +339,44 @@ def test_import_detail_shows_transactions(client_with_storage, tmp_path):
     assert "TSLA" in response.text
     assert "AAPL" in response.text
     assert "AAPL Put" in response.text
+    assert "Activity start" in response.text
+    assert "Activity end" in response.text
+    assert "Delete import" in response.text
 
 
 def test_import_detail_returns_404_for_missing_import(client_with_storage):
     response = client_with_storage.get("/imports/999999")
     assert response.status_code == 404
+
+
+def test_delete_import_removes_record_and_shows_message(client_with_storage, tmp_path):
+    import_id = _persist_import(
+        tmp_path,
+        account_name="Delete Account",
+        account_number="DEL-1",
+        csv_name="delete.csv",
+        transactions=[_make_transaction(activity_date=date(2024, 9, 10))],
+    )
+
+    response = client_with_storage.post(
+        f"/imports/{import_id}/delete",
+        data={"page": "1", "page_size": str(MIN_PAGE_SIZE)},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    location = response.headers["location"]
+    parsed = urlparse(location)
+    assert parsed.path == "/imports"
+    params = parse_qs(parsed.query)
+    assert params["message"] == ["deleted"]
+    assert params["deleted_id"] == [str(import_id)]
+    assert params["account_label"] == ["Delete Account (DEL-1)"]
+    assert params["source_filename"] == ["delete.csv"]
+
+    follow = client_with_storage.get(location)
+    assert follow.status_code == 200
+    assert "Import deleted" in follow.text
+    assert "Re-upload the original CSV" in follow.text
+
+    repo = repository_module.SQLiteRepository()
+    assert repo.get_import(import_id) is None
