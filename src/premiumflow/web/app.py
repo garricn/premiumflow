@@ -11,7 +11,7 @@ from typing import Literal
 from urllib.parse import urlencode
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -306,6 +306,21 @@ def create_app() -> FastAPI:
         page_size: int = Query(default=DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
         repository: SQLiteRepository = Depends(get_repository),
     ) -> HTMLResponse:
+        message: dict[str, object] | None = None
+        if request.query_params.get("message") == "deleted":
+            deleted_id = request.query_params.get("deleted_id", "")
+            account_label = request.query_params.get("account_label") or "the selected account"
+            source_filename = request.query_params.get("source_filename")
+            file_hint = f" (source: {source_filename})" if source_filename else ""
+            message = {
+                "type": "success",
+                "title": "Import deleted",
+                "body": (
+                    f"Removed import {deleted_id} for {account_label}{file_hint}. "
+                    "Re-upload the original CSV from the Upload page if you need to ingest it again."
+                ),
+            }
+
         normalized_page_size = max(MIN_PAGE_SIZE, min(page_size, MAX_PAGE_SIZE))
         account_name_filter = (account_name or "").strip()
         account_number_filter = (account_number or "").strip()
@@ -325,11 +340,19 @@ def create_app() -> FastAPI:
 
         has_next = len(records) > normalized_page_size
         displayed_records = records[:normalized_page_size]
+        activity_ranges = repository.fetch_import_activity_ranges(
+            [record.id for record in displayed_records]
+        )
         history = [
             {
                 "id": record.id,
                 "account_name": record.account_name,
                 "account_number": record.account_number,
+                "account_label": (
+                    record.account_name
+                    if record.account_number is None
+                    else f"{record.account_name} ({record.account_number})"
+                ),
                 "imported_at": _format_timestamp(record.imported_at),
                 "row_count": record.row_count,
                 "options_only": record.options_only,
@@ -338,6 +361,8 @@ def create_app() -> FastAPI:
                 "strategy": record.strategy,
                 "source_path": record.source_path,
                 "source_filename": Path(record.source_path).name,
+                "activity_start": activity_ranges.get(record.id, (None, None))[0],
+                "activity_end": activity_ranges.get(record.id, (None, None))[1],
             }
             for record in displayed_records
         ]
@@ -367,8 +392,62 @@ def create_app() -> FastAPI:
                 "filters": filters,
                 "history": history,
                 "pagination": pagination,
+                "message": message,
             },
         )
+
+    @app.post("/imports/{import_id}/delete", response_class=HTMLResponse, tags=["ui"])
+    async def delete_import(
+        request: Request,
+        import_id: int,
+        account_name: str | None = Form(default=None),
+        account_number: str | None = Form(default=None),
+        page: int | None = Form(default=None),
+        page_size: int | None = Form(default=None),
+        repository: SQLiteRepository = Depends(get_repository),
+    ) -> RedirectResponse:
+        record = repository.get_import(import_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail="Import not found")
+
+        deleted = repository.delete_import(import_id)
+        if not deleted:
+            raise HTTPException(status_code=404, detail="Import not found")
+
+        account_label = (
+            record.account_name
+            if record.account_number is None
+            else f"{record.account_name} ({record.account_number})"
+        )
+
+        redirect_params = {
+            key: value
+            for key, value in (
+                ("account_name", (account_name or "").strip()),
+                ("account_number", (account_number or "").strip()),
+            )
+            if value
+        }
+
+        if page is not None:
+            redirect_params["page"] = str(page)
+        if page_size is not None:
+            redirect_params["page_size"] = str(page_size)
+
+        redirect_params.update(
+            {
+                "message": "deleted",
+                "deleted_id": str(import_id),
+                "account_label": account_label,
+                "source_filename": Path(record.source_path).name,
+            }
+        )
+
+        redirect_url = str(request.url_for("imports_history"))
+        if redirect_params:
+            redirect_url = f"{redirect_url}?{urlencode(redirect_params)}"
+
+        return RedirectResponse(redirect_url, status_code=303)
 
     @app.get("/imports/{import_id}", response_class=HTMLResponse, tags=["ui"])
     async def view_import(
@@ -381,6 +460,9 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=404, detail="Import not found")
 
         transactions = repository.fetch_transactions(import_ids=[import_id])
+        activity_start, activity_end = repository.fetch_import_activity_ranges([import_id]).get(
+            import_id, (None, None)
+        )
         account_label = (
             record.account_name
             if record.account_number is None
@@ -396,6 +478,9 @@ def create_app() -> FastAPI:
                 "imported_at": _format_timestamp(record.imported_at),
                 "account_label": account_label,
                 "transactions": transactions,
+                "activity_start": activity_start,
+                "activity_end": activity_end,
+                "default_page_size": DEFAULT_PAGE_SIZE,
             },
         )
 

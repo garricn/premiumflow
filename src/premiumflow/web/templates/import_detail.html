@@ -16,6 +16,21 @@
       <p>Account: {{ account_label }}</p>
     </header>
     <main>
+      <section class="import-actions">
+        <form
+          method="post"
+          action="{{ url_for('delete_import', import_id=import_record.id) }}"
+          class="action-form"
+          onsubmit="return confirm({{ ('Delete import %s for %s? This cannot be undone.' % (import_record.id, account_label)) | tojson }});"
+        >
+          <input type="hidden" name="page_size" value="{{ default_page_size }}" />
+          <button type="submit" class="danger-button">Delete import</button>
+        </form>
+        <p class="import-actions-note">
+          Removing an import deletes all associated transactions. Re-upload the CSV from the Upload
+          page if you need to restore it.
+        </p>
+      </section>
       <section class="import-metadata">
         <dl class="import-summary">
           <div>
@@ -41,6 +56,14 @@
           <div>
             <dt>Strategy</dt>
             <dd>{{ import_record.strategy or "—" }}</dd>
+          </div>
+          <div>
+            <dt>Activity start</dt>
+            <dd>{{ activity_start or "—" }}</dd>
+          </div>
+          <div>
+            <dt>Activity end</dt>
+            <dd>{{ activity_end or "—" }}</dd>
           </div>
           <div>
             <dt>Source path</dt>
