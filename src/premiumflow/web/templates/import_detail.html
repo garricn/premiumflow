@@ -21,7 +21,7 @@
           method="post"
           action="{{ url_for('delete_import', import_id=import_record.id) }}"
           class="action-form"
-          onsubmit="return confirm('Delete import {{ import_record.id }} for {{ account_label }}? This cannot be undone.');"
+          onsubmit="return confirm({{ ('Delete import %s for %s? This cannot be undone.' % (import_record.id, account_label)) | tojson }});"
         >
           <input type="hidden" name="page_size" value="{{ default_page_size }}" />
           <button type="submit" class="danger-button">Delete import</button>

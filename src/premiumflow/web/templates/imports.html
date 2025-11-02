@@ -82,7 +82,7 @@
                   method="post"
                   action="{{ url_for('delete_import', import_id=item.id) }}"
                   class="action-form"
-                  onsubmit="return confirm('Delete import {{ item.id }} for {{ item.account_label }}? This cannot be undone.');"
+                  onsubmit="return confirm({{ ('Delete import %s for %s? This cannot be undone.' % (item.id, item.account_label)) | tojson }});"
                 >
                   <input type="hidden" name="account_name" value="{{ filters.account_name }}" />
                   <input type="hidden" name="account_number" value="{{ filters.account_number }}" />
