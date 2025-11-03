@@ -41,6 +41,26 @@ def test_load_option_transactions_parses_fixture():
     assert second.action == "BUY"
 
 
+def test_load_option_transactions_accepts_option_expiration(tmp_path):
+    csv_content = """Activity Date,Process Date,Settle Date,Instrument,Description,Trans Code,Quantity,Price,Amount
+10/17/2025,10/17/2025,10/20/2025,TMC,Option Expiration for TMC 10/17/2025 Call $7.00,OEXP,1,,$0.00
+"""
+    csv_path = tmp_path / "option_expiration.csv"
+    csv_path.write_text(csv_content, encoding="utf-8")
+
+    result = load_option_transactions(
+        csv_path,
+        account_name="Robinhood IRA",
+    )
+
+    assert len(result.transactions) == 1
+    txn = result.transactions[0]
+    assert txn.trans_code == "OEXP"
+    assert txn.action == "BUY"
+    assert txn.price == Decimal("0.00")
+    assert txn.amount == Decimal("0.00")
+
+
 def test_load_option_transactions_rejects_parenthesized_price(tmp_path):
     csv_content = """Activity Date,Process Date,Settle Date,Instrument,Description,Trans Code,Quantity,Price,Amount
 10/7/2025,10/7/2025,10/8/2025,TSLA,TSLA 10/25/2025 Call $200.00,STO,2,(1.25),$250.00

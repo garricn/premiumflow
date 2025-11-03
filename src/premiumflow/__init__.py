@@ -9,6 +9,13 @@ __author__ = "Garric Nahapetian"
 __email__ = "garricn@users.noreply.github.com"
 
 # Import main components for easy access
+from .core.legs import (
+    LegContract,
+    LegFill,
+    OptionLeg,
+    aggregate_legs,
+    build_leg_fills,
+)
 from .core.models import RollChain, Transaction
 from .core.parser import (
     format_position_spec,
@@ -48,4 +55,9 @@ __all__ = [
     "parse_lookup_input",
     "load_option_transactions",
     "find_chain_by_position",
+    "LegContract",
+    "LegFill",
+    "OptionLeg",
+    "build_leg_fills",
+    "aggregate_legs",
 ]
