@@ -11,7 +11,7 @@ from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Dict, List, Optional
 
-ALLOWED_OPTION_CODES = {"STO", "STC", "BTO", "BTC", "OASGN"}
+ALLOWED_OPTION_CODES = {"STO", "STC", "BTO", "BTC", "OASGN", "OEXP"}
 CONTRACT_MULTIPLIER = Decimal("100")
 
 
@@ -69,7 +69,7 @@ def is_options_transaction(row: Dict[str, str]) -> bool:
     description = (row.get("Description") or "").strip()
 
     # Check for options-specific transaction codes
-    options_codes = {"BTC", "STO", "OASGN"}
+    options_codes = {"BTC", "STO", "OASGN", "OEXP"}
     if trans_code in options_codes:
         return True
 
@@ -349,7 +349,7 @@ def _infer_price_from_amount(
     """
 
     if amount is None:
-        if trans_code == "OASGN":
+        if trans_code in {"OASGN", "OEXP"}:
             return Decimal("0.00")
         raise ImportValidationError('Column "Price" cannot be blank.')
 
