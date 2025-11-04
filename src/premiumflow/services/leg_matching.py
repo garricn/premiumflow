@@ -210,6 +210,91 @@ class MatchedLeg:
     def is_open(self) -> bool:
         return self.open_quantity != 0
 
+    @property
+    def opened_at(self) -> Optional[date]:
+        """Earliest date any lot in this leg was opened."""
+        if not self.lots:
+            return None
+        return min(lot.opened_at for lot in self.lots)
+
+    @property
+    def closed_at(self) -> Optional[date]:
+        """Latest date any lot in this leg was closed. Returns None if leg is fully open."""
+        closed_dates = [lot.closed_at for lot in self.lots if lot.closed_at is not None]
+        if not closed_dates:
+            return None
+        return max(closed_dates)
+
+    @property
+    def opened_quantity(self) -> int:
+        """Total quantity of contracts opened across all lots (including those later closed)."""
+        return sum(lot.quantity for lot in self.lots)
+
+    @property
+    def closed_quantity(self) -> int:
+        """Total quantity of contracts closed across all lots."""
+        return sum(lot.close_quantity for lot in self.lots)
+
+    @property
+    def open_credit_gross(self) -> Money:
+        """Total gross credit received when opening all lots (before fees)."""
+        return _quantize(sum(lot.open_credit_gross for lot in self.lots))
+
+    @property
+    def close_cost(self) -> Money:
+        """Total cost paid to close all lots (before fees)."""
+        return _quantize(sum(lot.close_cost for lot in self.lots))
+
+    @property
+    def open_fees(self) -> Money:
+        """Total fees paid when opening all lots."""
+        return _quantize(sum(lot.open_fees for lot in self.lots))
+
+    @property
+    def close_fees(self) -> Money:
+        """Total fees paid when closing all lots."""
+        return _quantize(sum(lot.close_fees for lot in self.lots))
+
+    def resolution(self) -> str:
+        """
+        Summarize how closed lots in this leg were resolved.
+
+        Returns a string describing the closing mechanism (e.g., "Buy to Close", "Sell to Close",
+        "Assignment", "Expiration"). Returns "--" for open legs or when no lots are closed.
+        """
+        if not self.is_open and not self.closed_quantity:
+            return "--"
+
+        closed_lots = [lot for lot in self.lots if lot.is_closed]
+        if not closed_lots:
+            return "--"
+
+        # Collect all closing transaction codes from closed lots
+        close_codes: set[str] = set()
+        for lot in closed_lots:
+            for portion in lot.close_portions:
+                close_codes.add(portion.fill.trans_code)
+
+        # Determine resolution based on closing codes
+        if "OEXP" in close_codes or any(
+            portion.fill.is_expiration for lot in closed_lots for portion in lot.close_portions
+        ):
+            return "Expiration"
+        if "OASGN" in close_codes or any(
+            portion.fill.is_assignment for lot in closed_lots for portion in lot.close_portions
+        ):
+            return "Assignment"
+        if "BTC" in close_codes:
+            return "Buy to Close"
+        if "STC" in close_codes:
+            return "Sell to Close"
+
+        # Fallback for mixed or unknown codes
+        if close_codes:
+            return ", ".join(sorted(close_codes))
+
+        return "--"
+
 
 class _LotBuilder:
     """Mutable builder that accumulates open and closing portions before finalising."""
