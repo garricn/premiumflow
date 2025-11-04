@@ -7,7 +7,7 @@ Provides the CLI entry point that displays matched option legs with FIFO matchin
 from __future__ import annotations
 
 from datetime import date
-from typing import Optional
+from typing import Dict, Optional
 
 import click
 from rich.console import Console
@@ -16,10 +16,14 @@ from rich.table import Table
 from ..persistence import SQLiteRepository
 from ..services.display import format_currency
 from ..services.leg_matching import (
+    MatchedLeg,
     _stored_to_normalized,
     group_fills_by_account,
     match_legs_with_errors,
 )
+
+# Type alias for leg dictionary keys
+LegKey = tuple[str, Optional[str], str]  # (account_name, account_number, leg_id)
 
 
 def _parse_date(date_str: str) -> date:
@@ -41,7 +45,7 @@ def _format_date(d: Optional[date]) -> str:
     return d.isoformat()
 
 
-def _build_legs_table(legs_dict, *, show_lots: bool = False) -> Table:
+def _build_legs_table(legs_dict: Dict[LegKey, MatchedLeg], *, show_lots: bool = False) -> Table:
     """Build a Rich table displaying matched legs."""
     if show_lots:
         table = Table(title="Matched Legs with Lot Details")
