@@ -238,6 +238,39 @@ def test_match_leg_fills_handles_long_position_closure():
     assert lot.realized_premium == Decimal("50.00")
 
 
+def test_portion_premium_uses_gross_notional_sign_and_ratio():
+    """Apportion premiums by price*qty*100 and sign by transaction code."""
+    # Open short 3 @ $1.00 -> gross 300; portion 2 should contribute +200 open premium
+    # Close 2 @ $0.30 -> gross 60; portion 2 should contribute -60 close premium
+    transactions = [
+        _make_txn(
+            activity_date=date(2025, 10, 1),
+            description="TMC 10/17/2025 Call $7.00",
+            trans_code="STO",
+            quantity=3,
+            price="1.00",
+            amount="300",
+        ),
+        _make_txn(
+            activity_date=date(2025, 10, 5),
+            description="TMC 10/17/2025 Call $7.00",
+            trans_code="BTC",
+            quantity=2,
+            price="0.30",
+            amount="-60",
+        ),
+    ]
+    fills = _single_leg_fills(transactions)
+    matched = match_leg_fills(fills)
+
+    # One closed lot of 2 and one open lot of 1
+    lots = {lot.status: lot for lot in matched.lots}
+    closed_lot: MatchedLegLot = lots["closed"]
+    assert closed_lot.quantity == 2
+    assert closed_lot.open_premium == Decimal("200.00")
+    assert closed_lot.close_premium == Decimal("-60.00")
+
+
 def test_match_leg_fills_handles_full_assignment_closure():
     transactions = [
         _make_txn(
