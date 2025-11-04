@@ -869,3 +869,33 @@ def test_legs_command_ticker_filter(tmp_path):
 
     assert result2.exit_code == 0
     assert "No transactions found" in result2.output or "No legs found" in result2.output
+
+
+def test_legs_command_lots_flag(tmp_path):
+    """Test legs command with --lots flag shows detailed lot information."""
+    csv_path = _write_legs_csv(tmp_path)
+    runner = CliRunner()
+
+    # Import transactions first
+    import_result = runner.invoke(
+        premiumflow_cli,
+        [
+            "import",
+            "--file",
+            str(csv_path),
+            "--account-name",
+            "Test Account",
+        ],
+    )
+    assert import_result.exit_code == 0
+
+    # Run legs command with --lots flag
+    result = runner.invoke(
+        premiumflow_cli,
+        ["legs", "--account-name", "Test Account", "--lots"],
+    )
+
+    assert result.exit_code == 0
+    output = result.output
+    assert "Matched Legs with Lot Details" in output
+    assert "TMC" in output
