@@ -2,10 +2,15 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
+from typing import Optional
 
 from premiumflow.core.legs import build_leg_fills
 from premiumflow.core.parser import NormalizedOptionTransaction
-from premiumflow.services.leg_matching import MatchedLegLot, match_leg_fills, match_legs
+from premiumflow.services.leg_matching import (
+    MatchedLegLot,
+    match_leg_fills,
+    match_legs,
+)
 
 
 def _make_txn(
@@ -18,12 +23,14 @@ def _make_txn(
     amount: str,
     option_type: str = "CALL",
     strike: str = "7.00",
+    process_date: Optional[date] = None,
+    settle_date: Optional[date] = None,
 ) -> NormalizedOptionTransaction:
     """Create a normalized transaction for testing."""
     return NormalizedOptionTransaction(
         activity_date=activity_date,
-        process_date=activity_date,
-        settle_date=activity_date,
+        process_date=process_date or activity_date,
+        settle_date=settle_date or activity_date,
         instrument="TMC",
         description=description,
         trans_code=trans_code,
@@ -608,3 +615,519 @@ def test_matched_lot_open_credit_net_with_fees():
     assert lot.open_fees == Decimal("2.00")  # difference between gross and amount
     assert lot.open_credit_gross == Decimal("200.00")
     assert lot.open_credit_net == Decimal("198.00")  # gross minus fees
+
+
+def test_matched_leg_opened_at_closed_at():
+    """opened_at should be earliest lot open date, closed_at should be latest lot close date."""
+    transactions = [
+        _make_txn(
+            activity_date=date(2025, 10, 1),
+            description="TMC 10/17/2025 Call $7.00",
+            trans_code="STO",
+            quantity=2,
+            price="1.00",
+            amount="200",
+        ),
+        _make_txn(
+            activity_date=date(2025, 10, 5),
+            description="TMC 10/17/2025 Call $7.00",
+            trans_code="BTC",
+            quantity=1,
+            price="0.50",
+            amount="-50",
+        ),
+        _make_txn(
+            activity_date=date(2025, 10, 10),
+            description="TMC 10/17/2025 Call $7.00",
+            trans_code="STO",
+            quantity=1,
+            price="1.20",
+            amount="120",
+        ),
+        _make_txn(
+            activity_date=date(2025, 10, 15),
+            description="TMC 10/17/2025 Call $7.00",
+            trans_code="BTC",
+            quantity=1,
+            price="0.60",
+            amount="-60",
+        ),
+    ]
+    fills = _single_leg_fills(transactions)
+    matched = match_leg_fills(fills)
+
+    assert matched.opened_at == date(2025, 10, 1)
+    assert matched.closed_at == date(2025, 10, 15)
+    assert matched.opened_quantity == 3  # 2 + 1
+    assert matched.closed_quantity == 2  # 1 + 1
+
+
+def test_matched_leg_opened_at_closed_at_open_leg():
+    """opened_at should work for open legs, closed_at should be None."""
+    transactions = [
+        _make_txn(
+            activity_date=date(2025, 10, 1),
+            description="TMC 10/17/2025 Call $7.00",
+            trans_code="STO",
+            quantity=2,
+            price="1.00",
+            amount="200",
+        ),
+    ]
+    fills = _single_leg_fills(transactions)
+    matched = match_leg_fills(fills)
+
+    assert matched.opened_at == date(2025, 10, 1)
+    assert matched.closed_at is None
+    assert matched.opened_quantity == 2
+    assert matched.closed_quantity == 0
+
+
+def test_matched_leg_quantities():
+    """opened_quantity and closed_quantity should aggregate across all lots."""
+    transactions = [
+        _make_txn(
+            activity_date=date(2025, 10, 1),
+            description="TMC 10/17/2025 Call $7.00",
+            trans_code="STO",
+            quantity=3,
+            price="1.00",
+            amount="300",
+        ),
+        _make_txn(
+            activity_date=date(2025, 10, 5),
+            description="TMC 10/17/2025 Call $7.00",
+            trans_code="BTC",
+            quantity=1,
+            price="0.50",
+            amount="-50",
+        ),
+        _make_txn(
+            activity_date=date(2025, 10, 10),
+            description="TMC 10/17/2025 Call $7.00",
+            trans_code="BTC",
+            quantity=1,
+            price="0.60",
+            amount="-60",
+        ),
+    ]
+    fills = _single_leg_fills(transactions)
+    matched = match_leg_fills(fills)
+
+    assert matched.opened_quantity == 3  # all 3 were opened
+    assert matched.closed_quantity == 2  # 1 + 1 closed
+    assert matched.open_quantity == 1  # 1 remaining open
+
+
+def test_matched_leg_open_credit_gross_close_cost():
+    """open_credit_gross and close_cost should aggregate from lots."""
+    transactions = [
+        _make_txn(
+            activity_date=date(2025, 10, 1),
+            description="TMC 10/17/2025 Call $7.00",
+            trans_code="STO",
+            quantity=2,
+            price="1.00",
+            amount="200",
+        ),
+        _make_txn(
+            activity_date=date(2025, 10, 5),
+            description="TMC 10/17/2025 Call $7.00",
+            trans_code="BTC",
+            quantity=2,
+            price="0.50",
+            amount="-100",
+        ),
+    ]
+    fills = _single_leg_fills(transactions)
+    matched = match_leg_fills(fills)
+
+    assert matched.open_credit_gross == Decimal("200.00")
+    assert matched.close_cost == Decimal("100.00")  # debit close
+
+
+def test_matched_leg_fees():
+    """open_fees and close_fees should aggregate from lots."""
+    # Create transactions with fees: amount differs from gross_notional
+    transactions = [
+        _make_txn(
+            activity_date=date(2025, 10, 1),
+            description="TMC 10/17/2025 Call $7.00",
+            trans_code="STO",
+            quantity=2,
+            price="1.00",
+            amount="198",  # 2 fee
+        ),
+        _make_txn(
+            activity_date=date(2025, 10, 5),
+            description="TMC 10/17/2025 Call $7.00",
+            trans_code="BTC",
+            quantity=2,
+            price="0.50",
+            amount="-102",  # 2 fee
+        ),
+    ]
+    fills = _single_leg_fills(transactions)
+    matched = match_leg_fills(fills)
+
+    assert matched.open_fees == Decimal("2.00")
+    assert matched.close_fees == Decimal("2.00")
+
+
+def test_matched_leg_resolution_buy_to_close():
+    """resolution() should return 'BTC' transaction code for BTC closes."""
+    transactions = [
+        _make_txn(
+            activity_date=date(2025, 10, 1),
+            description="TMC 10/17/2025 Call $7.00",
+            trans_code="STO",
+            quantity=2,
+            price="1.00",
+            amount="200",
+        ),
+        _make_txn(
+            activity_date=date(2025, 10, 5),
+            description="TMC 10/17/2025 Call $7.00",
+            trans_code="BTC",
+            quantity=2,
+            price="0.50",
+            amount="-100",
+        ),
+    ]
+    fills = _single_leg_fills(transactions)
+    matched = match_leg_fills(fills)
+
+    assert matched.resolution() == "BTC"
+
+
+def test_matched_leg_resolution_sell_to_close():
+    """resolution() should return 'STC' transaction code for STC closes."""
+    transactions = [
+        _make_txn(
+            activity_date=date(2025, 9, 1),
+            description="TMC 10/17/2025 Call $7.00",
+            trans_code="BTO",
+            quantity=1,
+            price="0.90",
+            amount="-90",
+        ),
+        _make_txn(
+            activity_date=date(2025, 9, 15),
+            description="TMC 10/17/2025 Call $7.00",
+            trans_code="STC",
+            quantity=1,
+            price="1.40",
+            amount="140",
+        ),
+    ]
+    fills = _single_leg_fills(transactions)
+    matched = match_leg_fills(fills)
+
+    assert matched.resolution() == "STC"
+
+
+def test_matched_leg_resolution_assignment():
+    """resolution() should return 'OASGN' transaction code for assignment closes."""
+    transactions = [
+        _make_txn(
+            activity_date=date(2025, 9, 1),
+            description="TMC 10/17/2025 Call $7.00",
+            trans_code="STO",
+            quantity=2,
+            price="1.10",
+            amount="220",
+        ),
+        _make_txn(
+            activity_date=date(2025, 10, 17),
+            description="Assignment of TMC 10/17/2025 Call $7.00",
+            trans_code="OASGN",
+            quantity=2,
+            price="0.00",
+            amount="0",
+        ),
+    ]
+    fills = _single_leg_fills(transactions)
+    matched = match_leg_fills(fills)
+
+    assert matched.resolution() == "OASGN"
+
+
+def test_matched_leg_resolution_expiration():
+    """resolution() should return 'OEXP' transaction code for expiration closes."""
+    transactions = [
+        _make_txn(
+            activity_date=date(2025, 9, 1),
+            description="TMC 10/17/2025 Call $7.00",
+            trans_code="STO",
+            quantity=1,
+            price="1.20",
+            amount="120",
+        ),
+        _make_txn(
+            activity_date=date(2025, 10, 17),
+            description="Option Expiration for TMC 10/17/2025 Call $7.00",
+            trans_code="OEXP",
+            quantity=1,
+            price="0.00",
+            amount="0",
+        ),
+    ]
+    fills = _single_leg_fills(transactions)
+    matched = match_leg_fills(fills)
+
+    assert matched.resolution() == "OEXP"
+
+
+def test_matched_leg_resolution_open_leg():
+    """resolution() should return None for open legs."""
+    transactions = [
+        _make_txn(
+            activity_date=date(2025, 10, 1),
+            description="TMC 10/17/2025 Call $7.00",
+            trans_code="STO",
+            quantity=2,
+            price="1.00",
+            amount="200",
+        ),
+    ]
+    fills = _single_leg_fills(transactions)
+    matched = match_leg_fills(fills)
+
+    assert matched.resolution() is None
+
+
+def test_matched_leg_resolution_mixed_closes():
+    """resolution() should return the transaction code from the final closing transaction."""
+    transactions = [
+        _make_txn(
+            activity_date=date(2025, 9, 1),
+            description="TMC 10/17/2025 Call $7.00",
+            trans_code="STO",
+            quantity=3,
+            price="1.00",
+            amount="300",
+        ),
+        _make_txn(
+            activity_date=date(2025, 9, 20),
+            description="TMC 10/17/2025 Call $7.00",
+            trans_code="BTC",
+            quantity=1,
+            price="0.40",
+            amount="-40",
+        ),
+        _make_txn(
+            activity_date=date(2025, 10, 17),
+            description="Assignment of TMC 10/17/2025 Call $7.00",
+            trans_code="OASGN",
+            quantity=2,
+            price="0.00",
+            amount="0",
+        ),
+    ]
+    fills = _single_leg_fills(transactions)
+    matched = match_leg_fills(fills)
+
+    # Should return the chronologically final closing transaction code (OASGN on 10/17)
+    assert matched.resolution() == "OASGN"
+
+
+def test_matched_leg_resolution_returns_final_not_prioritized():
+    """resolution() should return the chronologically final transaction code, not prioritized type."""
+    transactions = [
+        _make_txn(
+            activity_date=date(2025, 9, 1),
+            description="TMC 10/17/2025 Call $7.00",
+            trans_code="STO",
+            quantity=3,
+            price="1.00",
+            amount="300",
+        ),
+        _make_txn(
+            activity_date=date(2025, 9, 15),
+            description="Assignment of TMC 10/17/2025 Call $7.00",
+            trans_code="OASGN",
+            quantity=1,
+            price="0.00",
+            amount="0",
+        ),
+        _make_txn(
+            activity_date=date(2025, 10, 5),
+            description="TMC 10/17/2025 Call $7.00",
+            trans_code="BTC",
+            quantity=2,
+            price="0.40",
+            amount="-80",
+        ),
+    ]
+    fills = _single_leg_fills(transactions)
+    matched = match_leg_fills(fills)
+
+    # Should return BTC (final chronologically) not OASGN (prioritized type)
+    assert matched.resolution() == "BTC"
+
+
+def test_matched_leg_resolution_same_date_uses_tie_breaker():
+    """resolution() should use process_date/settle_date as tie-breakers when activity dates match."""
+    same_date = date(2025, 10, 17)
+    transactions = [
+        _make_txn(
+            activity_date=date(2025, 10, 1),
+            description="TMC 10/17/2025 Call $7.00",
+            trans_code="STO",
+            quantity=2,
+            price="1.00",
+            amount="200",
+        ),
+        _make_txn(
+            activity_date=same_date,
+            process_date=date(2025, 10, 15),  # Earlier process date
+            description="TMC 10/17/2025 Call $7.00",
+            trans_code="BTC",
+            quantity=1,
+            price="0.50",
+            amount="-50",
+        ),
+        _make_txn(
+            activity_date=same_date,
+            process_date=date(2025, 10, 18),  # Later process date (should win)
+            description="TMC 10/17/2025 Call $7.00",
+            trans_code="BTC",
+            quantity=1,
+            price="0.60",
+            amount="-60",
+        ),
+    ]
+    fills = _single_leg_fills(transactions)
+    matched = match_leg_fills(fills)
+
+    # Should return BTC with latest process_date (10/18) even though both have same activity_date
+    assert matched.resolution() == "BTC"
+
+
+def test_matched_leg_resolution_all_dates_same_uses_sequence():
+    """resolution() should use sequence number as final tie-breaker when all dates match."""
+    same_date = date(2025, 10, 17)
+    transactions = [
+        _make_txn(
+            activity_date=date(2025, 10, 1),
+            description="TMC 10/17/2025 Call $7.00",
+            trans_code="STO",
+            quantity=2,
+            price="1.00",
+            amount="200",
+        ),
+        # Both closings have identical activity/process/settle dates
+        # The second BTC should win due to later sequence number
+        _make_txn(
+            activity_date=same_date,
+            process_date=same_date,
+            settle_date=same_date,
+            description="TMC 10/17/2025 Call $7.00",
+            trans_code="BTC",
+            quantity=1,
+            price="0.50",
+            amount="-50",
+        ),
+        _make_txn(
+            activity_date=same_date,
+            process_date=same_date,
+            settle_date=same_date,
+            description="TMC 10/17/2025 Call $7.00",
+            trans_code="BTC",
+            quantity=1,
+            price="0.60",
+            amount="-60",
+        ),
+    ]
+    fills = _single_leg_fills(transactions)
+    matched = match_leg_fills(fills)
+
+    # Should return transaction code from the second BTC (later sequence) even though all dates are identical
+    # The second BTC comes after the first in the input, so gets higher sequence number
+    assert matched.resolution() == "BTC"
+    # Verify both lots were closed
+    assert matched.closed_quantity == 2
+
+
+def test_matched_leg_resolution_same_day_btc_and_assignment():
+    """resolution() should prioritize assignment over BTC when they occur on the same date."""
+    same_date = date(2025, 10, 17)  # Expiration date
+    transactions = [
+        _make_txn(
+            activity_date=date(2025, 9, 1),
+            description="TMC 10/17/2025 Call $7.00",
+            trans_code="STO",
+            quantity=3,
+            price="1.00",
+            amount="300",
+        ),
+        # Assignment happens first (earlier sequence)
+        _make_txn(
+            activity_date=same_date,
+            process_date=same_date,
+            settle_date=same_date,
+            description="Assignment of TMC 10/17/2025 Call $7.00",
+            trans_code="OASGN",
+            quantity=2,
+            price="0.00",
+            amount="0",
+        ),
+        # BTC happens later (later sequence, but assignment should still win)
+        _make_txn(
+            activity_date=same_date,
+            process_date=same_date,
+            settle_date=same_date,
+            description="TMC 10/17/2025 Call $7.00",
+            trans_code="BTC",
+            quantity=1,
+            price="0.50",
+            amount="-50",
+        ),
+    ]
+    fills = _single_leg_fills(transactions)
+    matched = match_leg_fills(fills)
+
+    # Should return OASGN even though BTC has later sequence - assignment is final by definition
+    assert matched.resolution() == "OASGN"
+
+
+def test_matched_leg_resolution_same_day_btc_before_expiration():
+    """resolution() should prioritize expiration over BTC when they occur on the same date."""
+    same_date = date(2025, 10, 17)  # Expiration date
+    transactions = [
+        _make_txn(
+            activity_date=date(2025, 9, 1),
+            description="TMC 10/17/2025 Call $7.00",
+            trans_code="STO",
+            quantity=2,
+            price="1.00",
+            amount="200",
+        ),
+        # BTC happens first (earlier sequence)
+        _make_txn(
+            activity_date=same_date,
+            process_date=same_date,
+            settle_date=same_date,
+            description="TMC 10/17/2025 Call $7.00",
+            trans_code="BTC",
+            quantity=1,
+            price="0.50",
+            amount="-50",
+        ),
+        # Expiration happens later (later sequence, but expiration should win)
+        _make_txn(
+            activity_date=same_date,
+            process_date=same_date,
+            settle_date=same_date,
+            description="Option Expiration for TMC 10/17/2025 Call $7.00",
+            trans_code="OEXP",
+            quantity=1,
+            price="0.00",
+            amount="0",
+        ),
+    ]
+    fills = _single_leg_fills(transactions)
+    matched = match_leg_fills(fills)
+
+    # Should return OEXP even though BTC has later sequence - expiration is final by definition
+    assert matched.resolution() == "OEXP"

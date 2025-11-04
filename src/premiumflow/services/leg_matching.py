@@ -210,6 +210,108 @@ class MatchedLeg:
     def is_open(self) -> bool:
         return self.open_quantity != 0
 
+    @property
+    def opened_at(self) -> Optional[date]:
+        """Earliest date any lot in this leg was opened."""
+        if not self.lots:
+            return None
+        return min(lot.opened_at for lot in self.lots)
+
+    @property
+    def closed_at(self) -> Optional[date]:
+        """Latest date any lot in this leg was closed. Returns None if leg is fully open."""
+        closed_dates = [lot.closed_at for lot in self.lots if lot.closed_at is not None]
+        if not closed_dates:
+            return None
+        return max(closed_dates)
+
+    @property
+    def opened_quantity(self) -> int:
+        """Total quantity of contracts opened across all lots (including those later closed)."""
+        return sum(lot.quantity for lot in self.lots)
+
+    @property
+    def closed_quantity(self) -> int:
+        """Total quantity of contracts closed across all lots."""
+        return sum(lot.close_quantity for lot in self.lots)
+
+    @property
+    def open_credit_gross(self) -> Money:
+        """Total gross credit received when opening all lots (before fees)."""
+        return _quantize(sum(lot.open_credit_gross for lot in self.lots))
+
+    @property
+    def close_cost(self) -> Money:
+        """Total cost paid to close all lots (before fees)."""
+        return _quantize(sum(lot.close_cost for lot in self.lots))
+
+    @property
+    def open_fees(self) -> Money:
+        """Total fees paid when opening all lots."""
+        return _quantize(sum(lot.open_fees for lot in self.lots))
+
+    @property
+    def close_fees(self) -> Money:
+        """Total fees paid when closing all lots."""
+        return _quantize(sum(lot.close_fees for lot in self.lots))
+
+    def resolution(self) -> Optional[str]:
+        """
+        Return the transaction code for the final method of closure.
+
+        Returns the transaction code (e.g., "BTC", "STC", "OASGN", "OEXP") from the chronologically
+        final closing transaction. Assignment and expiration are prioritized over BTC/STC when they
+        occur on the same date, as they represent the final resolution by definition.
+
+        Returns None for open legs or when no lots are closed.
+
+        Display formatting should be handled in the CLI/formatter layer.
+        """
+        # Return None if leg is still open (even if partially closed) or no lots were ever closed
+        if self.is_open or not self.closed_quantity:
+            return None
+
+        closed_lots = [lot for lot in self.lots if lot.is_closed]
+        if not closed_lots:
+            return None
+
+        # Collect all closing portions with their sort keys and dates
+        all_portions: List[Tuple[LotFillPortion, Tuple[date, date, date, int], date]] = []
+        for lot in closed_lots:
+            for portion in lot.close_portions:
+                sort_key = portion.fill.sort_key()
+                activity_date = portion.activity_date
+                all_portions.append((portion, sort_key, activity_date))
+
+        if not all_portions:
+            return None
+
+        # Find the latest activity date
+        latest_date = max(activity_date for _, _, activity_date in all_portions)
+
+        # Among portions with the latest date, prioritize assignment/expiration over BTC/STC
+        latest_date_portions = [
+            (portion, sort_key)
+            for portion, sort_key, activity_date in all_portions
+            if activity_date == latest_date
+        ]
+
+        # Check for assignment/expiration first (they are final by definition)
+        assignment_or_expiration = [
+            (portion, sort_key)
+            for portion, sort_key in latest_date_portions
+            if portion.fill.is_assignment or portion.fill.is_expiration
+        ]
+
+        if assignment_or_expiration:
+            # Among assignment/expiration, use the latest sort_key
+            latest_portion, _ = max(assignment_or_expiration, key=lambda x: x[1])
+            return latest_portion.fill.trans_code
+
+        # Otherwise, use the latest sort_key among all latest-date portions
+        latest_portion, _ = max(latest_date_portions, key=lambda x: x[1])
+        return latest_portion.fill.trans_code
+
 
 class _LotBuilder:
     """Mutable builder that accumulates open and closing portions before finalising."""
