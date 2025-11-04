@@ -34,7 +34,7 @@ def test_cli_help_lists_all_commands():
 
     assert result.exit_code == 0
     output = result.output
-    for command in ("analyze", "import", "lookup", "trace"):
+    for command in ("analyze", "import", "legs", "lookup", "trace"):
         assert command in output
 
 
@@ -129,6 +129,91 @@ def _seed_import_for_cli(
         strategy=strategy,
         open_only=open_only,
     )
+
+
+def _build_leg_transactions() -> list[NormalizedOptionTransaction]:
+    """Create sample transactions that produce one closed and one open leg."""
+    base_raw = {"Activity Date": "09/01/2025"}
+    return [
+        _make_normalized_transaction(
+            instrument="TMC",
+            description="TMC 10/17/2025 Call $7.00",
+            trans_code="STO",
+            quantity=2,
+            price=Decimal("1.20"),
+            amount=Decimal("240.00"),
+            strike=Decimal("7.00"),
+            option_type="CALL",
+            expiration=date(2025, 10, 17),
+            raw=base_raw,
+        ),
+        _make_normalized_transaction(
+            activity_date=date(2025, 10, 17),
+            process_date=date(2025, 10, 17),
+            settle_date=date(2025, 10, 21),
+            instrument="TMC",
+            description="Option Expiration for TMC 10/17/2025 Call $7.00",
+            trans_code="OEXP",
+            quantity=2,
+            price=Decimal("0.00"),
+            amount=Decimal("0.00"),
+            strike=Decimal("7.00"),
+            option_type="CALL",
+            expiration=date(2025, 10, 17),
+            action="BUY",
+            raw={"Activity Date": "10/17/2025"},
+        ),
+        _make_normalized_transaction(
+            activity_date=date(2025, 9, 5),
+            process_date=date(2025, 9, 5),
+            settle_date=date(2025, 9, 9),
+            instrument="UUUU",
+            description="UUUU 10/31/2025 Call $23.00",
+            trans_code="STO",
+            quantity=3,
+            price=Decimal("1.50"),
+            amount=Decimal("450.00"),
+            strike=Decimal("23.00"),
+            option_type="CALL",
+            expiration=date(2025, 10, 31),
+            raw={"Activity Date": "09/05/2025"},
+        ),
+        _make_normalized_transaction(
+            activity_date=date(2025, 10, 15),
+            process_date=date(2025, 10, 15),
+            settle_date=date(2025, 10, 17),
+            instrument="UUUU",
+            description="UUUU 10/31/2025 Call $23.00",
+            trans_code="BTC",
+            quantity=1,
+            price=Decimal("0.20"),
+            amount=Decimal("-20.00"),
+            strike=Decimal("23.00"),
+            option_type="CALL",
+            expiration=date(2025, 10, 31),
+            action="BUY",
+            raw={"Activity Date": "10/15/2025"},
+        ),
+    ]
+
+
+def _build_unmatched_transactions() -> list[NormalizedOptionTransaction]:
+    """Transactions that omit the opening fill to trigger a matching error."""
+    return [
+        _make_normalized_transaction(
+            instrument="TMC",
+            description="TMC 10/17/2025 Call $7.00",
+            trans_code="BTC",
+            quantity=1,
+            price=Decimal("0.50"),
+            amount=Decimal("-50.00"),
+            strike=Decimal("7.00"),
+            option_type="CALL",
+            expiration=date(2025, 10, 17),
+            action="BUY",
+            raw={"Activity Date": "09/10/2025"},
+        )
+    ]
 
 
 def test_import_reports_missing_ticker(tmp_path):
@@ -747,6 +832,149 @@ def test_filter_open_positions_includes_partially_closed_short_positions():
     assert (
         short_position["Quantity"] == "-1"
     ), f"Expected negative quantity for short position, got {short_position['Quantity']}"
+
+
+def test_legs_command_data_output(tmp_path, monkeypatch):
+    """Leg inspection command should return matched legs with correct data."""
+    db_path = tmp_path / "legs-cli.db"
+    monkeypatch.setenv(storage_module.DB_ENV_VAR, str(db_path))
+    storage_module.get_storage.cache_clear()
+
+    _seed_import_for_cli(
+        tmp_path,
+        csv_name="legs.csv",
+        transactions=_build_leg_transactions(),
+        account_name="Robinhood IRA",
+        account_number="RH-12345",
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(premiumflow_cli, ["legs", "--format", "json", "--lots"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert isinstance(payload, dict)
+    assert payload["warnings"] == []
+    assert len(payload["legs"]) == 2
+
+    # Verify closed leg
+    closed_leg = next(leg for leg in payload["legs"] if leg["status"] == "closed")
+    assert closed_leg["contract"]["symbol"] == "TMC"
+    assert closed_leg["contract"]["expiration"] == "2025-10-17"
+    assert closed_leg["resolution"] == "Expiration"
+    assert closed_leg["opened_at"] == "2025-09-01"
+    assert closed_leg["closed_at"] == "2025-10-17"
+    assert len(closed_leg["lots"]) == 1
+    assert closed_leg["lots"][0]["status"] == "closed"
+
+    # Verify open leg
+    open_leg = next(leg for leg in payload["legs"] if leg["status"] == "open")
+    assert open_leg["contract"]["symbol"] == "UUUU"
+    assert open_leg["contract"]["expiration"] == "2025-10-31"
+    assert open_leg["resolution"] == "--"  # Open legs have no resolution
+    assert open_leg["opened_at"] == "2025-09-05"
+    # Open leg can have closed_at if it has closed lots (but is still net open)
+    assert open_leg["closed_at"] == "2025-10-15"
+    assert len(open_leg["lots"]) == 2  # One closed lot, one open lot
+    assert any(lot["status"] == "open" for lot in open_leg["lots"])
+    assert any(lot["status"] == "closed" for lot in open_leg["lots"])
+
+    storage_module.get_storage.cache_clear()
+
+
+def test_legs_command_json_output(tmp_path, monkeypatch):
+    """JSON format should serialize matched legs with decimal strings."""
+    db_path = tmp_path / "legs-json.db"
+    monkeypatch.setenv(storage_module.DB_ENV_VAR, str(db_path))
+    storage_module.get_storage.cache_clear()
+
+    _seed_import_for_cli(
+        tmp_path,
+        csv_name="legs-json.csv",
+        transactions=_build_leg_transactions(),
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(premiumflow_cli, ["legs", "--format", "json", "--status", "closed"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert isinstance(payload, dict)
+    assert payload["warnings"] == []
+    assert len(payload["legs"]) == 1
+    leg = payload["legs"][0]
+    assert leg["status"] == "closed"
+    assert leg["contract"]["symbol"] == "TMC"
+    assert leg["realized_premium"] == "240.00"
+    assert leg["open_fees"] == "0.00"
+    assert leg["close_fees"] == "0.00"
+    assert leg["open_credit_gross"] == "240.00"
+    assert leg["open_credit_net"] == "240.00"
+    assert leg["close_cost"] == "0.00"
+    assert leg["credit_remaining"] == "0.00"
+    assert leg["opened_at"] == "2025-09-01"
+    assert leg["closed_at"] == "2025-10-17"
+    assert leg["resolution"] == "Expiration"
+    assert leg["lots"][0]["status"] == "closed"
+    assert leg["lots"][0]["open_fees"] == "0.00"
+    assert leg["lots"][0]["close_fees"] == "0.00"
+    assert leg["lots"][0]["open_credit_gross"] == "240.00"
+    assert leg["lots"][0]["open_credit_net"] == "240.00"
+    assert leg["lots"][0]["close_cost"] == "0.00"
+    assert leg["lots"][0]["credit_remaining"] == "0.00"
+    assert leg["lots"][0]["open_portions"][0]["trans_code"] == "STO"
+
+    storage_module.get_storage.cache_clear()
+
+
+def test_legs_command_status_filter(tmp_path, monkeypatch):
+    """Status filter should limit output to open or closed legs."""
+    db_path = tmp_path / "legs-status.db"
+    monkeypatch.setenv(storage_module.DB_ENV_VAR, str(db_path))
+    storage_module.get_storage.cache_clear()
+
+    _seed_import_for_cli(
+        tmp_path,
+        csv_name="legs-status.csv",
+        transactions=_build_leg_transactions(),
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(premiumflow_cli, ["legs", "--status", "open", "--format", "json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert isinstance(payload, dict)
+    assert payload["warnings"] == []
+    assert len(payload["legs"]) == 1
+    assert payload["legs"][0]["status"] == "open"
+    assert all(leg["status"] == "open" for leg in payload["legs"])
+
+    storage_module.get_storage.cache_clear()
+
+
+def test_legs_command_reports_matching_errors(tmp_path, monkeypatch):
+    """CLI should surface matching failures as a user-friendly error."""
+    db_path = tmp_path / "legs-error.db"
+    monkeypatch.setenv(storage_module.DB_ENV_VAR, str(db_path))
+    storage_module.get_storage.cache_clear()
+
+    _seed_import_for_cli(
+        tmp_path,
+        csv_name="legs-error.csv",
+        transactions=_build_unmatched_transactions(),
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(premiumflow_cli, ["legs"])
+
+    assert result.exit_code == 0
+    output = result.output
+    assert "No matched legs match the requested filters." in output
+    assert "Warnings:" in output
+    assert "Encountered closing fill without a corresponding open position." in output
+
+    storage_module.get_storage.cache_clear()
 
 
 def _load_transaction_dicts(csv_path: str) -> list[dict]:

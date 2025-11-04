@@ -6,6 +6,7 @@ from .chain_builder import detect_roll_chains
 from .cli_helpers import (
     create_target_label,
     filter_open_chains,
+    format_account_label,
     format_expiration_date,
     is_open_chain,
     parse_target_range,
@@ -28,14 +29,19 @@ from .json_serializer import (
     build_ingest_payload,
     serialize_chain,
     serialize_decimal,
+    serialize_leg,
+    serialize_leg_lot,
+    serialize_leg_portion,
     serialize_normalized_transaction,
     serialize_transaction,
 )
 from .leg_matching import (
     MatchedLeg,
     MatchedLegLot,
+    group_fills_by_account,
     match_leg_fills,
     match_legs,
+    match_legs_with_errors,
 )
 from .transactions import normalized_to_csv_dicts
 
@@ -59,11 +65,15 @@ __all__ = [
     "serialize_transaction",
     "serialize_normalized_transaction",
     "serialize_chain",
+    "serialize_leg",
+    "serialize_leg_lot",
+    "serialize_leg_portion",
     "build_ingest_payload",
     "is_open_chain",
     "parse_target_range",
     "filter_open_chains",
     "format_expiration_date",
+    "format_account_label",
     "create_target_label",
     "summarize_cash_flows",
     "CashFlowSummary",
@@ -72,6 +82,8 @@ __all__ = [
     "normalized_to_csv_dicts",
     "match_legs",
     "match_leg_fills",
+    "match_legs_with_errors",
+    "group_fills_by_account",
     "MatchedLeg",
     "MatchedLegLot",
 ]

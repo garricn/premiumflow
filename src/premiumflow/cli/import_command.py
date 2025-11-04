@@ -27,6 +27,7 @@ from ..persistence import (
     store_import_result,
 )
 from ..services.chain_builder import detect_roll_chains
+from ..services.cli_helpers import format_account_label
 from ..services.display import format_currency
 from ..services.json_serializer import build_ingest_payload
 from ..services.transactions import normalized_to_csv_dicts
@@ -379,12 +380,6 @@ def import_group(
     )
 
 
-def _format_account_label(import_record) -> str:
-    if import_record.account_number:
-        return f"{import_record.account_name} ({import_record.account_number})"
-    return import_record.account_name
-
-
 def _activity_ranges_for(
     repo: SQLiteRepository, import_ids: Sequence[int]
 ) -> Dict[int, Tuple[Optional[str], Optional[str]]]:
@@ -444,7 +439,7 @@ def list_imports_command(account_name, account_number, limit, offset, order):
         first_date, last_date = ranges.get(import_record.id, (None, None))
         table.add_row(
             str(import_record.id),
-            _format_account_label(import_record),
+            format_account_label(import_record.account_name, import_record.account_number),
             str(import_record.row_count),
             import_record.imported_at,
             first_date or "—",

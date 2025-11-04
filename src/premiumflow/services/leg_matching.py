@@ -7,13 +7,16 @@ without reimplementing the matching algorithm.
 
 from __future__ import annotations
 
-from collections import deque
+import json
+from collections import defaultdict, deque
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 from typing import Deque, Dict, Iterable, Iterator, List, Optional, Sequence, Tuple
 
-from ..core.legs import LegContract, LegFill
+from ..core.legs import LegContract, LegFill, build_leg_fills
+from ..core.parser import NormalizedOptionTransaction
+from ..persistence import StoredTransaction
 
 Money = Decimal
 LegKey = Tuple[str, Optional[str], str]  # (account_name, account_number, leg_id)
@@ -71,7 +74,13 @@ def _portion_from_fill(fill: LegFill, quantity: int) -> LotFillPortion:
         raise ValueError("quantity must be between 1 and the fill quantity")
 
     ratio = Decimal(quantity) / Decimal(fill.quantity)
-    premium = _quantize(fill.effective_premium * ratio)
+    # Use gross_notional (price * quantity * 100) with appropriate sign for premium
+    # This ensures premium is always gross (before fees), not net
+    gross_premium = fill.gross_notional * ratio
+    if fill.trans_code in {"STO", "STC"}:
+        premium = _quantize(gross_premium)  # Positive for credits
+    else:
+        premium = _quantize(-gross_premium)  # Negative for debits
     fees = _quantize(fill.fees * ratio)
     return LotFillPortion(fill=fill, quantity=quantity, premium=premium, fees=fees)
 
@@ -103,6 +112,62 @@ class MatchedLegLot:
     def is_closed(self) -> bool:
         return self.status == "closed"
 
+    @property
+    def open_fees(self) -> Money:
+        """Fees associated with opening this lot."""
+        return _quantize(sum(portion.fees for portion in self.open_portions))
+
+    @property
+    def close_fees(self) -> Money:
+        """Fees associated with closing this lot."""
+        return _quantize(sum(portion.fees for portion in self.close_portions))
+
+    @property
+    def open_credit_gross(self) -> Money:
+        """Gross credit received when opening (before fees)."""
+        return self.open_premium
+
+    @property
+    def open_credit_net(self) -> Money:
+        """Net credit received when opening (after fees)."""
+        return _quantize(self.open_premium - self.open_fees)
+
+    @property
+    def close_cost(self) -> Money:
+        """Cost paid to close (before fees). Returns 0 if not closed or if close was a credit."""
+        if not self.is_closed or self.close_premium >= 0:
+            return _quantize(0)
+        return _quantize(abs(self.close_premium))
+
+    @property
+    def close_cost_total(self) -> Money:
+        """Total cost paid to close (cost + fees). Returns 0 if not closed or if close was a credit."""
+        if not self.is_closed or self.close_premium >= 0:
+            return _quantize(0)
+        return _quantize(self.close_cost + self.close_fees)
+
+    @property
+    def close_quantity(self) -> int:
+        """Quantity of contracts closed. Returns 0 if lot is still open."""
+        return self.quantity if self.is_closed else 0
+
+    @property
+    def credit_remaining(self) -> Money:
+        """Remaining potential credit for open lots. Returns 0 if fully closed."""
+        return _quantize(self.open_premium) if self.is_open else _quantize(0)
+
+    @property
+    def quantity_remaining(self) -> int:
+        """Remaining quantity of open contracts. Returns 0 if fully closed."""
+        return self.quantity if self.is_open else 0
+
+    @property
+    def net_premium(self) -> Optional[Money]:
+        """Net P/L after fees. Returns None if lot is still open."""
+        if self.realized_premium is None:
+            return None
+        return _quantize(self.realized_premium - self.total_fees)
+
 
 @dataclass(frozen=True)
 class MatchedLeg:
@@ -125,6 +190,101 @@ class MatchedLeg:
     @property
     def is_open(self) -> bool:
         return self.open_quantity != 0
+
+    @property
+    def net_premium(self) -> Money:
+        """Net P/L after fees for all closed lots in this leg."""
+        return _quantize(self.realized_premium - self.total_fees)
+
+    @property
+    def opened_at(self) -> Optional[date]:
+        """Earliest date any lot was opened."""
+        if not self.lots:
+            return None
+        return min(lot.opened_at for lot in self.lots)
+
+    @property
+    def closed_at(self) -> Optional[date]:
+        """Latest date any lot was closed."""
+        closed_dates = [lot.closed_at for lot in self.lots if lot.closed_at is not None]
+        if not closed_dates:
+            return None
+        return max(closed_dates)
+
+    @property
+    def opened_quantity(self) -> int:
+        """Total contracts opened across all lots."""
+        return sum(lot.quantity for lot in self.lots)
+
+    @property
+    def closed_quantity(self) -> int:
+        """Total contracts closed across all lots."""
+        return sum(lot.close_quantity for lot in self.lots)
+
+    @property
+    def open_credit_gross(self) -> Money:
+        """Total gross credit received when opening (before fees)."""
+        return _quantize(sum(lot.open_premium for lot in self.lots))
+
+    @property
+    def close_cost(self) -> Money:
+        """Total cost paid to close (before fees)."""
+        return _quantize(sum(lot.close_cost for lot in self.lots))
+
+    @property
+    def open_fees(self) -> Money:
+        """Total fees associated with opening."""
+        return _quantize(sum(lot.open_fees for lot in self.lots))
+
+    @property
+    def close_fees(self) -> Money:
+        """Total fees associated with closing."""
+        return _quantize(sum(lot.close_fees for lot in self.lots))
+
+    def resolution(self) -> str:
+        """
+        Return resolution for fully closed legs. Returns '--' if leg is still open.
+
+        Resolution describes how the leg was closed (e.g., 'Buy to close', 'Expiration').
+        """
+        if self.is_open:
+            return "--"  # Unresolved - leg is still open
+
+        # Helper to get resolution label from a portion
+        def _portion_resolution(portion) -> str:
+            code = portion.fill.trans_code
+            _CLOSE_LABELS = {
+                "BTC": "Buy to close",
+                "STC": "Sell to close",
+                "OEXP": "Expiration",
+                "OASGN": "Assignment",
+            }
+            return _CLOSE_LABELS.get(code, code)
+
+        # Helper to get resolutions from a lot
+        def _lot_resolutions(lot: MatchedLegLot) -> List[str]:
+            if not lot.close_portions:
+                return []
+            labels = {_portion_resolution(portion) for portion in lot.close_portions}
+            if not labels:
+                return []
+            if len(labels) == 1:
+                return [next(iter(labels))]
+            return ["Mixed"]
+
+        resolutions: List[str] = []
+        for lot in self.lots:
+            # Only include resolutions from fully closed lots
+            if lot.is_closed:
+                resolutions.extend(_lot_resolutions(lot))
+
+        if not resolutions:
+            return "--"
+
+        unique = set(resolutions)
+        if len(unique) == 1:
+            return next(iter(unique))
+        return "Mixed"
 
 
 class _LotBuilder:
@@ -342,6 +502,78 @@ def match_leg_fills(fills: Sequence[LegFill]) -> MatchedLeg:
         open_premium=open_premium,
         total_fees=total_fees,
     )
+
+
+def _stored_to_normalized(txn: StoredTransaction) -> NormalizedOptionTransaction:
+    """Convert a persisted transaction back into its normalized form."""
+
+    def _decimal_from_text(value: Optional[str]) -> Optional[Decimal]:
+        if value is None:
+            return None
+        return Decimal(value)
+
+    return NormalizedOptionTransaction(
+        activity_date=date.fromisoformat(txn.activity_date),
+        process_date=date.fromisoformat(txn.process_date) if txn.process_date else None,
+        settle_date=date.fromisoformat(txn.settle_date) if txn.settle_date else None,
+        instrument=txn.instrument,
+        description=txn.description,
+        trans_code=txn.trans_code,
+        quantity=txn.quantity,
+        price=Decimal(txn.price),
+        amount=_decimal_from_text(txn.amount),
+        strike=Decimal(txn.strike),
+        option_type=txn.option_type,
+        expiration=date.fromisoformat(txn.expiration),
+        action=txn.action,
+        raw=json.loads(txn.raw_json),
+    )
+
+
+def group_fills_by_account(
+    transactions: Sequence[StoredTransaction],
+) -> List[LegFill]:
+    """Build leg fills grouped by account metadata to preserve account labels."""
+    grouped: Dict[Tuple[str, Optional[str]], List[StoredTransaction]] = defaultdict(list)
+    for txn in transactions:
+        grouped[(txn.account_name, txn.account_number)].append(txn)
+
+    fills: List[LegFill] = []
+    for (account_name, account_number), records in grouped.items():
+        normalized = [_stored_to_normalized(record) for record in records]
+        fills.extend(
+            build_leg_fills(
+                normalized,
+                account_name=account_name,
+                account_number=account_number,
+            )
+        )
+    return fills
+
+
+def match_legs_with_errors(
+    fills: Sequence[LegFill],
+) -> Tuple[
+    Dict[LegKey, MatchedLeg],
+    List[Tuple[LegKey, Exception, List[LegFill]]],
+]:
+    """Run FIFO matching per leg while capturing legs that fail to reconcile."""
+    grouped: Dict[LegKey, List[LegFill]] = defaultdict(list)
+    for fill in fills:
+        key = (fill.account_name, fill.account_number, fill.contract.leg_id)
+        grouped[key].append(fill)
+
+    results: Dict[LegKey, MatchedLeg] = {}
+    errors: List[Tuple[LegKey, Exception, List[LegFill]]] = []
+
+    for key, bucket in grouped.items():
+        bucket.sort(key=lambda fill: fill.sort_key())
+        try:
+            results[key] = match_leg_fills(bucket)
+        except Exception as exc:  # noqa: BLE001 - surface all matching issues
+            errors.append((key, exc, bucket))
+
+    return results, errors
 
 
 def match_legs(fills: Iterable[LegFill]) -> Dict[LegKey, MatchedLeg]:

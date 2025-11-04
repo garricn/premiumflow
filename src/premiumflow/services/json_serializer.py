@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional, Sequence
 
 from ..core.parser import NormalizedOptionTransaction
 from .display import ensure_display_name
+from .leg_matching import LotFillPortion, MatchedLeg, MatchedLegLot
 
 
 def is_open_chain(chain: Dict[str, Any]) -> bool:
@@ -135,4 +136,86 @@ def serialize_normalized_transaction(
         "strike": serialize_decimal(txn.strike),
         "option_type": txn.option_type,
         "expiration": txn.expiration.isoformat(),
+    }
+
+
+def _decimal_to_string(value: Optional[Decimal]) -> Optional[str]:
+    """Convert Decimal to string with 2 decimal places."""
+    if value is None:
+        return None
+    return format(value.quantize(Decimal("0.01")))
+
+
+def serialize_leg_portion(portion: LotFillPortion) -> Dict[str, Any]:
+    """Serialize a lot fill portion for JSON output."""
+    fill = portion.fill
+    txn = fill.transaction
+    return {
+        "activity_date": portion.activity_date.isoformat(),
+        "quantity": portion.quantity,
+        "premium": _decimal_to_string(portion.premium),
+        "fees": _decimal_to_string(portion.fees),
+        "trans_code": fill.trans_code,
+        "description": txn.description,
+        "signed_quantity": fill.signed_quantity,
+    }
+
+
+def serialize_leg_lot(lot: MatchedLegLot) -> Dict[str, Any]:
+    """Serialize a matched leg lot for JSON output."""
+    return {
+        "status": lot.status,
+        "direction": lot.direction,
+        "quantity": lot.quantity,
+        "opened_at": lot.opened_at.isoformat(),
+        "closed_at": lot.closed_at.isoformat() if lot.closed_at else None,
+        "open_premium": _decimal_to_string(lot.open_premium),
+        "close_premium": _decimal_to_string(lot.close_premium),
+        "open_credit_gross": _decimal_to_string(lot.open_credit_gross),
+        "open_credit_net": _decimal_to_string(lot.open_credit_net),
+        "close_cost": _decimal_to_string(lot.close_cost),
+        "close_cost_total": _decimal_to_string(lot.close_cost_total),
+        "open_fees": _decimal_to_string(lot.open_fees),
+        "close_fees": _decimal_to_string(lot.close_fees),
+        "total_fees": _decimal_to_string(lot.total_fees),
+        "credit_remaining": _decimal_to_string(lot.credit_remaining),
+        "realized_premium": _decimal_to_string(lot.realized_premium),
+        "net_premium": _decimal_to_string(lot.net_premium),
+        "open_portions": [serialize_leg_portion(portion) for portion in lot.open_portions],
+        "close_portions": [serialize_leg_portion(portion) for portion in lot.close_portions],
+    }
+
+
+def serialize_leg(leg: MatchedLeg) -> Dict[str, Any]:
+    """Serialize a matched leg for JSON output."""
+    return {
+        "account_name": leg.account_name,
+        "account_number": leg.account_number,
+        "contract": {
+            "leg_id": leg.contract.leg_id,
+            "symbol": leg.contract.symbol,
+            "expiration": leg.contract.expiration.isoformat(),
+            "option_type": leg.contract.option_type,
+            "strike": _decimal_to_string(leg.contract.strike),
+            "display_name": leg.contract.display_name,
+        },
+        "status": "open" if leg.is_open else "closed",
+        "net_contracts": leg.net_contracts,
+        "open_quantity": leg.open_quantity,
+        "opened_quantity": leg.opened_quantity,
+        "closed_quantity": leg.closed_quantity,
+        "realized_premium": _decimal_to_string(leg.realized_premium),
+        "open_premium": _decimal_to_string(leg.open_premium),
+        "open_credit_gross": _decimal_to_string(leg.open_credit_gross),
+        "open_credit_net": _decimal_to_string(leg.open_credit_gross - leg.open_fees),
+        "close_cost": _decimal_to_string(leg.close_cost),
+        "open_fees": _decimal_to_string(leg.open_fees),
+        "close_fees": _decimal_to_string(leg.close_fees),
+        "total_fees": _decimal_to_string(leg.total_fees),
+        "credit_remaining": _decimal_to_string(leg.open_premium),
+        "days_to_expiration": leg.days_to_expiration,
+        "opened_at": leg.opened_at.isoformat() if leg.opened_at else None,
+        "closed_at": leg.closed_at.isoformat() if leg.closed_at else None,
+        "resolution": leg.resolution(),
+        "lots": [serialize_leg_lot(lot) for lot in leg.lots],
     }

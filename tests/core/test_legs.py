@@ -253,3 +253,31 @@ def test_build_leg_fills_sorts_transactions_before_signing():
 
     assert [fill.transaction.trans_code for fill in fills] == ["STO", "OEXP"]
     assert [fill.signed_quantity for fill in fills] == [-1, 1]
+
+
+def test_build_leg_fills_prioritizes_opening_on_same_day():
+    fills = build_leg_fills(
+        [
+            _make_transaction(
+                activity_date=date(2025, 8, 28),
+                description="TSLA 10/17/2025 Put $315.00",
+                trans_code="BTC",
+                quantity=1,
+                price="0.50",
+                amount="-50",
+            ),
+            _make_transaction(
+                activity_date=date(2025, 8, 28),
+                description="TSLA 10/17/2025 Put $315.00",
+                trans_code="STO",
+                quantity=1,
+                price="1.20",
+                amount="120",
+            ),
+        ],
+        account_name="Robinhood Taxable",
+        account_number="108510900",
+    )
+
+    assert [fill.transaction.trans_code for fill in fills] == ["STO", "BTC"]
+    assert [fill.signed_quantity for fill in fills] == [-1, 1]
