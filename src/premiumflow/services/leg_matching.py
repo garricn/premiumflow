@@ -267,7 +267,8 @@ class MatchedLeg:
 
         Display formatting should be handled in the CLI/formatter layer.
         """
-        if not self.is_open and not self.closed_quantity:
+        # Return None if leg is still open (even if partially closed) or no lots were ever closed
+        if self.is_open or not self.closed_quantity:
             return None
 
         closed_lots = [lot for lot in self.lots if lot.is_closed]
