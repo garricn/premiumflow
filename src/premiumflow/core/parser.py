@@ -232,6 +232,8 @@ def _validate_account_metadata(account_name: str, account_number: str) -> tuple[
     if not normalized_name:
         raise ImportValidationError("--account-name is required.")
 
+    if account_number is None:
+        raise ImportValidationError("--account-number is required.")
     normalized_number = account_number.strip()
     if not normalized_number:
         raise ImportValidationError("--account-number is required.")
