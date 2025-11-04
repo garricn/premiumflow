@@ -753,6 +753,7 @@ def _load_transaction_dicts(csv_path: str) -> list[dict]:
     parsed = load_option_transactions(
         csv_path,
         account_name="Test Account",
+        account_number="ACCT-123",
     )
     return normalized_to_csv_dicts(parsed.transactions)
 

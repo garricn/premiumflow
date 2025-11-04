@@ -13,7 +13,7 @@ Trans Code, Quantity, Price, Amount
 
 During import the parser:
 
-- Requires `--account-name` and trims both the account name and optional `--account-number`.
+- Requires both `--account-name` and `--account-number` (both must contain non-whitespace characters).
 - Accepts prices in either `$1.23` or `(1.23)` format, and infers missing prices from `Amount` when possible (assignments default to `$0.00`).
 - Filters to supported option transaction codes (`STO`, `STC`, `BTO`, `BTC`, `OASGN`) and reports row numbers in every `ImportValidationError`.
 - Sorts transactions chronologically (Activity Date → Process Date → Settle Date) so downstream consumers get a stable ordering.

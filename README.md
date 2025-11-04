@@ -153,8 +153,7 @@ for txn in result.transactions:
     ...
 ```
 
-`account_name` is required and must contain non-whitespace characters. `account_number` is optional, but
-when provided must also contain non-whitespace characters.
+Both `account_name` and `account_number` are required and must contain non-whitespace characters.
 
 ### Persistence
 
