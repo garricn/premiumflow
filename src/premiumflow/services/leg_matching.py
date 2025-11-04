@@ -255,19 +255,22 @@ class MatchedLeg:
         """Total fees paid when closing all lots."""
         return _quantize(sum(lot.close_fees for lot in self.lots))
 
-    def resolution(self) -> str:
+    def resolution(self) -> Optional[str]:
         """
-        Summarize how closed lots in this leg were resolved.
+        Return the transaction code for how closed lots in this leg were resolved.
 
-        Returns a string describing the closing mechanism (e.g., "Buy to Close", "Sell to Close",
-        "Assignment", "Expiration"). Returns "--" for open legs or when no lots are closed.
+        Returns the primary closing transaction code (e.g., "BTC", "STC", "OASGN", "OEXP").
+        Prioritizes Assignment/Expiration over BTC/STC. Returns None for open legs or when
+        no lots are closed.
+
+        Display formatting should be handled in the CLI/formatter layer.
         """
         if not self.is_open and not self.closed_quantity:
-            return "--"
+            return None
 
         closed_lots = [lot for lot in self.lots if lot.is_closed]
         if not closed_lots:
-            return "--"
+            return None
 
         # Collect all closing transaction codes from closed lots
         close_codes: set[str] = set()
@@ -275,25 +278,25 @@ class MatchedLeg:
             for portion in lot.close_portions:
                 close_codes.add(portion.fill.trans_code)
 
-        # Determine resolution based on closing codes
+        # Determine resolution based on closing codes (prioritize Assignment/Expiration)
         if "OEXP" in close_codes or any(
             portion.fill.is_expiration for lot in closed_lots for portion in lot.close_portions
         ):
-            return "Expiration"
+            return "OEXP"
         if "OASGN" in close_codes or any(
             portion.fill.is_assignment for lot in closed_lots for portion in lot.close_portions
         ):
-            return "Assignment"
+            return "OASGN"
         if "BTC" in close_codes:
-            return "Buy to Close"
+            return "BTC"
         if "STC" in close_codes:
-            return "Sell to Close"
+            return "STC"
 
-        # Fallback for mixed or unknown codes
+        # Fallback for unknown codes - return first code found
         if close_codes:
-            return ", ".join(sorted(close_codes))
+            return next(iter(close_codes))
 
-        return "--"
+        return None
 
 
 class _LotBuilder:

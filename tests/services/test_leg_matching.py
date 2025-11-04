@@ -772,7 +772,7 @@ def test_matched_leg_fees():
 
 
 def test_matched_leg_resolution_buy_to_close():
-    """resolution() should return 'Buy to Close' for BTC closes."""
+    """resolution() should return 'BTC' transaction code for BTC closes."""
     transactions = [
         _make_txn(
             activity_date=date(2025, 10, 1),
@@ -794,11 +794,11 @@ def test_matched_leg_resolution_buy_to_close():
     fills = _single_leg_fills(transactions)
     matched = match_leg_fills(fills)
 
-    assert matched.resolution() == "Buy to Close"
+    assert matched.resolution() == "BTC"
 
 
 def test_matched_leg_resolution_sell_to_close():
-    """resolution() should return 'Sell to Close' for STC closes."""
+    """resolution() should return 'STC' transaction code for STC closes."""
     transactions = [
         _make_txn(
             activity_date=date(2025, 9, 1),
@@ -820,11 +820,11 @@ def test_matched_leg_resolution_sell_to_close():
     fills = _single_leg_fills(transactions)
     matched = match_leg_fills(fills)
 
-    assert matched.resolution() == "Sell to Close"
+    assert matched.resolution() == "STC"
 
 
 def test_matched_leg_resolution_assignment():
-    """resolution() should return 'Assignment' for OASGN closes."""
+    """resolution() should return 'OASGN' transaction code for assignment closes."""
     transactions = [
         _make_txn(
             activity_date=date(2025, 9, 1),
@@ -846,11 +846,11 @@ def test_matched_leg_resolution_assignment():
     fills = _single_leg_fills(transactions)
     matched = match_leg_fills(fills)
 
-    assert matched.resolution() == "Assignment"
+    assert matched.resolution() == "OASGN"
 
 
 def test_matched_leg_resolution_expiration():
-    """resolution() should return 'Expiration' for OEXP closes."""
+    """resolution() should return 'OEXP' transaction code for expiration closes."""
     transactions = [
         _make_txn(
             activity_date=date(2025, 9, 1),
@@ -872,11 +872,11 @@ def test_matched_leg_resolution_expiration():
     fills = _single_leg_fills(transactions)
     matched = match_leg_fills(fills)
 
-    assert matched.resolution() == "Expiration"
+    assert matched.resolution() == "OEXP"
 
 
 def test_matched_leg_resolution_open_leg():
-    """resolution() should return '--' for open legs."""
+    """resolution() should return None for open legs."""
     transactions = [
         _make_txn(
             activity_date=date(2025, 10, 1),
@@ -890,11 +890,11 @@ def test_matched_leg_resolution_open_leg():
     fills = _single_leg_fills(transactions)
     matched = match_leg_fills(fills)
 
-    assert matched.resolution() == "--"
+    assert matched.resolution() is None
 
 
 def test_matched_leg_resolution_mixed_closes():
-    """resolution() should handle multiple closing methods."""
+    """resolution() should prioritize Assignment/Expiration over BTC/STC."""
     transactions = [
         _make_txn(
             activity_date=date(2025, 9, 1),
@@ -925,4 +925,4 @@ def test_matched_leg_resolution_mixed_closes():
     matched = match_leg_fills(fills)
 
     # Should prioritize Assignment over BTC
-    assert matched.resolution() == "Assignment"
+    assert matched.resolution() == "OASGN"
