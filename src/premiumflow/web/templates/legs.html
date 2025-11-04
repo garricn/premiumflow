@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{ title }} • PremiumFlow Web UI</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='site.css') }}" />
+    <style>
+      .leg-card {
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        margin-bottom: 1rem;
+        padding: 1rem;
+        background: #fff;
+      }
+      .leg-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: start;
+        cursor: pointer;
+      }
+      .leg-header:hover {
+        background: #f5f5f5;
+      }
+      .leg-details {
+        display: none;
+        margin-top: 1rem;
+        padding-top: 1rem;
+        border-top: 1px solid #eee;
+      }
+      .leg-details.expanded {
+        display: block;
+      }
+      .leg-summary {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 0.5rem;
+        margin-bottom: 1rem;
+      }
+      .leg-summary-item {
+        display: flex;
+        flex-direction: column;
+      }
+      .leg-summary-label {
+        font-size: 0.875rem;
+        color: #666;
+        margin-bottom: 0.25rem;
+      }
+      .leg-summary-value {
+        font-weight: 500;
+      }
+      .lot-list {
+        margin-top: 1rem;
+      }
+      .lot-item {
+        border: 1px solid #eee;
+        border-radius: 4px;
+        padding: 0.75rem;
+        margin-bottom: 0.5rem;
+        background: #fafafa;
+      }
+      .warning-item {
+        background: #fff3cd;
+        border: 1px solid #ffc107;
+        border-radius: 4px;
+        padding: 0.75rem;
+        margin-bottom: 0.5rem;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>{{ title }}</h1>
+      <nav class="top-nav">
+        <a href="{{ url_for('index') }}">Upload CSV</a>
+        <a href="{{ url_for('imports_history') }}">View import history</a>
+      </nav>
+      <p>Browse FIFO-matched option legs with contract details, status, and financial metrics.</p>
+    </header>
+    <main>
+      <section class="filters">
+        <form method="get" class="filters-form">
+          <label class="field">
+            <span>Account name</span>
+            <input type="text" name="account_name" value="{{ filters.account_name }}" />
+          </label>
+          <label class="field">
+            <span>Account number</span>
+            <input type="text" name="account_number" value="{{ filters.account_number }}" />
+          </label>
+          <label class="field">
+            <span>Ticker</span>
+            <input type="text" name="ticker" value="{{ filters.ticker }}" />
+          </label>
+          <label class="field">
+            <span>Status</span>
+            <select name="status">
+              <option value="all" {% if filters.status == "all" %}selected{% endif %}>All</option>
+              <option value="open" {% if filters.status == "open" %}selected{% endif %}>Open</option>
+              <option value="closed" {% if filters.status == "closed" %}selected{% endif %}>Closed</option>
+            </select>
+          </label>
+          <div class="filter-actions">
+            <button type="submit">Apply filters</button>
+            {% if filters.account_name or filters.account_number or filters.ticker or filters.status != "all" %}
+            <a class="link-button" href="{{ url_for('legs_view') }}">Reset</a>
+            {% endif %}
+          </div>
+        </form>
+      </section>
+      {% if warnings %}
+      <section class="warnings">
+        <h2>Warnings</h2>
+        {% for warning in warnings %}
+        <div class="warning-item">{{ warning }}</div>
+        {% endfor %}
+      </section>
+      {% endif %}
+      <section>
+        {% if legs %}
+        <div class="legs-list">
+          {% for leg in legs %}
+          <div class="leg-card">
+            <div class="leg-header" onclick="toggleLegDetails({{ loop.index0 }})">
+              <div>
+                <strong>{{ leg.contract.display_name }}</strong>
+                <span class="account-number">
+                  ({{ leg.account_name }}{% if leg.account_number %} • {{ leg.account_number }}{% endif %})
+                </span>
+                <span class="status-badge status-{{ leg.status }}">{{ leg.status|upper }}</span>
+              </div>
+              <span class="toggle-icon" id="toggle-{{ loop.index0 }}">▼</span>
+            </div>
+            <div class="leg-summary">
+              <div class="leg-summary-item">
+                <span class="leg-summary-label">Symbol</span>
+                <span class="leg-summary-value">{{ leg.contract.symbol }}</span>
+              </div>
+              <div class="leg-summary-item">
+                <span class="leg-summary-label">Expiration</span>
+                <span class="leg-summary-value">{{ leg.contract.expiration }}</span>
+              </div>
+              <div class="leg-summary-item">
+                <span class="leg-summary-label">Strike</span>
+                <span class="leg-summary-value">${{ leg.contract.strike }}</span>
+              </div>
+              <div class="leg-summary-item">
+                <span class="leg-summary-label">Open Quantity</span>
+                <span class="leg-summary-value">{{ leg.open_quantity }}</span>
+              </div>
+              <div class="leg-summary-item">
+                <span class="leg-summary-label">Realized P/L</span>
+                <span class="leg-summary-value">
+                  {% if leg.realized_pnl %}${{ leg.realized_pnl }}{% else %}—{% endif %}
+                </span>
+              </div>
+              <div class="leg-summary-item">
+                <span class="leg-summary-label">Resolution</span>
+                <span class="leg-summary-value">{{ leg.resolution }}</span>
+              </div>
+              <div class="leg-summary-item">
+                <span class="leg-summary-label">DTE</span>
+                <span class="leg-summary-value">
+                  {% if leg.is_open %}{{ leg.days_to_expiration }}{% else %}N/A{% endif %}
+                </span>
+              </div>
+            </div>
+            <div class="leg-details" id="details-{{ loop.index0 }}">
+              <h3>Lots ({{ leg.lots|length }})</h3>
+              <div class="lot-list">
+                {% for lot in leg.lots %}
+                <div class="lot-item">
+                  <div><strong>Status:</strong> {{ lot.status|upper }}</div>
+                  <div><strong>Quantity:</strong> {{ lot.quantity }}</div>
+                  <div><strong>Direction:</strong> {{ lot.direction }}</div>
+                  <div><strong>Opened:</strong> {{ lot.opened_at }}</div>
+                  {% if lot.closed_at %}
+                  <div><strong>Closed:</strong> {{ lot.closed_at }}</div>
+                  {% endif %}
+                  <div><strong>Open Premium:</strong> ${{ lot.open_premium }}</div>
+                  <div><strong>Close Premium:</strong> ${{ lot.close_premium }}</div>
+                  {% if lot.realized_pnl %}
+                  <div><strong>Realized P/L:</strong> ${{ lot.realized_pnl }}</div>
+                  {% endif %}
+                  {% if lot.net_pnl %}
+                  <div><strong>Net P/L:</strong> ${{ lot.net_pnl }}</div>
+                  {% endif %}
+                  <div><strong>Total Fees:</strong> ${{ lot.total_fees }}</div>
+                </div>
+                {% endfor %}
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <p class="empty-state">No matched legs found for the selected filters.</p>
+        {% endif %}
+      </section>
+    </main>
+    <script>
+      function toggleLegDetails(index) {
+        const details = document.getElementById('details-' + index);
+        const toggle = document.getElementById('toggle-' + index);
+        details.classList.toggle('expanded');
+        toggle.textContent = details.classList.contains('expanded') ? '▲' : '▼';
+      }
+    </script>
+  </body>
+</html>
+
