@@ -161,13 +161,11 @@ def _apply_import_options(func):
         ),
         click.option(
             "--account-name",
-            required=True,
-            help="Human-readable account label to attach to this import (required).",
+            help="Human-readable account label to attach to this import (required when importing).",
         ),
         click.option(
             "--account-number",
-            required=True,
-            help="Account identifier to attach to this import (required).",
+            help="Account identifier to attach to this import (required when importing).",
         ),
         click.option(
             "--skip-existing",
