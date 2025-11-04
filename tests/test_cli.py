@@ -769,8 +769,8 @@ def _write_legs_csv(tmp_path):
     return sample_csv
 
 
-def test_legs_command_table_output(tmp_path):
-    """Test legs command displays matched legs in table format."""
+def test_legs_command_data_output(tmp_path):
+    """Test legs command outputs structured leg data with correct field values."""
     csv_path = _write_legs_csv(tmp_path)
     runner = CliRunner()
 
@@ -787,15 +787,26 @@ def test_legs_command_table_output(tmp_path):
     )
     assert import_result.exit_code == 0
 
-    # Run legs command
-    result = runner.invoke(premiumflow_cli, ["legs", "--account-name", "Test Account"])
+    # Run legs command with JSON format to assert on structured data
+    result = runner.invoke(
+        premiumflow_cli, ["legs", "--account-name", "Test Account", "--format", "json"]
+    )
 
     assert result.exit_code == 0
-    output = result.output
-    assert "Matched Legs" in output
-    assert "TMC" in output
-    # Rich truncates columns heavily, so just verify key elements are present
-    assert "7." in output or "7.00" in output  # Strike price
+    data = json.loads(result.output)
+    assert "legs" in data
+    assert len(data["legs"]) > 0
+    # Verify leg structure and data
+    leg = data["legs"][0]
+    assert "contract" in leg
+    assert "account_name" in leg
+    assert "lots" in leg
+    # The test data has TMC, so verify it's in the output
+    assert any(leg_item["contract"]["symbol"] == "TMC" for leg_item in data["legs"])
+    # Verify at least one leg has the expected strike (TMC has strike 7.00)
+    tmc_leg = next((leg for leg in data["legs"] if leg["contract"]["symbol"] == "TMC"), None)
+    assert tmc_leg is not None
+    assert tmc_leg["contract"]["strike"] == "7.00"
 
 
 def test_legs_command_status_filter(tmp_path):
@@ -816,24 +827,48 @@ def test_legs_command_status_filter(tmp_path):
     )
     assert import_result.exit_code == 0
 
-    # Run legs command with open status filter
+    # Run legs command with closed status filter
     result = runner.invoke(
-        premiumflow_cli, ["legs", "--account-name", "Test Account", "--status", "closed"]
+        premiumflow_cli,
+        ["legs", "--account-name", "Test Account", "--status", "closed", "--format", "json"],
     )
 
     assert result.exit_code == 0
+    data = json.loads(result.output)
     # The test data has a closed leg (all contracts closed), so should show results
-    assert "Matched Legs" in result.output
+    assert len(data["legs"]) > 0
+    # Verify all returned legs are closed
+    for leg in data["legs"]:
+        assert leg["is_open"] is False
+
+    # Test open filter
+    result_open = runner.invoke(
+        premiumflow_cli,
+        ["legs", "--account-name", "Test Account", "--status", "open", "--format", "json"],
+    )
+    assert result_open.exit_code == 0
+    data_open = json.loads(result_open.output)
+    # Verify all returned legs are open
+    # Note: Test data has 2 STO contracts opened and 2 BTC closes (1 + 1), so the leg is fully closed
+    # If test data changes to have open positions, this will verify the filter works correctly
+    if len(data_open["legs"]) > 0:
+        for leg in data_open["legs"]:
+            assert leg["is_open"] is True
 
 
 def test_legs_command_no_transactions(tmp_path):
-    """Test legs command reports when no transactions match filters."""
+    """Test legs command returns empty JSON when no transactions match filters."""
     runner = CliRunner()
 
-    result = runner.invoke(premiumflow_cli, ["legs", "--account-name", "Nonexistent Account"])
+    result = runner.invoke(
+        premiumflow_cli,
+        ["legs", "--account-name", "Nonexistent Account", "--format", "json"],
+    )
 
     assert result.exit_code == 0
-    assert "No transactions found" in result.output
+    data = json.loads(result.output)
+    assert data["legs"] == []
+    assert data["errors"] == []
 
 
 def test_legs_command_ticker_filter(tmp_path):
@@ -856,23 +891,31 @@ def test_legs_command_ticker_filter(tmp_path):
 
     # Run legs command with ticker filter
     result = runner.invoke(
-        premiumflow_cli, ["legs", "--account-name", "Test Account", "--ticker", "TMC"]
+        premiumflow_cli,
+        ["legs", "--account-name", "Test Account", "--ticker", "TMC", "--format", "json"],
     )
 
     assert result.exit_code == 0
-    assert "TMC" in result.output
+    data = json.loads(result.output)
+    assert len(data["legs"]) > 0
+    # Verify all returned legs match the ticker filter
+    for leg in data["legs"]:
+        assert leg["contract"]["symbol"] == "TMC"
 
     # Filter by non-existent ticker
     result2 = runner.invoke(
-        premiumflow_cli, ["legs", "--account-name", "Test Account", "--ticker", "AAPL"]
+        premiumflow_cli,
+        ["legs", "--account-name", "Test Account", "--ticker", "AAPL", "--format", "json"],
     )
 
     assert result2.exit_code == 0
-    assert "No transactions found" in result2.output or "No legs found" in result2.output
+    data2 = json.loads(result2.output)
+    assert data2["legs"] == []
+    assert data2["errors"] == []
 
 
 def test_legs_command_lots_flag(tmp_path):
-    """Test legs command with --lots flag shows detailed lot information."""
+    """Test legs command with --lots flag includes lot details in JSON output."""
     csv_path = _write_legs_csv(tmp_path)
     runner = CliRunner()
 
@@ -889,20 +932,32 @@ def test_legs_command_lots_flag(tmp_path):
     )
     assert import_result.exit_code == 0
 
-    # Run legs command with --lots flag
+    # Run legs command with --lots flag and JSON format
     result = runner.invoke(
         premiumflow_cli,
-        ["legs", "--account-name", "Test Account", "--lots"],
+        ["legs", "--account-name", "Test Account", "--lots", "--format", "json"],
     )
 
     assert result.exit_code == 0
-    output = result.output
-    assert "Matched Legs with Lot Details" in output
-    assert "TMC" in output
+    data = json.loads(result.output)
+    assert len(data["legs"]) > 0
+    # Verify lot details are included in the JSON output
+    # The test data has TMC, so find it in the output
+    tmc_leg = next((leg for leg in data["legs"] if leg["contract"]["symbol"] == "TMC"), None)
+    assert tmc_leg is not None
+    assert "lots" in tmc_leg
+    assert len(tmc_leg["lots"]) > 0
+    # Verify lot structure
+    lot = tmc_leg["lots"][0]
+    assert "quantity" in lot
+    assert "status" in lot
+    assert "opened_at" in lot
+    assert "open_portions" in lot
+    assert "close_portions" in lot
 
 
 def test_legs_command_json_output(tmp_path):
-    """Test legs command with --format json outputs JSON payload."""
+    """Test legs command JSON output schema and structure."""
     csv_path = _write_legs_csv(tmp_path)
     runner = CliRunner()
 
@@ -929,15 +984,29 @@ def test_legs_command_json_output(tmp_path):
     output = result.output
     # Parse JSON output
     data = json.loads(output)
+
+    # Verify top-level JSON schema
     assert "legs" in data
     assert "errors" in data
     assert isinstance(data["legs"], list)
+    assert isinstance(data["errors"], list)
     assert len(data["legs"]) > 0
-    # Verify leg structure - check that it has the expected fields
+
+    # Verify leg structure and required fields
     leg = data["legs"][0]
     assert "contract" in leg
     assert "account_name" in leg
     assert "lots" in leg
+    assert "is_open" in leg
+    assert "net_contracts" in leg
+    assert "open_quantity" in leg
+
+    # Verify contract structure
+    assert "symbol" in leg["contract"]
+    assert "expiration" in leg["contract"]
+    assert "strike" in leg["contract"]
+    assert "option_type" in leg["contract"]
+
     # The test data has TMC, so verify it's in the output
     assert any(leg_item["contract"]["symbol"] == "TMC" for leg_item in data["legs"])
 
