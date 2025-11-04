@@ -769,8 +769,107 @@ def _write_legs_csv(tmp_path):
     return sample_csv
 
 
-def test_legs_command_data_output(tmp_path):
+def _write_unmatched_legs_csv(tmp_path):
+    """Write CSV that triggers matching warnings (closing before opening)."""
+    csv_content = """Activity Date,Process Date,Settle Date,Instrument,Description,Trans Code,Quantity,Price,Amount
+9/10/2025,9/10/2025,9/12/2025,TMC,TMC 10/17/2025 Call $7.00,BTC,1,$0.50,($50.00)
+"""
+    sample_csv = tmp_path / "legs-unmatched.csv"
+    sample_csv.write_text(csv_content, encoding="utf-8")
+    return sample_csv
+
+
+def test_legs_command_table_output(tmp_path, monkeypatch):
+    """Table format should display leg summary with totals."""
+    db_path = tmp_path / "legs-table.db"
+    monkeypatch.setenv(storage_module.DB_ENV_VAR, str(db_path))
+    storage_module.get_storage.cache_clear()
+
+    csv_path = _write_legs_csv(tmp_path)
+    runner = CliRunner()
+
+    import_result = runner.invoke(
+        premiumflow_cli,
+        ["import", "--file", str(csv_path), "--account-name", "Test Account"],
+    )
+    assert import_result.exit_code == 0
+
+    result = runner.invoke(premiumflow_cli, ["legs", "--account-name", "Test Account"])
+
+    assert result.exit_code == 0
+    output = result.output
+    assert "Matched Option Legs" in output
+    assert "Test Account" in output
+    assert "TMC" in output
+    assert "Buy to close" in output
+    assert "Totals (Legs:" in output
+
+    storage_module.get_storage.cache_clear()
+
+
+def test_legs_command_lots_table_output(tmp_path, monkeypatch):
+    """Table format with --lots should include per-lot breakdown."""
+    db_path = tmp_path / "legs-table-lots.db"
+    monkeypatch.setenv(storage_module.DB_ENV_VAR, str(db_path))
+    storage_module.get_storage.cache_clear()
+
+    csv_path = _write_legs_csv(tmp_path)
+    runner = CliRunner()
+
+    import_result = runner.invoke(
+        premiumflow_cli,
+        ["import", "--file", str(csv_path), "--account-name", "Test Account"],
+    )
+    assert import_result.exit_code == 0
+
+    result = runner.invoke(
+        premiumflow_cli,
+        ["legs", "--account-name", "Test Account", "--lots"],
+    )
+
+    assert result.exit_code == 0
+    output = result.output
+    assert "Matched Option Legs" in output
+    assert "Lots • TMC 10/17/2025 Call $7.00" in output
+    assert "Totals (Lots:" in output
+    assert "Test Account" in output
+
+    storage_module.get_storage.cache_clear()
+
+
+def test_legs_command_table_reports_warnings(tmp_path, monkeypatch):
+    """Table output should surface matching warnings with context."""
+    db_path = tmp_path / "legs-table-warnings.db"
+    monkeypatch.setenv(storage_module.DB_ENV_VAR, str(db_path))
+    storage_module.get_storage.cache_clear()
+
+    csv_path = _write_unmatched_legs_csv(tmp_path)
+    runner = CliRunner()
+
+    import_result = runner.invoke(
+        premiumflow_cli,
+        ["import", "--file", str(csv_path), "--account-name", "Test Account"],
+    )
+    assert import_result.exit_code == 0
+
+    result = runner.invoke(premiumflow_cli, ["legs", "--account-name", "Test Account"])
+
+    assert result.exit_code == 0
+    output = result.output
+    normalized = " ".join(output.split())
+    assert "No matched legs match the requested filters." in normalized
+    assert "Warnings:" in normalized
+    assert "Encountered closing fill without a corresponding open position" in normalized
+
+    storage_module.get_storage.cache_clear()
+
+
+def test_legs_command_data_output(tmp_path, monkeypatch):
     """Test legs command outputs structured leg data with correct field values."""
+    db_path = tmp_path / "legs-data.db"
+    monkeypatch.setenv(storage_module.DB_ENV_VAR, str(db_path))
+    storage_module.get_storage.cache_clear()
+
     csv_path = _write_legs_csv(tmp_path)
     runner = CliRunner()
 
@@ -808,9 +907,15 @@ def test_legs_command_data_output(tmp_path):
     assert tmc_leg is not None
     assert tmc_leg["contract"]["strike"] == "7.00"
 
+    storage_module.get_storage.cache_clear()
 
-def test_legs_command_status_filter(tmp_path):
+
+def test_legs_command_status_filter(tmp_path, monkeypatch):
     """Test legs command filters by status."""
+    db_path = tmp_path / "legs-status.db"
+    monkeypatch.setenv(storage_module.DB_ENV_VAR, str(db_path))
+    storage_module.get_storage.cache_clear()
+
     csv_path = _write_legs_csv(tmp_path)
     runner = CliRunner()
 
@@ -855,9 +960,15 @@ def test_legs_command_status_filter(tmp_path):
         for leg in data_open["legs"]:
             assert leg["is_open"] is True
 
+    storage_module.get_storage.cache_clear()
 
-def test_legs_command_no_transactions(tmp_path):
+
+def test_legs_command_no_transactions(tmp_path, monkeypatch):
     """Test legs command returns empty JSON when no transactions match filters."""
+    db_path = tmp_path / "legs-empty.db"
+    monkeypatch.setenv(storage_module.DB_ENV_VAR, str(db_path))
+    storage_module.get_storage.cache_clear()
+
     runner = CliRunner()
 
     result = runner.invoke(
@@ -868,11 +979,17 @@ def test_legs_command_no_transactions(tmp_path):
     assert result.exit_code == 0
     data = json.loads(result.output)
     assert data["legs"] == []
-    assert data["errors"] == []
+    assert data["warnings"] == []
+
+    storage_module.get_storage.cache_clear()
 
 
-def test_legs_command_ticker_filter(tmp_path):
+def test_legs_command_ticker_filter(tmp_path, monkeypatch):
     """Test legs command filters by ticker."""
+    db_path = tmp_path / "legs-ticker.db"
+    monkeypatch.setenv(storage_module.DB_ENV_VAR, str(db_path))
+    storage_module.get_storage.cache_clear()
+
     csv_path = _write_legs_csv(tmp_path)
     runner = CliRunner()
 
@@ -911,11 +1028,17 @@ def test_legs_command_ticker_filter(tmp_path):
     assert result2.exit_code == 0
     data2 = json.loads(result2.output)
     assert data2["legs"] == []
-    assert data2["errors"] == []
+    assert data2["warnings"] == []
+
+    storage_module.get_storage.cache_clear()
 
 
-def test_legs_command_lots_flag(tmp_path):
+def test_legs_command_lots_flag(tmp_path, monkeypatch):
     """Test legs command with --lots flag includes lot details in JSON output."""
+    db_path = tmp_path / "legs-lots-json.db"
+    monkeypatch.setenv(storage_module.DB_ENV_VAR, str(db_path))
+    storage_module.get_storage.cache_clear()
+
     csv_path = _write_legs_csv(tmp_path)
     runner = CliRunner()
 
@@ -955,9 +1078,15 @@ def test_legs_command_lots_flag(tmp_path):
     assert "open_portions" in lot
     assert "close_portions" in lot
 
+    storage_module.get_storage.cache_clear()
 
-def test_legs_command_json_output(tmp_path):
+
+def test_legs_command_json_output(tmp_path, monkeypatch):
     """Test legs command JSON output schema and structure."""
+    db_path = tmp_path / "legs-json-structure.db"
+    monkeypatch.setenv(storage_module.DB_ENV_VAR, str(db_path))
+    storage_module.get_storage.cache_clear()
+
     csv_path = _write_legs_csv(tmp_path)
     runner = CliRunner()
 
@@ -987,9 +1116,9 @@ def test_legs_command_json_output(tmp_path):
 
     # Verify top-level JSON schema
     assert "legs" in data
-    assert "errors" in data
+    assert "warnings" in data
     assert isinstance(data["legs"], list)
-    assert isinstance(data["errors"], list)
+    assert isinstance(data["warnings"], list)
     assert len(data["legs"]) > 0
 
     # Verify leg structure and required fields
@@ -1010,9 +1139,15 @@ def test_legs_command_json_output(tmp_path):
     # The test data has TMC, so verify it's in the output
     assert any(leg_item["contract"]["symbol"] == "TMC" for leg_item in data["legs"])
 
+    storage_module.get_storage.cache_clear()
 
-def test_legs_command_json_output_no_legs(tmp_path):
+
+def test_legs_command_json_output_no_legs(tmp_path, monkeypatch):
     """Test legs command with JSON format returns empty array when no legs match."""
+    db_path = tmp_path / "legs-json-empty.db"
+    monkeypatch.setenv(storage_module.DB_ENV_VAR, str(db_path))
+    storage_module.get_storage.cache_clear()
+
     runner = CliRunner()
 
     # Run legs command with non-existent account
@@ -1026,6 +1161,8 @@ def test_legs_command_json_output_no_legs(tmp_path):
     # Parse JSON output
     data = json.loads(output)
     assert "legs" in data
-    assert "errors" in data
+    assert "warnings" in data
     assert data["legs"] == []
-    assert data["errors"] == []
+    assert data["warnings"] == []
+
+    storage_module.get_storage.cache_clear()
