@@ -1366,7 +1366,7 @@ def test_match_legs_with_errors_captures_matching_errors():
 
     assert len(errors) > 0
     assert any(
-        "Encountered closing fill without a corresponding open position" in error
+        "Encountered closing fill without a corresponding open position" in str(error[1])
         for error in errors
     )
     assert len(matched) == 0  # No successful matches

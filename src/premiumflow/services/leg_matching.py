@@ -7,7 +7,7 @@ without reimplementing the matching algorithm.
 
 from __future__ import annotations
 
-from collections import deque
+from collections import defaultdict, deque
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
@@ -631,34 +631,26 @@ def group_fills_by_account(
 
 def match_legs_with_errors(
     fills: Iterable[LegFill],
-) -> Tuple[Dict[LegKey, MatchedLeg], List[str]]:
+) -> Tuple[Dict[LegKey, MatchedLeg], List[Tuple[LegKey, Exception, List[LegFill]]]]:
     """
-    Match legs with error handling, returning matched results and any errors encountered.
+    Match legs with error handling, returning matched results alongside legs that failed.
 
-    Returns a tuple of (matched_legs_dict, errors_list) where errors are descriptive strings.
+    Returns a tuple of (matched_legs_dict, errors_list) where each error entry provides the leg
+    identifier, the triggering exception, and the list of fills that failed to reconcile.
     """
-    errors: List[str] = []
-    matched: Dict[LegKey, MatchedLeg] = {}
+    grouped: Dict[LegKey, List[LegFill]] = defaultdict(list)
+    for fill in fills:
+        key = (fill.account_name, fill.account_number, fill.contract.leg_id)
+        grouped[key].append(fill)
 
-    # Group fills by leg key first
-    grouped = _group_leg_fills(fills)
+    results: Dict[LegKey, MatchedLeg] = {}
+    errors: List[Tuple[LegKey, Exception, List[LegFill]]] = []
 
     for key, bucket in grouped.items():
+        bucket.sort(key=lambda item: item.sort_key())
         try:
-            matched[key] = match_leg_fills(bucket)
-        except ValueError as exc:
-            # Capture matching errors (e.g., closing fill without corresponding open)
-            account_name, account_number, leg_id = key
-            account_label = (
-                account_name if not account_number else f"{account_name} ({account_number})"
-            )
-            errors.append(f"{account_label} - {leg_id}: {str(exc)}")
-        except Exception as exc:
-            # Capture any other unexpected errors
-            account_name, account_number, leg_id = key
-            account_label = (
-                account_name if not account_number else f"{account_name} ({account_number})"
-            )
-            errors.append(f"{account_label} - {leg_id}: Unexpected error: {str(exc)}")
+            results[key] = match_leg_fills(bucket)
+        except Exception as exc:  # noqa: BLE001 - surface all matching issues
+            errors.append((key, exc, bucket))
 
-    return matched, errors
+    return results, errors
