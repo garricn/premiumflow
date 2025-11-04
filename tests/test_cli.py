@@ -928,15 +928,12 @@ def test_legs_command_json_output(tmp_path):
     assert result.exit_code == 0
     output = result.output
     # Parse JSON output
-    import json
-
     data = json.loads(output)
     assert "legs" in data
     assert "errors" in data
     assert isinstance(data["legs"], list)
     assert len(data["legs"]) > 0
     # Verify leg structure - check that it has the expected fields
-    assert len(data["legs"]) > 0
     leg = data["legs"][0]
     assert "contract" in leg
     assert "account_name" in leg
@@ -958,8 +955,6 @@ def test_legs_command_json_output_no_legs(tmp_path):
     assert result.exit_code == 0
     output = result.output
     # Parse JSON output
-    import json
-
     data = json.loads(output)
     assert "legs" in data
     assert "errors" in data
