@@ -1,7 +1,7 @@
 """Shared CLI helper utilities."""
 
 from decimal import ROUND_HALF_UP, Decimal
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 
 def is_open_chain(chain: Dict[str, Any]) -> bool:
@@ -63,3 +63,10 @@ def format_expiration_date(expiration: str) -> str:
 def create_target_label(target_percents: List[Decimal]) -> str:
     """Create a target label string from target percentages."""
     return "Target (" + ", ".join(format_percent(value) for value in target_percents) + ")"
+
+
+def format_account_label(account_name: str, account_number: Optional[str]) -> str:
+    """Format account name with optional account number for display."""
+    if not account_number:
+        return account_name
+    return f"{account_name} ({account_number})"

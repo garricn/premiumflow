@@ -27,6 +27,7 @@ from ..persistence import (
     store_import_result,
 )
 from ..services.chain_builder import detect_roll_chains
+from ..services.cli_helpers import format_account_label
 from ..services.display import format_currency
 from ..services.json_serializer import build_ingest_payload
 from ..services.transactions import normalized_to_csv_dicts
@@ -380,9 +381,7 @@ def import_group(
 
 
 def _format_account_label(import_record) -> str:
-    if import_record.account_number:
-        return f"{import_record.account_name} ({import_record.account_number})"
-    return import_record.account_name
+    return format_account_label(import_record.account_name, import_record.account_number)
 
 
 def _activity_ranges_for(
