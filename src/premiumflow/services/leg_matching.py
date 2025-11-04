@@ -260,7 +260,10 @@ class MatchedLeg:
         Return the transaction code for the final method of closure.
 
         Returns the transaction code (e.g., "BTC", "STC", "OASGN", "OEXP") from the chronologically
-        final closing transaction. Returns None for open legs or when no lots are closed.
+        final closing transaction. Assignment and expiration are prioritized over BTC/STC when they
+        occur on the same date, as they represent the final resolution by definition.
+
+        Returns None for open legs or when no lots are closed.
 
         Display formatting should be handled in the CLI/formatter layer.
         """
@@ -271,21 +274,41 @@ class MatchedLeg:
         if not closed_lots:
             return None
 
-        # Find the closing portion with the latest sort key (activity, process, settle, sequence)
-        # This matches the same ordering used elsewhere in the codebase
-        latest_portion: Optional[LotFillPortion] = None
-        latest_sort_key: Optional[Tuple[date, date, date, int]] = None
-
+        # Collect all closing portions with their sort keys and dates
+        all_portions: List[Tuple[LotFillPortion, Tuple[date, date, date, int], date]] = []
         for lot in closed_lots:
             for portion in lot.close_portions:
                 sort_key = portion.fill.sort_key()
-                if latest_sort_key is None or sort_key > latest_sort_key:
-                    latest_sort_key = sort_key
-                    latest_portion = portion
+                activity_date = portion.activity_date
+                all_portions.append((portion, sort_key, activity_date))
 
-        if latest_portion is None:
+        if not all_portions:
             return None
 
+        # Find the latest activity date
+        latest_date = max(activity_date for _, _, activity_date in all_portions)
+
+        # Among portions with the latest date, prioritize assignment/expiration over BTC/STC
+        latest_date_portions = [
+            (portion, sort_key)
+            for portion, sort_key, activity_date in all_portions
+            if activity_date == latest_date
+        ]
+
+        # Check for assignment/expiration first (they are final by definition)
+        assignment_or_expiration = [
+            (portion, sort_key)
+            for portion, sort_key in latest_date_portions
+            if portion.fill.is_assignment or portion.fill.is_expiration
+        ]
+
+        if assignment_or_expiration:
+            # Among assignment/expiration, use the latest sort_key
+            latest_portion, _ = max(assignment_or_expiration, key=lambda x: x[1])
+            return latest_portion.fill.trans_code
+
+        # Otherwise, use the latest sort_key among all latest-date portions
+        latest_portion, _ = max(latest_date_portions, key=lambda x: x[1])
         return latest_portion.fill.trans_code
 
 

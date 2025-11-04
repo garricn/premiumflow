@@ -1047,3 +1047,87 @@ def test_matched_leg_resolution_all_dates_same_uses_sequence():
     assert matched.resolution() == "BTC"
     # Verify both lots were closed
     assert matched.closed_quantity == 2
+
+
+def test_matched_leg_resolution_same_day_btc_and_assignment():
+    """resolution() should prioritize assignment over BTC when they occur on the same date."""
+    same_date = date(2025, 10, 17)  # Expiration date
+    transactions = [
+        _make_txn(
+            activity_date=date(2025, 9, 1),
+            description="TMC 10/17/2025 Call $7.00",
+            trans_code="STO",
+            quantity=3,
+            price="1.00",
+            amount="300",
+        ),
+        # Assignment happens first (earlier sequence)
+        _make_txn(
+            activity_date=same_date,
+            process_date=same_date,
+            settle_date=same_date,
+            description="Assignment of TMC 10/17/2025 Call $7.00",
+            trans_code="OASGN",
+            quantity=2,
+            price="0.00",
+            amount="0",
+        ),
+        # BTC happens later (later sequence, but assignment should still win)
+        _make_txn(
+            activity_date=same_date,
+            process_date=same_date,
+            settle_date=same_date,
+            description="TMC 10/17/2025 Call $7.00",
+            trans_code="BTC",
+            quantity=1,
+            price="0.50",
+            amount="-50",
+        ),
+    ]
+    fills = _single_leg_fills(transactions)
+    matched = match_leg_fills(fills)
+
+    # Should return OASGN even though BTC has later sequence - assignment is final by definition
+    assert matched.resolution() == "OASGN"
+
+
+def test_matched_leg_resolution_same_day_btc_before_expiration():
+    """resolution() should prioritize expiration over BTC when they occur on the same date."""
+    same_date = date(2025, 10, 17)  # Expiration date
+    transactions = [
+        _make_txn(
+            activity_date=date(2025, 9, 1),
+            description="TMC 10/17/2025 Call $7.00",
+            trans_code="STO",
+            quantity=2,
+            price="1.00",
+            amount="200",
+        ),
+        # BTC happens first (earlier sequence)
+        _make_txn(
+            activity_date=same_date,
+            process_date=same_date,
+            settle_date=same_date,
+            description="TMC 10/17/2025 Call $7.00",
+            trans_code="BTC",
+            quantity=1,
+            price="0.50",
+            amount="-50",
+        ),
+        # Expiration happens later (later sequence, but expiration should win)
+        _make_txn(
+            activity_date=same_date,
+            process_date=same_date,
+            settle_date=same_date,
+            description="Option Expiration for TMC 10/17/2025 Call $7.00",
+            trans_code="OEXP",
+            quantity=1,
+            price="0.00",
+            amount="0",
+        ),
+    ]
+    fills = _single_leg_fills(transactions)
+    matched = match_leg_fills(fills)
+
+    # Should return OEXP even though BTC has later sequence - expiration is final by definition
+    assert matched.resolution() == "OEXP"
