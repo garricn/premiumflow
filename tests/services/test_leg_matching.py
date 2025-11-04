@@ -6,10 +6,14 @@ from typing import Optional
 
 from premiumflow.core.legs import build_leg_fills
 from premiumflow.core.parser import NormalizedOptionTransaction
+from premiumflow.persistence import StoredTransaction
 from premiumflow.services.leg_matching import (
     MatchedLegLot,
+    _stored_to_normalized,
+    group_fills_by_account,
     match_leg_fills,
     match_legs,
+    match_legs_with_errors,
 )
 
 
@@ -1131,3 +1135,158 @@ def test_matched_leg_resolution_same_day_btc_before_expiration():
 
     # Should return OEXP even though BTC has later sequence - expiration is final by definition
     assert matched.resolution() == "OEXP"
+
+
+def test_stored_to_normalized_converts_stored_transaction():
+    """_stored_to_normalized should convert StoredTransaction to NormalizedOptionTransaction."""
+    stored = StoredTransaction(
+        id=1,
+        import_id=1,
+        account_name="Test Account",
+        account_number="12345",
+        row_index=1,
+        activity_date="2025-10-01",
+        process_date="2025-10-01",
+        settle_date="2025-10-03",
+        instrument="TMC",
+        description="TMC 10/17/2025 Call $7.00",
+        trans_code="STO",
+        quantity=2,
+        price="1.00",
+        amount="200.00",
+        strike="7.00",
+        option_type="CALL",
+        expiration="2025-10-17",
+        action="SELL",
+        raw_json='{"Account Name": "Test Account", "Account Number": "12345"}',
+    )
+
+    normalized = _stored_to_normalized(stored)
+
+    assert normalized.activity_date == date(2025, 10, 1)
+    assert normalized.process_date == date(2025, 10, 1)
+    assert normalized.settle_date == date(2025, 10, 3)
+    assert normalized.instrument == "TMC"
+    assert normalized.description == "TMC 10/17/2025 Call $7.00"
+    assert normalized.trans_code == "STO"
+    assert normalized.quantity == 2
+    assert normalized.price == Decimal("1.00")
+    assert normalized.amount == Decimal("200.00")
+    assert normalized.strike == Decimal("7.00")
+    assert normalized.option_type == "CALL"
+    assert normalized.expiration == date(2025, 10, 17)
+    assert normalized.action == "SELL"
+    assert normalized.raw["Account Name"] == "Test Account"
+    assert normalized.raw["Account Number"] == "12345"
+
+
+def test_group_fills_by_account_groups_by_account():
+    """group_fills_by_account should group transactions by account and convert to LegFill."""
+    txn1 = _make_txn(
+        activity_date=date(2025, 10, 1),
+        description="TMC 10/17/2025 Call $7.00",
+        trans_code="STO",
+        quantity=1,
+        price="1.00",
+        amount="100",
+        option_type="CALL",
+    )
+    txn1.raw = {"Account Name": "Account A", "Account Number": "111"}
+
+    txn2 = _make_txn(
+        activity_date=date(2025, 10, 1),
+        description="TMC 10/17/2025 Call $7.00",
+        trans_code="STO",
+        quantity=1,
+        price="1.00",
+        amount="100",
+        option_type="CALL",
+    )
+    txn2.raw = {"Account Name": "Account B", "Account Number": None}
+
+    transactions = [txn1, txn2]
+
+    fills = group_fills_by_account(transactions)
+
+    assert len(fills) == 2
+    assert fills[0].account_name == "Account A"
+    assert fills[0].account_number == "111"
+    assert fills[1].account_name == "Account B"
+    assert fills[1].account_number is None
+
+
+def test_group_fills_by_account_handles_missing_account_info():
+    """group_fills_by_account should use fallback when account info is missing."""
+    txn = _make_txn(
+        activity_date=date(2025, 10, 1),
+        description="TMC 10/17/2025 Call $7.00",
+        trans_code="STO",
+        quantity=1,
+        price="1.00",
+        amount="100",
+    )
+    txn.raw = {}  # No account info
+
+    transactions = [txn]
+
+    fills = group_fills_by_account(transactions)
+
+    assert len(fills) == 1
+    assert fills[0].account_name == "Unknown Account"
+    assert fills[0].account_number is None
+
+
+def test_match_legs_with_errors_returns_matched_and_errors():
+    """match_legs_with_errors should return matched legs and any errors."""
+    transactions = [
+        _make_txn(
+            activity_date=date(2025, 10, 1),
+            description="TMC 10/17/2025 Call $7.00",
+            trans_code="STO",
+            quantity=2,
+            price="1.00",
+            amount="200",
+        ),
+        _make_txn(
+            activity_date=date(2025, 10, 5),
+            description="TMC 10/17/2025 Call $7.00",
+            trans_code="BTC",
+            quantity=2,
+            price="0.50",
+            amount="-100",
+        ),
+    ]
+    fills = _single_leg_fills(transactions)
+
+    matched, errors = match_legs_with_errors(fills)
+
+    assert len(errors) == 0
+    assert len(matched) == 1
+    key = ("Robinhood IRA", "RH-12345", "TMC-2025-10-17-C-700")
+    assert key in matched
+    assert matched[key].open_quantity == 0
+
+
+def test_match_legs_with_errors_captures_matching_errors():
+    """match_legs_with_errors should capture errors when matching fails."""
+    # Create a closing fill without an opening fill (should cause error)
+    transactions = [
+        _make_txn(
+            activity_date=date(2025, 10, 5),
+            description="TMC 10/17/2025 Call $7.00",
+            trans_code="BTC",
+            quantity=2,
+            price="0.50",
+            amount="-100",
+        ),
+    ]
+    fills = _single_leg_fills(transactions)
+
+    matched, errors = match_legs_with_errors(fills)
+
+    assert len(errors) > 0
+    assert any(
+        "Encountered closing fill without a corresponding open position" in error
+        for error in errors
+    )
+    assert len(matched) == 0  # No successful matches

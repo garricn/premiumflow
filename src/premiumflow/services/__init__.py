@@ -35,8 +35,10 @@ from .json_serializer import (
 from .leg_matching import (
     MatchedLeg,
     MatchedLegLot,
+    group_fills_by_account,
     match_leg_fills,
     match_legs,
+    match_legs_with_errors,
 )
 from .transactions import normalized_to_csv_dicts
 
@@ -74,6 +76,8 @@ __all__ = [
     "normalized_to_csv_dicts",
     "match_legs",
     "match_leg_fills",
+    "match_legs_with_errors",
+    "group_fills_by_account",
     "MatchedLeg",
     "MatchedLegLot",
 ]

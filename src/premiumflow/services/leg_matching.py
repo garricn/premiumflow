@@ -13,7 +13,9 @@ from datetime import date
 from decimal import Decimal
 from typing import Deque, Dict, Iterable, Iterator, List, Optional, Sequence, Tuple
 
-from ..core.legs import LegContract, LegFill
+from ..core.legs import LegContract, LegFill, build_leg_fills
+from ..core.parser import NormalizedOptionTransaction
+from ..persistence import StoredTransaction
 
 Money = Decimal
 LegKey = Tuple[str, Optional[str], str]  # (account_name, account_number, leg_id)
@@ -536,3 +538,102 @@ def match_legs(fills: Iterable[LegFill]) -> Dict[LegKey, MatchedLeg]:
     for key, bucket in _group_leg_fills(fills).items():
         results[key] = match_leg_fills(bucket)
     return results
+
+
+def _stored_to_normalized(stored: StoredTransaction) -> NormalizedOptionTransaction:
+    """Convert a StoredTransaction to a NormalizedOptionTransaction."""
+    import json
+    from datetime import date as date_type
+
+    return NormalizedOptionTransaction(
+        activity_date=date_type.fromisoformat(stored.activity_date),
+        process_date=date_type.fromisoformat(stored.process_date) if stored.process_date else None,
+        settle_date=date_type.fromisoformat(stored.settle_date) if stored.settle_date else None,
+        instrument=stored.instrument,
+        description=stored.description,
+        trans_code=stored.trans_code,
+        quantity=stored.quantity,
+        price=Decimal(stored.price),
+        amount=Decimal(stored.amount) if stored.amount else None,
+        strike=Decimal(stored.strike),
+        option_type=stored.option_type,
+        expiration=date_type.fromisoformat(stored.expiration),
+        action=stored.action,
+        raw=json.loads(stored.raw_json),
+    )
+
+
+def group_fills_by_account(
+    transactions: Iterable[NormalizedOptionTransaction],
+) -> List[LegFill]:
+    """
+    Convert transactions to LegFill objects, grouping by account.
+
+    Transactions are expected to have account information available (e.g., from StoredTransaction
+    or ParsedImportResult). For transactions from stored sources, use _stored_to_normalized first
+    to preserve account metadata.
+
+    Returns a flat list of LegFill objects with account information preserved.
+    """
+    from collections import defaultdict
+
+    # Group transactions by account (extract from raw dict if available)
+    grouped: Dict[Tuple[str, Optional[str]], List[NormalizedOptionTransaction]] = defaultdict(list)
+
+    for txn in transactions:
+        # Extract account info from raw dict if available
+        account_name = txn.raw.get("Account Name", "") if txn.raw else ""
+        account_number = txn.raw.get("Account Number") if txn.raw else None
+        if not account_name:
+            # Fallback: if no account info in raw, we can't group properly
+            # This shouldn't happen in practice, but handle gracefully
+            account_name = "Unknown Account"
+        key = (account_name, account_number)
+        grouped[key].append(txn)
+
+    # Convert each account's transactions to LegFill objects
+    all_fills: List[LegFill] = []
+    for (account_name, account_number), txns in grouped.items():
+        fills = build_leg_fills(
+            txns,
+            account_name=account_name,
+            account_number=account_number,
+        )
+        all_fills.extend(fills)
+
+    return all_fills
+
+
+def match_legs_with_errors(
+    fills: Iterable[LegFill],
+) -> Tuple[Dict[LegKey, MatchedLeg], List[str]]:
+    """
+    Match legs with error handling, returning matched results and any errors encountered.
+
+    Returns a tuple of (matched_legs_dict, errors_list) where errors are descriptive strings.
+    """
+    errors: List[str] = []
+    matched: Dict[LegKey, MatchedLeg] = {}
+
+    # Group fills by leg key first
+    grouped = _group_leg_fills(fills)
+
+    for key, bucket in grouped.items():
+        try:
+            matched[key] = match_leg_fills(bucket)
+        except ValueError as exc:
+            # Capture matching errors (e.g., closing fill without corresponding open)
+            account_name, account_number, leg_id = key
+            account_label = (
+                account_name if not account_number else f"{account_name} ({account_number})"
+            )
+            errors.append(f"{account_label} - {leg_id}: {str(exc)}")
+        except Exception as exc:
+            # Capture any other unexpected errors
+            account_name, account_number, leg_id = key
+            account_label = (
+                account_name if not account_number else f"{account_name} ({account_number})"
+            )
+            errors.append(f"{account_label} - {leg_id}: Unexpected error: {str(exc)}")
+
+    return matched, errors
