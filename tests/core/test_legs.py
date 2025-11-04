@@ -253,3 +253,40 @@ def test_build_leg_fills_sorts_transactions_before_signing():
 
     assert [fill.transaction.trans_code for fill in fills] == ["STO", "OEXP"]
     assert [fill.signed_quantity for fill in fills] == [-1, 1]
+
+
+def test_build_leg_fills_orders_open_before_close_on_same_timestamp():
+    """
+    When opening and closing transactions share identical timestamps (activity/process/settle),
+    openings should be ordered before closings to avoid interleaving close events ahead of opens.
+    """
+    same_day = date(2025, 10, 17)
+
+    fills = build_leg_fills(
+        [
+            # Closing event first in input, but with identical timestamps
+            _make_transaction(
+                activity_date=same_day,
+                description="TMC 10/17/2025 Call $7.00",
+                trans_code="BTC",
+                quantity=1,
+                price="0.50",
+                amount="-50",
+            ),
+            # Opening event second in input, identical timestamps
+            _make_transaction(
+                activity_date=same_day,
+                description="TMC 10/17/2025 Call $7.00",
+                trans_code="STO",
+                quantity=1,
+                price="1.20",
+                amount="120",
+            ),
+        ],
+        account_name="Robinhood IRA",
+        account_number="RH-12345",
+    )
+
+    # Despite input order (BTC then STO), we expect STO to appear first due to action priority.
+    assert [fill.transaction.trans_code for fill in fills] == ["STO", "BTC"]
+    assert [fill.signed_quantity for fill in fills] == [-1, 1]
