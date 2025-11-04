@@ -1184,6 +1184,37 @@ def test_stored_to_normalized_converts_stored_transaction():
     assert normalized.raw["data"] == "here"
 
 
+def test_stored_to_normalized_handles_empty_string_amount():
+    """_stored_to_normalized should treat empty string amount as None (OEXP/OASGN rows)."""
+    stored = StoredTransaction(
+        id=2,
+        import_id=1,
+        account_name="Test Account",
+        account_number=None,
+        row_index=1,
+        activity_date="2025-10-17",
+        process_date="2025-10-17",
+        settle_date="2025-10-19",
+        instrument="TMC",
+        description="TMC 10/17/2025 Call $7.00",
+        trans_code="OEXP",
+        quantity=1,
+        price="0.00",
+        amount="",  # Empty string for expiration/assignment rows
+        strike="7.00",
+        option_type="CALL",
+        expiration="2025-10-17",
+        action="BUY",
+        raw_json="{}",
+    )
+
+    normalized = _stored_to_normalized(stored)
+
+    # Empty string should be normalized to None (not Decimal("") which raises InvalidOperation)
+    assert normalized.amount is None
+    assert normalized.trans_code == "OEXP"
+
+
 def test_group_fills_by_account_groups_by_account():
     """group_fills_by_account should group transactions by account and convert to LegFill."""
     txn1 = _make_txn(

@@ -550,6 +550,10 @@ def _stored_to_normalized(stored: StoredTransaction) -> NormalizedOptionTransact
     if stored.account_number:
         raw_dict["Account Number"] = stored.account_number
 
+    # Normalize empty strings to None for amount (OEXP/OASGN rows may have amount="")
+    # Empty strings are truthy but Decimal("") raises InvalidOperation
+    amount_value = stored.amount if stored.amount and stored.amount.strip() else None
+
     return NormalizedOptionTransaction(
         activity_date=date.fromisoformat(stored.activity_date),
         process_date=date.fromisoformat(stored.process_date) if stored.process_date else None,
@@ -559,7 +563,7 @@ def _stored_to_normalized(stored: StoredTransaction) -> NormalizedOptionTransact
         trans_code=stored.trans_code,
         quantity=stored.quantity,
         price=Decimal(stored.price),
-        amount=Decimal(stored.amount) if stored.amount else None,
+        amount=Decimal(amount_value) if amount_value else None,
         strike=Decimal(stored.strike),
         option_type=stored.option_type,
         expiration=date.fromisoformat(stored.expiration),
