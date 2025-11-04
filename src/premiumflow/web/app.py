@@ -22,6 +22,13 @@ from ..persistence import (
     get_storage,
     store_import_result,
 )
+from ..services.cli_helpers import format_account_label
+from ..services.json_serializer import serialize_leg
+from ..services.leg_matching import (
+    _stored_to_normalized,
+    group_fills_by_account,
+    match_legs_with_errors,
+)
 from .dependencies import get_repository
 
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
@@ -83,6 +90,63 @@ def _build_query(filters: dict[str, str], *, page: int, page_size: int) -> str:
     params.append(("page", str(page)))
     params.append(("page_size", str(page_size)))
     return urlencode(params)
+
+
+def _fetch_matched_legs(
+    repository: SQLiteRepository,
+    *,
+    account_name: str | None = None,
+    account_number: str | None = None,
+    ticker: str | None = None,
+    status: str = "all",
+) -> tuple[list[dict[str, object]], list[str]]:
+    """Fetch and match legs with filters. Returns (legs_data, warnings)."""
+    account_name_filter = (account_name or "").strip()
+    account_number_filter = (account_number or "").strip()
+    ticker_filter = (ticker or "").strip()
+    status_filter = status.strip().lower() if status else "all"
+
+    stored_txns = repository.fetch_transactions(
+        account_name=account_name_filter or None,
+        account_number=account_number_filter or None,
+        ticker=ticker_filter or None,
+        since=None,
+        until=None,
+        status="all",
+    )
+
+    legs_data: list[dict[str, object]] = []
+    warnings: list[str] = []
+
+    if stored_txns:
+        normalized_txns = [_stored_to_normalized(stored) for stored in stored_txns]
+        all_fills = group_fills_by_account(normalized_txns)
+        matched_map, errors = match_legs_with_errors(all_fills)
+        legs_list = sorted(
+            matched_map.values(),
+            key=lambda leg: (
+                leg.account_name,
+                leg.account_number or "",
+                leg.contract.symbol,
+                leg.contract.expiration,
+                leg.contract.option_type,
+                leg.contract.strike,
+                leg.contract.leg_id,
+            ),
+        )
+
+        if status_filter != "all":
+            want_open = status_filter == "open"
+            legs_list = [leg for leg in legs_list if leg.is_open == want_open]
+
+        for (acct_name, acct_number, leg_id), exc, bucket in errors:
+            account_label = format_account_label(acct_name, acct_number)
+            descriptor = bucket[0].transaction.description if bucket else "Unknown"
+            warnings.append(f"{account_label} • {leg_id} • {descriptor}: {exc}")
+
+        legs_data = [serialize_leg(leg) for leg in legs_list]
+
+    return legs_data, warnings
 
 
 def create_app() -> FastAPI:
@@ -483,5 +547,64 @@ def create_app() -> FastAPI:
                 "default_page_size": DEFAULT_PAGE_SIZE,
             },
         )
+
+    @app.get("/legs", response_class=HTMLResponse, tags=["ui"])
+    async def legs_view(
+        request: Request,
+        account_name: str | None = Query(default=None),
+        account_number: str | None = Query(default=None),
+        ticker: str | None = Query(default=None),
+        status: str = Query(default="all"),
+        repository: SQLiteRepository = Depends(get_repository),
+    ) -> HTMLResponse:
+        """Display matched option legs with filters."""
+        legs_data, warnings = _fetch_matched_legs(
+            repository,
+            account_name=account_name,
+            account_number=account_number,
+            ticker=ticker,
+            status=status,
+        )
+
+        account_name_filter = (account_name or "").strip()
+        account_number_filter = (account_number or "").strip()
+        ticker_filter = (ticker or "").strip()
+        status_filter = status.strip().lower() if status else "all"
+
+        filters = {
+            "account_name": account_name_filter,
+            "account_number": account_number_filter,
+            "ticker": ticker_filter,
+            "status": status_filter,
+        }
+
+        return templates.TemplateResponse(
+            request=request,
+            name="legs.html",
+            context={
+                "title": "Matched Legs",
+                "legs": legs_data,
+                "warnings": warnings,
+                "filters": filters,
+            },
+        )
+
+    @app.get("/api/legs", tags=["api"])
+    async def legs_api(
+        account_name: str | None = Query(default=None),
+        account_number: str | None = Query(default=None),
+        ticker: str | None = Query(default=None),
+        status: str = Query(default="all"),
+        repository: SQLiteRepository = Depends(get_repository),
+    ) -> dict[str, object]:
+        """API endpoint returning matched legs as JSON."""
+        legs_data, warnings = _fetch_matched_legs(
+            repository,
+            account_name=account_name,
+            account_number=account_number,
+            ticker=ticker,
+            status=status,
+        )
+        return {"legs": legs_data, "warnings": warnings}
 
     return app

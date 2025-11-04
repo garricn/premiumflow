@@ -385,3 +385,189 @@ def test_delete_import_removes_record_and_shows_message(client_with_storage, tmp
 def test_delete_import_returns_404_for_missing_import(client_with_storage):
     response = client_with_storage.post("/imports/999999/delete", follow_redirects=False)
     assert response.status_code == 404
+
+
+def test_legs_view_renders_template(client_with_storage, tmp_path):
+    """Legs view renders HTML template with matched legs."""
+    _persist_import(
+        tmp_path,
+        account_name="Legs Account",
+        account_number="LEG-1",
+        csv_name="legs.csv",
+        transactions=[
+            _make_transaction(
+                instrument="TSLA",
+                description="TSLA 10/17/2025 Call $500.00",
+                trans_code="STO",
+                quantity=1,
+                price=Decimal("2.50"),
+                amount=Decimal("250.00"),
+                strike=Decimal("500.00"),
+                expiration=date(2025, 10, 17),
+            ),
+            _make_transaction(
+                instrument="TSLA",
+                description="TSLA 10/17/2025 Call $500.00",
+                trans_code="OEXP",
+                quantity=1,
+                price=Decimal("0.00"),
+                amount=Decimal("0.00"),
+                strike=Decimal("500.00"),
+                expiration=date(2025, 10, 17),
+                activity_date=date(2025, 10, 17),
+            ),
+        ],
+    )
+
+    response = client_with_storage.get("/legs")
+    assert response.status_code == 200
+    assert "Matched Legs" in response.text
+    assert "TSLA" in response.text
+    assert "Legs Account" in response.text
+
+
+def test_legs_view_filters_by_account(client_with_storage, tmp_path):
+    """Legs view filters by account name and number."""
+    _persist_import(
+        tmp_path,
+        account_name="Filter Account",
+        account_number="FILTER-1",
+        csv_name="filter.csv",
+        transactions=[_make_transaction(instrument="TSLA")],
+    )
+    _persist_import(
+        tmp_path,
+        account_name="Other Account",
+        account_number="OTHER-1",
+        csv_name="other.csv",
+        transactions=[_make_transaction(instrument="AAPL")],
+    )
+
+    response = client_with_storage.get("/legs", params={"account_name": "Filter Account"})
+    assert response.status_code == 200
+    assert "Filter Account" in response.text
+    assert "Other Account" not in response.text
+
+
+def test_legs_view_filters_by_ticker(client_with_storage, tmp_path):
+    """Legs view filters by ticker symbol."""
+    _persist_import(
+        tmp_path,
+        account_name="Ticker Account",
+        account_number="TICK-1",
+        csv_name="ticker.csv",
+        transactions=[
+            _make_transaction(instrument="TSLA"),
+            _make_transaction(instrument="AAPL"),
+        ],
+    )
+
+    response = client_with_storage.get("/legs", params={"ticker": "TSLA"})
+    assert response.status_code == 200
+    assert "TSLA" in response.text
+    assert "AAPL" not in response.text
+
+
+def test_legs_view_filters_by_status(client_with_storage, tmp_path):
+    """Legs view filters by open/closed status."""
+    _persist_import(
+        tmp_path,
+        account_name="Status Account",
+        account_number="STAT-1",
+        csv_name="status.csv",
+        transactions=[
+            _make_transaction(
+                instrument="TSLA",
+                description="TSLA 10/17/2025 Call $500.00",
+                trans_code="STO",
+                quantity=1,
+                expiration=date(2025, 10, 17),
+            ),
+            _make_transaction(
+                instrument="AAPL",
+                description="AAPL 10/17/2025 Call $200.00",
+                trans_code="STO",
+                quantity=1,
+                expiration=date(2025, 10, 17),
+            ),
+            _make_transaction(
+                instrument="AAPL",
+                description="AAPL 10/17/2025 Call $200.00",
+                trans_code="OEXP",
+                quantity=1,
+                expiration=date(2025, 10, 17),
+                activity_date=date(2025, 10, 17),
+            ),
+        ],
+    )
+
+    open_response = client_with_storage.get("/legs", params={"status": "open"})
+    assert open_response.status_code == 200
+    assert "TSLA" in open_response.text
+    assert "AAPL" not in open_response.text
+
+    closed_response = client_with_storage.get("/legs", params={"status": "closed"})
+    assert closed_response.status_code == 200
+    assert "AAPL" in closed_response.text
+    assert "TSLA" not in closed_response.text
+
+
+def test_legs_api_returns_json(client_with_storage, tmp_path):
+    """Legs API endpoint returns JSON data."""
+    _persist_import(
+        tmp_path,
+        account_name="API Account",
+        account_number="API-1",
+        csv_name="api.csv",
+        transactions=[
+            _make_transaction(
+                instrument="TSLA",
+                description="TSLA 10/17/2025 Call $500.00",
+                trans_code="STO",
+                quantity=1,
+                price=Decimal("2.50"),
+                amount=Decimal("250.00"),
+                strike=Decimal("500.00"),
+                expiration=date(2025, 10, 17),
+            ),
+        ],
+    )
+
+    response = client_with_storage.get("/api/legs")
+    assert response.status_code == 200
+    data = response.json()
+    assert "legs" in data
+    assert "warnings" in data
+    assert isinstance(data["legs"], list)
+    assert isinstance(data["warnings"], list)
+    if data["legs"]:
+        leg = data["legs"][0]
+        assert "contract" in leg
+        assert "account_name" in leg
+        assert "lots" in leg
+
+
+def test_legs_api_filters_work(client_with_storage, tmp_path):
+    """Legs API respects filter parameters."""
+    _persist_import(
+        tmp_path,
+        account_name="API Filter Account",
+        account_number="API-FILTER-1",
+        csv_name="api-filter.csv",
+        transactions=[
+            _make_transaction(instrument="TSLA"),
+            _make_transaction(instrument="AAPL"),
+        ],
+    )
+
+    response = client_with_storage.get("/api/legs", params={"ticker": "TSLA"})
+    assert response.status_code == 200
+    data = response.json()
+    assert all(leg["contract"]["symbol"] == "TSLA" for leg in data["legs"])
+
+
+def test_legs_view_empty_state(client_with_storage):
+    """Legs view shows empty state when no legs exist."""
+    response = client_with_storage.get("/legs")
+    assert response.status_code == 200
+    assert "No matched legs found" in response.text

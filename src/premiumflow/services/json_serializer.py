@@ -217,6 +217,7 @@ def serialize_leg(leg: MatchedLeg) -> Dict[str, Any]:
         "total_fees": _decimal_to_string(leg.total_fees),
         "days_to_expiration": leg.days_to_expiration,
         "is_open": leg.is_open,
+        "status": "open" if leg.is_open else "closed",
         "opened_at": leg.opened_at.isoformat() if leg.opened_at else None,
         "closed_at": leg.closed_at.isoformat() if leg.closed_at else None,
         "opened_quantity": leg.opened_quantity,

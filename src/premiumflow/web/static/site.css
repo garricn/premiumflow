@@ -271,6 +271,36 @@ h1 {
   text-align: right;
 }
 
+.status-badge {
+  display: inline-block;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  margin-left: 0.5rem;
+}
+
+.status-open {
+  background-color: #dbeafe;
+  color: #1e40af;
+}
+
+.status-closed {
+  background-color: #d1fae5;
+  color: #065f46;
+}
+
+@media (prefers-color-scheme: dark) {
+  .status-open {
+    background-color: #1e3a8a;
+    color: #bfdbfe;
+  }
+  .status-closed {
+    background-color: #064e3b;
+    color: #a7f3d0;
+  }
+}
+
 .import-actions {
   display: flex;
   flex-direction: column;
