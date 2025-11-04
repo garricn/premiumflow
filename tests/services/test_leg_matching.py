@@ -125,6 +125,14 @@ def test_match_leg_fills_handles_partial_close_with_open_lot():
     assert open_lot.open_premium == Decimal("200.00")
     assert open_lot.close_premium == Decimal("0.00")
     assert open_lot.realized_premium is None
+    # New computed props on lot
+    assert open_lot.open_fees == Decimal("0.00")
+    assert open_lot.close_fees == Decimal("0.00")
+    assert open_lot.open_credit_gross == Decimal("200.00")
+    assert open_lot.open_credit_net == Decimal("200.00")
+    assert open_lot.credit_remaining == Decimal("200.00")
+    assert open_lot.quantity_remaining == 2
+    assert open_lot.net_premium is None
 
 
 def test_match_leg_fills_sorts_transactions_before_matching():
@@ -236,6 +244,17 @@ def test_match_leg_fills_handles_long_position_closure():
     assert lot.status == "closed"
     assert lot.direction == "long"
     assert lot.realized_premium == Decimal("50.00")
+    # New computed props on closed lot
+    assert lot.open_fees == Decimal("0.00")
+    assert lot.close_fees == Decimal("0.00")
+    assert lot.open_credit_gross == Decimal("-90.00")  # long open is debit
+    assert lot.open_credit_net == Decimal("-90.00")
+    assert lot.close_cost == Decimal("0.00")  # close was a credit here (STC)
+    assert lot.close_cost_total == Decimal("0.00")
+    assert lot.close_quantity == 1
+    assert lot.credit_remaining == Decimal("0.00")
+    assert lot.quantity_remaining == 0
+    assert lot.net_premium == Decimal("50.00")
 
 
 def test_portion_premium_uses_gross_notional_sign_and_ratio():

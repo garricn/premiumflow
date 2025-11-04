@@ -108,6 +108,52 @@ class MatchedLegLot:
     def is_closed(self) -> bool:
         return self.status == "closed"
 
+    @property
+    def open_fees(self) -> Money:
+        return _quantize(sum(p.fees for p in self.open_portions))
+
+    @property
+    def close_fees(self) -> Money:
+        return _quantize(sum(p.fees for p in self.close_portions))
+
+    @property
+    def open_credit_gross(self) -> Money:
+        return self.open_premium
+
+    @property
+    def open_credit_net(self) -> Money:
+        return _quantize(self.open_premium - self.open_fees)
+
+    @property
+    def close_cost(self) -> Money:
+        if not self.is_closed or self.close_premium >= 0:
+            return _quantize(0)
+        return _quantize(abs(self.close_premium))
+
+    @property
+    def close_cost_total(self) -> Money:
+        if not self.is_closed or self.close_premium >= 0:
+            return _quantize(0)
+        return _quantize(self.close_cost + self.close_fees)
+
+    @property
+    def close_quantity(self) -> int:
+        return self.quantity if self.is_closed else 0
+
+    @property
+    def credit_remaining(self) -> Money:
+        return _quantize(self.open_premium) if self.is_open else _quantize(0)
+
+    @property
+    def quantity_remaining(self) -> int:
+        return self.quantity if self.is_open else 0
+
+    @property
+    def net_premium(self) -> Optional[Money]:
+        if self.realized_premium is None:
+            return None
+        return _quantize(self.realized_premium - self.total_fees)
+
 
 @dataclass(frozen=True)
 class MatchedLeg:
