@@ -43,20 +43,36 @@ def _format_date(d: Optional[date]) -> str:
 
 def _build_legs_table(legs_dict, *, show_lots: bool = False) -> Table:
     """Build a Rich table displaying matched legs."""
-    table = Table(title="Matched Legs")
-    table.add_column("Symbol", style="cyan")
-    table.add_column("Expiration", style="magenta")
-    table.add_column("Strike", justify="right")
-    table.add_column("Type", style="yellow")
-    table.add_column("Opened", style="blue")
-    table.add_column("Closed", style="blue")
-    table.add_column("Resolution", style="green")
-    table.add_column("Open Qty", justify="right")
-    table.add_column("Net Contracts", justify="right")
-    table.add_column("Open Credit", justify="right")
-    table.add_column("Close Cost", justify="right")
-    table.add_column("Realized", justify="right")
-    table.add_column("Fees", justify="right")
+    if show_lots:
+        table = Table(title="Matched Legs with Lot Details")
+        table.add_column("Symbol", style="cyan")
+        table.add_column("Expiration", style="magenta")
+        table.add_column("Strike", justify="right")
+        table.add_column("Type", style="yellow")
+        table.add_column("Lot", justify="right")
+        table.add_column("Status", style="green")
+        table.add_column("Qty", justify="right")
+        table.add_column("Opened", style="blue")
+        table.add_column("Closed", style="blue")
+        table.add_column("Open Credit", justify="right")
+        table.add_column("Close Cost", justify="right")
+        table.add_column("Realized", justify="right")
+        table.add_column("Fees", justify="right")
+    else:
+        table = Table(title="Matched Legs")
+        table.add_column("Symbol", style="cyan")
+        table.add_column("Expiration", style="magenta")
+        table.add_column("Strike", justify="right")
+        table.add_column("Type", style="yellow")
+        table.add_column("Opened", style="blue")
+        table.add_column("Closed", style="blue")
+        table.add_column("Resolution", style="green")
+        table.add_column("Open Qty", justify="right")
+        table.add_column("Net Contracts", justify="right")
+        table.add_column("Open Credit", justify="right")
+        table.add_column("Close Cost", justify="right")
+        table.add_column("Realized", justify="right")
+        table.add_column("Fees", justify="right")
 
     for leg in sorted(
         legs_dict.values(),
@@ -66,21 +82,41 @@ def _build_legs_table(legs_dict, *, show_lots: bool = False) -> Table:
             leg_item.contract.strike,
         ),
     ):
-        table.add_row(
-            leg.contract.symbol,
-            leg.contract.expiration.isoformat(),
-            str(leg.contract.strike),
-            leg.contract.option_type,
-            _format_date(leg.opened_at),
-            _format_date(leg.closed_at),
-            _format_resolution(leg.resolution()),
-            str(leg.open_quantity),
-            str(leg.net_contracts),
-            format_currency(leg.open_credit_gross),
-            format_currency(leg.close_cost),
-            format_currency(leg.realized_premium),
-            format_currency(leg.total_fees),
-        )
+        if show_lots:
+            # Show one row per lot
+            for lot_idx, lot in enumerate(leg.lots, start=1):
+                table.add_row(
+                    leg.contract.symbol,
+                    leg.contract.expiration.isoformat(),
+                    str(leg.contract.strike),
+                    leg.contract.option_type,
+                    str(lot_idx),
+                    lot.status,
+                    str(lot.quantity),
+                    _format_date(lot.opened_at),
+                    _format_date(lot.closed_at),
+                    format_currency(lot.open_credit_gross),
+                    format_currency(lot.close_cost),
+                    format_currency(lot.realized_premium),
+                    format_currency(lot.total_fees),
+                )
+        else:
+            # Show summary row per leg
+            table.add_row(
+                leg.contract.symbol,
+                leg.contract.expiration.isoformat(),
+                str(leg.contract.strike),
+                leg.contract.option_type,
+                _format_date(leg.opened_at),
+                _format_date(leg.closed_at),
+                _format_resolution(leg.resolution()),
+                str(leg.open_quantity),
+                str(leg.net_contracts),
+                format_currency(leg.open_credit_gross),
+                format_currency(leg.close_cost),
+                format_currency(leg.realized_premium),
+                format_currency(leg.total_fees),
+            )
 
     return table
 
