@@ -100,7 +100,7 @@ class MatchedLegLot:
     open_premium: Money
     close_premium: Money
     total_fees: Money
-    realized_premium: Optional[Money]
+    realized_pnl: Optional[Money]
 
     @property
     def is_open(self) -> bool:
@@ -175,19 +175,19 @@ class MatchedLegLot:
         return self.quantity if self.is_open else 0
 
     @property
-    def net_premium(self) -> Optional[Money]:
+    def net_pnl(self) -> Optional[Money]:
         """
-        Net profit/loss for this lot after all fees (realized_premium - total_fees).
+        Net profit/loss for this lot after all fees (realized_pnl - total_fees).
 
         This represents the overall P/L for a closed lot, accounting for both opening and closing
-        fees. Returns None for open lots (since realized_premium is None).
+        fees. Returns None for open lots (since realized_pnl is None).
 
         Note: This differs from open_credit_net, which only considers the opening transaction.
-        net_premium is the complete trade P/L: (open_premium + close_premium) - (open_fees + close_fees).
+        net_pnl is the complete trade P/L: (open_premium + close_premium) - (open_fees + close_fees).
         """
-        if self.realized_premium is None:
+        if self.realized_pnl is None:
             return None
-        return _quantize(self.realized_premium - self.total_fees)
+        return _quantize(self.realized_pnl - self.total_fees)
 
 
 @dataclass(frozen=True)
@@ -200,7 +200,7 @@ class MatchedLeg:
     lots: Tuple[MatchedLegLot, ...]
     net_contracts: int
     open_quantity: int
-    realized_premium: Money
+    realized_pnl: Money
     open_premium: Money
     total_fees: Money
 
@@ -409,7 +409,7 @@ class _LotBuilder:
             open_premium=_quantize(open_premium),
             close_premium=_quantize(close_premium),
             total_fees=_quantize(total_fees),
-            realized_premium=realized,
+            realized_pnl=realized,
         )
 
 
@@ -509,12 +509,8 @@ def match_leg_fills(fills: Sequence[LegFill]) -> MatchedLeg:
         if lot.is_open
     )
     open_quantity = sum(lot.quantity for lot in lots_tuple if lot.is_open)
-    realized_premium = _quantize(
-        sum(
-            lot.realized_premium or Decimal("0")
-            for lot in lots_tuple
-            if lot.realized_premium is not None
-        )
+    realized_pnl = _quantize(
+        sum(lot.realized_pnl or Decimal("0") for lot in lots_tuple if lot.realized_pnl is not None)
     )
     open_premium = _quantize(sum(lot.open_premium for lot in lots_tuple if lot.is_open))
     total_fees = _quantize(sum(lot.total_fees for lot in lots_tuple))
@@ -526,7 +522,7 @@ def match_leg_fills(fills: Sequence[LegFill]) -> MatchedLeg:
         lots=lots_tuple,
         net_contracts=net_contracts,
         open_quantity=open_quantity,
-        realized_premium=realized_premium,
+        realized_pnl=realized_pnl,
         open_premium=open_premium,
         total_fees=total_fees,
     )

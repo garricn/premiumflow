@@ -151,8 +151,8 @@ def test_aggregate_legs_groups_fills_and_computes_totals():
     assert leg.is_open is False
     assert leg.gross_open_premium == Decimal("240.00")
     assert leg.gross_close_premium == Decimal("-50.00")
-    assert leg.net_premium == Decimal("190.00")
-    assert leg.realized_premium == Decimal("190.00")
+    assert leg.net_pnl == Decimal("190.00")
+    assert leg.realized_pnl == Decimal("190.00")
     assert leg.total_fees == Decimal("0.00")
     assert leg.days_to_expiration(as_of=date(2025, 10, 16)) == 1
     assert [fill.transaction.trans_code for fill in leg.fills] == ["STO", "BTC", "OEXP"]
@@ -194,7 +194,7 @@ def test_long_position_expiration_zeroes_out_net_contracts():
     assert leg.open_quantity == 0
 
 
-def test_realized_premium_is_none_for_partially_closed_leg():
+def test_realized_pnl_is_none_for_partially_closed_leg():
     fills = build_leg_fills(
         [
             _make_transaction(
@@ -224,7 +224,7 @@ def test_realized_premium_is_none_for_partially_closed_leg():
     leg = summary[key]
 
     assert leg.is_open is True
-    assert leg.realized_premium is None
+    assert leg.realized_pnl is None
 
 
 def test_build_leg_fills_sorts_transactions_before_signing():

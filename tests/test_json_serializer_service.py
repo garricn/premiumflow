@@ -396,8 +396,8 @@ class TestJsonSerializer(unittest.TestCase):
         self.assertEqual(result["status"], "open")
         self.assertEqual(result["open_premium"], "200.00")
         self.assertEqual(result["close_premium"], "0.00")
-        self.assertIsNone(result["realized_premium"])
-        self.assertIsNone(result["net_premium"])
+        self.assertIsNone(result["realized_pnl"])
+        self.assertIsNone(result["net_pnl"])
         self.assertEqual(result["quantity_remaining"], 2)
         self.assertEqual(result["credit_remaining"], "200.00")
 
@@ -446,8 +446,8 @@ class TestJsonSerializer(unittest.TestCase):
         self.assertEqual(result["status"], "closed")
         self.assertEqual(result["opened_at"], "2025-10-01")
         self.assertEqual(result["closed_at"], "2025-10-05")
-        self.assertEqual(result["realized_premium"], "100.00")
-        self.assertEqual(result["net_premium"], "100.00")
+        self.assertEqual(result["realized_pnl"], "100.00")
+        self.assertEqual(result["net_pnl"], "100.00")
         self.assertEqual(result["quantity_remaining"], 0)
         self.assertEqual(result["credit_remaining"], "0.00")
         self.assertEqual(len(result["open_portions"]), 1)
@@ -541,7 +541,7 @@ class TestJsonSerializer(unittest.TestCase):
         self.assertEqual(result["closed_at"], "2025-10-05")
         self.assertEqual(result["opened_quantity"], 2)
         self.assertEqual(result["closed_quantity"], 2)
-        self.assertEqual(result["realized_premium"], "100.00")
+        self.assertEqual(result["realized_pnl"], "100.00")
         self.assertEqual(result["resolution"], "BTC")
 
     def test_serialize_leg_lot_with_multiple_portions(self):
