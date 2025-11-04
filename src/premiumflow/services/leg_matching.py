@@ -257,12 +257,10 @@ class MatchedLeg:
 
     def resolution(self) -> Optional[str]:
         """
-        Return the transaction code for the primary resolution of closed lots in this leg.
+        Return the transaction code for the final method of closure.
 
-        Returns the primary closing transaction code (e.g., "BTC", "STC", "OASGN", "OEXP")
-        representing the last or most significant resolution type. Prioritizes Assignment/Expiration
-        over BTC/STC when multiple closing methods are present. Returns None for open legs or when
-        no lots are closed.
+        Returns the transaction code (e.g., "BTC", "STC", "OASGN", "OEXP") from the chronologically
+        final closing transaction. Returns None for open legs or when no lots are closed.
 
         Display formatting should be handled in the CLI/formatter layer.
         """
@@ -273,31 +271,21 @@ class MatchedLeg:
         if not closed_lots:
             return None
 
-        # Collect all closing transaction codes from closed lots
-        close_codes: set[str] = set()
+        # Find the closing portion with the latest activity date
+        latest_portion: Optional[LotFillPortion] = None
+        latest_date: Optional[date] = None
+
         for lot in closed_lots:
             for portion in lot.close_portions:
-                close_codes.add(portion.fill.trans_code)
+                portion_date = portion.activity_date
+                if latest_date is None or portion_date > latest_date:
+                    latest_date = portion_date
+                    latest_portion = portion
 
-        # Determine resolution based on closing codes (prioritize Assignment/Expiration)
-        if "OEXP" in close_codes or any(
-            portion.fill.is_expiration for lot in closed_lots for portion in lot.close_portions
-        ):
-            return "OEXP"
-        if "OASGN" in close_codes or any(
-            portion.fill.is_assignment for lot in closed_lots for portion in lot.close_portions
-        ):
-            return "OASGN"
-        if "BTC" in close_codes:
-            return "BTC"
-        if "STC" in close_codes:
-            return "STC"
+        if latest_portion is None:
+            return None
 
-        # Fallback for unknown codes - return first code found
-        if close_codes:
-            return next(iter(close_codes))
-
-        return None
+        return latest_portion.fill.trans_code
 
 
 class _LotBuilder:

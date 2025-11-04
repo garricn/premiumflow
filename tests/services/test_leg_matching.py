@@ -894,7 +894,7 @@ def test_matched_leg_resolution_open_leg():
 
 
 def test_matched_leg_resolution_mixed_closes():
-    """resolution() should prioritize Assignment/Expiration over BTC/STC."""
+    """resolution() should return the transaction code from the final closing transaction."""
     transactions = [
         _make_txn(
             activity_date=date(2025, 9, 1),
@@ -924,5 +924,40 @@ def test_matched_leg_resolution_mixed_closes():
     fills = _single_leg_fills(transactions)
     matched = match_leg_fills(fills)
 
-    # Should prioritize Assignment over BTC
+    # Should return the chronologically final closing transaction code (OASGN on 10/17)
     assert matched.resolution() == "OASGN"
+
+
+def test_matched_leg_resolution_returns_final_not_prioritized():
+    """resolution() should return the chronologically final transaction code, not prioritized type."""
+    transactions = [
+        _make_txn(
+            activity_date=date(2025, 9, 1),
+            description="TMC 10/17/2025 Call $7.00",
+            trans_code="STO",
+            quantity=3,
+            price="1.00",
+            amount="300",
+        ),
+        _make_txn(
+            activity_date=date(2025, 9, 15),
+            description="Assignment of TMC 10/17/2025 Call $7.00",
+            trans_code="OASGN",
+            quantity=1,
+            price="0.00",
+            amount="0",
+        ),
+        _make_txn(
+            activity_date=date(2025, 10, 5),
+            description="TMC 10/17/2025 Call $7.00",
+            trans_code="BTC",
+            quantity=2,
+            price="0.40",
+            amount="-80",
+        ),
+    ]
+    fills = _single_leg_fills(transactions)
+    matched = match_leg_fills(fills)
+
+    # Should return BTC (final chronologically) not OASGN (prioritized type)
+    assert matched.resolution() == "BTC"
