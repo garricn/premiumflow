@@ -1017,7 +1017,7 @@ def test_matched_leg_resolution_all_dates_same_uses_sequence():
             amount="200",
         ),
         # Both closings have identical activity/process/settle dates
-        # The second one (STC) should win due to later sequence number
+        # The second BTC should win due to later sequence number
         _make_txn(
             activity_date=same_date,
             process_date=same_date,
