@@ -6,6 +6,7 @@ from .chain_builder import detect_roll_chains
 from .cli_helpers import (
     create_target_label,
     filter_open_chains,
+    format_account_label,
     format_expiration_date,
     is_open_chain,
     parse_target_range,
@@ -64,6 +65,7 @@ __all__ = [
     "parse_target_range",
     "filter_open_chains",
     "format_expiration_date",
+    "format_account_label",
     "create_target_label",
     "summarize_cash_flows",
     "CashFlowSummary",
