@@ -6,6 +6,7 @@ from decimal import Decimal
 from premiumflow.services.cli_helpers import (
     create_target_label,
     filter_open_chains,
+    format_account_label,
     format_expiration_date,
     format_percent,
     is_open_chain,
@@ -169,6 +170,18 @@ class TestCliHelpers(unittest.TestCase):
         target_percents = []
         result = create_target_label(target_percents)
         self.assertEqual(result, "Target ()")
+
+    def test_format_account_label_with_number(self):
+        """Format includes account number when provided."""
+        self.assertEqual(
+            format_account_label("Robinhood IRA", "RH-12345"),
+            "Robinhood IRA (RH-12345)",
+        )
+
+    def test_format_account_label_without_number(self):
+        """Format returns name when number is missing or None."""
+        self.assertEqual(format_account_label("Brokerage", None), "Brokerage")
+        self.assertEqual(format_account_label("Brokerage", ""), "Brokerage")
 
 
 if __name__ == "__main__":
