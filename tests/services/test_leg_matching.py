@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
+from typing import Optional
 
 from premiumflow.core.legs import build_leg_fills
 from premiumflow.core.parser import NormalizedOptionTransaction
@@ -22,12 +23,14 @@ def _make_txn(
     amount: str,
     option_type: str = "CALL",
     strike: str = "7.00",
+    process_date: Optional[date] = None,
+    settle_date: Optional[date] = None,
 ) -> NormalizedOptionTransaction:
     """Create a normalized transaction for testing."""
     return NormalizedOptionTransaction(
         activity_date=activity_date,
-        process_date=activity_date,
-        settle_date=activity_date,
+        process_date=process_date or activity_date,
+        settle_date=settle_date or activity_date,
         instrument="TMC",
         description=description,
         trans_code=trans_code,
@@ -960,4 +963,42 @@ def test_matched_leg_resolution_returns_final_not_prioritized():
     matched = match_leg_fills(fills)
 
     # Should return BTC (final chronologically) not OASGN (prioritized type)
+    assert matched.resolution() == "BTC"
+
+
+def test_matched_leg_resolution_same_date_uses_tie_breaker():
+    """resolution() should use process_date/settle_date as tie-breakers when activity dates match."""
+    same_date = date(2025, 10, 17)
+    transactions = [
+        _make_txn(
+            activity_date=date(2025, 10, 1),
+            description="TMC 10/17/2025 Call $7.00",
+            trans_code="STO",
+            quantity=2,
+            price="1.00",
+            amount="200",
+        ),
+        _make_txn(
+            activity_date=same_date,
+            process_date=date(2025, 10, 15),  # Earlier process date
+            description="TMC 10/17/2025 Call $7.00",
+            trans_code="BTC",
+            quantity=1,
+            price="0.50",
+            amount="-50",
+        ),
+        _make_txn(
+            activity_date=same_date,
+            process_date=date(2025, 10, 18),  # Later process date (should win)
+            description="TMC 10/17/2025 Call $7.00",
+            trans_code="BTC",
+            quantity=1,
+            price="0.60",
+            amount="-60",
+        ),
+    ]
+    fills = _single_leg_fills(transactions)
+    matched = match_leg_fills(fills)
+
+    # Should return BTC with latest process_date (10/18) even though both have same activity_date
     assert matched.resolution() == "BTC"

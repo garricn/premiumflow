@@ -271,15 +271,16 @@ class MatchedLeg:
         if not closed_lots:
             return None
 
-        # Find the closing portion with the latest activity date
+        # Find the closing portion with the latest sort key (activity, process, settle, sequence)
+        # This matches the same ordering used elsewhere in the codebase
         latest_portion: Optional[LotFillPortion] = None
-        latest_date: Optional[date] = None
+        latest_sort_key: Optional[Tuple[date, date, date, int]] = None
 
         for lot in closed_lots:
             for portion in lot.close_portions:
-                portion_date = portion.activity_date
-                if latest_date is None or portion_date > latest_date:
-                    latest_date = portion_date
+                sort_key = portion.fill.sort_key()
+                if latest_sort_key is None or sort_key > latest_sort_key:
+                    latest_sort_key = sort_key
                     latest_portion = portion
 
         if latest_portion is None:
