@@ -544,6 +544,162 @@ class TestJsonSerializer(unittest.TestCase):
         self.assertEqual(result["realized_premium"], "100.00")
         self.assertEqual(result["resolution"], "BTC")
 
+    def test_serialize_leg_lot_with_multiple_portions(self):
+        """Test serializing a lot with multiple open and close portions."""
+        transactions = [
+            NormalizedOptionTransaction(
+                activity_date=date(2025, 10, 1),
+                process_date=date(2025, 10, 1),
+                settle_date=date(2025, 10, 3),
+                instrument="TMC",
+                description="TMC 10/17/2025 Call $7.00",
+                trans_code="STO",
+                quantity=1,
+                price=Decimal("1.00"),
+                amount=Decimal("100.00"),
+                strike=Decimal("7.00"),
+                option_type="CALL",
+                expiration=date(2025, 10, 17),
+                action="SELL",
+                raw={},
+            ),
+            NormalizedOptionTransaction(
+                activity_date=date(2025, 10, 2),
+                process_date=date(2025, 10, 2),
+                settle_date=date(2025, 10, 4),
+                instrument="TMC",
+                description="TMC 10/17/2025 Call $7.00",
+                trans_code="STO",
+                quantity=1,
+                price=Decimal("1.20"),
+                amount=Decimal("120.00"),
+                strike=Decimal("7.00"),
+                option_type="CALL",
+                expiration=date(2025, 10, 17),
+                action="SELL",
+                raw={},
+            ),
+            NormalizedOptionTransaction(
+                activity_date=date(2025, 10, 5),
+                process_date=date(2025, 10, 5),
+                settle_date=date(2025, 10, 7),
+                instrument="TMC",
+                description="TMC 10/17/2025 Call $7.00",
+                trans_code="BTC",
+                quantity=1,
+                price=Decimal("0.50"),
+                amount=Decimal("-50.00"),
+                strike=Decimal("7.00"),
+                option_type="CALL",
+                expiration=date(2025, 10, 17),
+                action="BUY",
+                raw={},
+            ),
+            NormalizedOptionTransaction(
+                activity_date=date(2025, 10, 6),
+                process_date=date(2025, 10, 6),
+                settle_date=date(2025, 10, 8),
+                instrument="TMC",
+                description="TMC 10/17/2025 Call $7.00",
+                trans_code="BTC",
+                quantity=1,
+                price=Decimal("0.60"),
+                amount=Decimal("-60.00"),
+                strike=Decimal("7.00"),
+                option_type="CALL",
+                expiration=date(2025, 10, 17),
+                action="BUY",
+                raw={},
+            ),
+        ]
+        fills = build_leg_fills(transactions, account_name="Test Account", account_number="12345")
+        matched = match_leg_fills(fills)
+        # FIFO matching creates separate lots: STO1 -> BTC1, STO2 -> BTC2
+        # So we get 2 closed lots, each with 1 open portion and 1 close portion
+        self.assertEqual(len(matched.lots), 2)
+
+        # Serialize both lots and verify they're correctly serialized
+        lot1_result = serialize_leg_lot(matched.lots[0])
+        lot2_result = serialize_leg_lot(matched.lots[1])
+
+        # Each lot should have 1 open portion and 1 close portion
+        self.assertEqual(len(lot1_result["open_portions"]), 1)
+        self.assertEqual(len(lot1_result["close_portions"]), 1)
+        self.assertEqual(len(lot2_result["open_portions"]), 1)
+        self.assertEqual(len(lot2_result["close_portions"]), 1)
+
+        # Verify quantities
+        self.assertEqual(lot1_result["quantity"], 1)
+        self.assertEqual(lot2_result["quantity"], 1)
+
+        # Verify premiums (each lot should have one of the STO/BTC pairs)
+        total_open = Decimal(lot1_result["open_premium"]) + Decimal(lot2_result["open_premium"])
+        total_close = Decimal(lot1_result["close_premium"]) + Decimal(lot2_result["close_premium"])
+        self.assertEqual(total_open, Decimal("220.00"))  # 100 + 120
+        self.assertEqual(total_close, Decimal("-110.00"))  # -50 + -60
+
+    def test_serialize_leg_portion_negative_premium(self):
+        """Test serializing a portion with negative premium (debit)."""
+        transactions = [
+            NormalizedOptionTransaction(
+                activity_date=date(2025, 10, 1),
+                process_date=date(2025, 10, 1),
+                settle_date=date(2025, 10, 3),
+                instrument="TMC",
+                description="TMC 10/17/2025 Call $7.00",
+                trans_code="BTO",
+                quantity=2,
+                price=Decimal("1.00"),
+                amount=Decimal("-200.00"),
+                strike=Decimal("7.00"),
+                option_type="CALL",
+                expiration=date(2025, 10, 17),
+                action="BUY",
+                raw={},
+            )
+        ]
+        fills = build_leg_fills(transactions, account_name="Test Account", account_number="12345")
+        matched = match_leg_fills(fills)
+        lot = matched.lots[0]
+        portion = lot.open_portions[0]
+
+        result = serialize_leg_portion(portion)
+
+        self.assertEqual(result["premium"], "-200.00")  # Negative for debit
+        self.assertEqual(result["fees"], "0.00")
+
+    def test_serialize_leg_lot_with_empty_portions(self):
+        """Test serializing a lot with empty portions arrays (edge case)."""
+        transactions = [
+            NormalizedOptionTransaction(
+                activity_date=date(2025, 10, 1),
+                process_date=date(2025, 10, 1),
+                settle_date=date(2025, 10, 3),
+                instrument="TMC",
+                description="TMC 10/17/2025 Call $7.00",
+                trans_code="STO",
+                quantity=2,
+                price=Decimal("1.00"),
+                amount=Decimal("200.00"),
+                strike=Decimal("7.00"),
+                option_type="CALL",
+                expiration=date(2025, 10, 17),
+                action="SELL",
+                raw={},
+            )
+        ]
+        fills = build_leg_fills(transactions, account_name="Test Account", account_number="12345")
+        matched = match_leg_fills(fills)
+        lot = matched.lots[0]
+
+        result = serialize_leg_lot(lot)
+
+        # Open lot should have open_portions but empty close_portions
+        self.assertEqual(len(result["open_portions"]), 1)
+        self.assertEqual(len(result["close_portions"]), 0)
+        self.assertEqual(result["close_premium"], "0.00")
+        self.assertEqual(result["close_fees"], "0.00")
+
 
 if __name__ == "__main__":
     unittest.main()
