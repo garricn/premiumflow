@@ -543,12 +543,17 @@ def match_legs(fills: Iterable[LegFill]) -> Dict[LegKey, MatchedLeg]:
 def _stored_to_normalized(stored: StoredTransaction) -> NormalizedOptionTransaction:
     """Convert a StoredTransaction to a NormalizedOptionTransaction."""
     import json
-    from datetime import date as date_type
+
+    raw_dict = json.loads(stored.raw_json)
+    # Preserve account metadata in raw dict for group_fills_by_account to extract
+    raw_dict["Account Name"] = stored.account_name
+    if stored.account_number:
+        raw_dict["Account Number"] = stored.account_number
 
     return NormalizedOptionTransaction(
-        activity_date=date_type.fromisoformat(stored.activity_date),
-        process_date=date_type.fromisoformat(stored.process_date) if stored.process_date else None,
-        settle_date=date_type.fromisoformat(stored.settle_date) if stored.settle_date else None,
+        activity_date=date.fromisoformat(stored.activity_date),
+        process_date=date.fromisoformat(stored.process_date) if stored.process_date else None,
+        settle_date=date.fromisoformat(stored.settle_date) if stored.settle_date else None,
         instrument=stored.instrument,
         description=stored.description,
         trans_code=stored.trans_code,
@@ -557,9 +562,9 @@ def _stored_to_normalized(stored: StoredTransaction) -> NormalizedOptionTransact
         amount=Decimal(stored.amount) if stored.amount else None,
         strike=Decimal(stored.strike),
         option_type=stored.option_type,
-        expiration=date_type.fromisoformat(stored.expiration),
+        expiration=date.fromisoformat(stored.expiration),
         action=stored.action,
-        raw=json.loads(stored.raw_json),
+        raw=raw_dict,
     )
 
 

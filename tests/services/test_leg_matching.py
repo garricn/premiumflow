@@ -1158,7 +1158,7 @@ def test_stored_to_normalized_converts_stored_transaction():
         option_type="CALL",
         expiration="2025-10-17",
         action="SELL",
-        raw_json='{"Account Name": "Test Account", "Account Number": "12345"}',
+        raw_json='{"some": "other", "data": "here"}',  # raw_json may not have account info
     )
 
     normalized = _stored_to_normalized(stored)
@@ -1176,8 +1176,12 @@ def test_stored_to_normalized_converts_stored_transaction():
     assert normalized.option_type == "CALL"
     assert normalized.expiration == date(2025, 10, 17)
     assert normalized.action == "SELL"
+    # Verify account metadata is preserved in raw dict (even if not in original raw_json)
     assert normalized.raw["Account Name"] == "Test Account"
     assert normalized.raw["Account Number"] == "12345"
+    # Verify original raw_json data is also preserved
+    assert normalized.raw["some"] == "other"
+    assert normalized.raw["data"] == "here"
 
 
 def test_group_fills_by_account_groups_by_account():
