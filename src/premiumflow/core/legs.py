@@ -262,13 +262,18 @@ def build_leg_fills(
             item[1].activity_date,
             item[1].process_date or item[1].activity_date,
             item[1].settle_date or item[1].activity_date,
+            (
+                0
+                if (item[1].trans_code or "").upper() in _OPENING_CODES
+                else 1 if (item[1].trans_code or "").upper() in _CLOSING_CODES else 2
+            ),
             item[0],
         )
     )
 
     fills: List[LegFill] = []
     running_net: Dict[str, int] = {}
-    for original_index, txn in indexed:
+    for order_index, (_original_index, txn) in enumerate(indexed):
         contract = LegContract.from_transaction(txn)
         leg_key = contract.leg_id
         net_before = running_net.get(leg_key, 0)
@@ -283,7 +288,7 @@ def build_leg_fills(
                 account_number=account_number,
                 transaction=txn,
                 _signed_quantity=signed_quantity,
-                _sequence=original_index,
+                _sequence=order_index,
             )
         )
     return fills
