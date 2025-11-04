@@ -106,7 +106,27 @@ uv run premiumflow import list
 uv run premiumflow import delete 42 --yes
 uv run premiumflow lookup "TSLA 500C 2025-02-21"
 uv run premiumflow trace "TSLA $550 Call" all_transactions.csv
+uv run premiumflow legs --status open --lots
 ```
+
+### Matched Legs CLI
+
+Run `premiumflow legs` after importing data to inspect FIFO-matched option legs stored in the SQLite
+database. Filters combine with AND semantics:
+
+- `--account-name` / `--account-number` narrow to a specific account label.
+- `--ticker` restricts to a single underlying symbol.
+- `--since` / `--until` accept `YYYY-MM-DD` activity dates.
+- `--status` chooses `open`, `closed`, or `all` legs (default `all`).
+- `--format` toggles between `table` and `json`; add `--lots` to include lot-level detail beneath
+  the summary table.
+
+Table output includes opened/closed dates, a resolution summary ("Expiration", "Assignment",
+"Buy to close", etc.), Robinhood-style cash columns (`Credit at Open`, `Cost at Close`,
+`Realized P/L`, `Credit Remaining`), separate open/close fee columns, and a net-cash figure that
+matches trade confirmations. Totals rows summarize quantity, cash, and fees at both the leg and lot
+levels. JSON output mirrors the per-leg metadata and exposes the complete lot payload for
+downstream tooling.
 
 ### Cash-Flow Import Guide
 
