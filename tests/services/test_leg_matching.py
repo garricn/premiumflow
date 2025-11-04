@@ -4,6 +4,8 @@ from datetime import date
 from decimal import Decimal
 from typing import Optional
 
+import pytest
+
 from premiumflow.core.legs import build_leg_fills
 from premiumflow.core.parser import NormalizedOptionTransaction
 from premiumflow.persistence import StoredTransaction
@@ -1250,8 +1252,8 @@ def test_group_fills_by_account_groups_by_account():
     assert fills[1].account_number is None
 
 
-def test_group_fills_by_account_handles_missing_account_info():
-    """group_fills_by_account should use fallback when account info is missing."""
+def test_group_fills_by_account_raises_on_missing_account_info():
+    """group_fills_by_account should raise ValueError when account info is missing."""
     txn = _make_txn(
         activity_date=date(2025, 10, 1),
         description="TMC 10/17/2025 Call $7.00",
@@ -1264,11 +1266,26 @@ def test_group_fills_by_account_handles_missing_account_info():
 
     transactions = [txn]
 
-    fills = group_fills_by_account(transactions)
+    with pytest.raises(ValueError, match="missing 'Account Name' in raw dict"):
+        group_fills_by_account(transactions)
 
-    assert len(fills) == 1
-    assert fills[0].account_name == "Unknown Account"
-    assert fills[0].account_number is None
+
+def test_group_fills_by_account_raises_on_missing_raw_dict():
+    """group_fills_by_account should raise ValueError when raw dict is missing."""
+    txn = _make_txn(
+        activity_date=date(2025, 10, 1),
+        description="TMC 10/17/2025 Call $7.00",
+        trans_code="STO",
+        quantity=1,
+        price="1.00",
+        amount="100",
+    )
+    txn.raw = None  # No raw dict
+
+    transactions = [txn]
+
+    with pytest.raises(ValueError, match="missing raw dict"):
+        group_fills_by_account(transactions)
 
 
 def test_match_legs_with_errors_returns_matched_and_errors():

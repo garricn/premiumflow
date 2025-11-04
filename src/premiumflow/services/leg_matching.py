@@ -583,6 +583,8 @@ def group_fills_by_account(
     to preserve account metadata.
 
     Returns a flat list of LegFill objects with account information preserved.
+
+    Raises ValueError if any transaction is missing account information in its raw dict.
     """
     from collections import defaultdict
 
@@ -591,12 +593,18 @@ def group_fills_by_account(
 
     for txn in transactions:
         # Extract account info from raw dict if available
-        account_name = txn.raw.get("Account Name", "") if txn.raw else ""
-        account_number = txn.raw.get("Account Number") if txn.raw else None
+        if txn.raw is None:
+            raise ValueError(
+                f"Transaction {txn.description} ({txn.activity_date}) missing raw dict. "
+                "Use _stored_to_normalized to preserve account metadata."
+            )
+        account_name = txn.raw.get("Account Name", "")
+        account_number = txn.raw.get("Account Number")
         if not account_name:
-            # Fallback: if no account info in raw, we can't group properly
-            # This shouldn't happen in practice, but handle gracefully
-            account_name = "Unknown Account"
+            raise ValueError(
+                f"Transaction {txn.description} ({txn.activity_date}) missing 'Account Name' in raw dict. "
+                "Use _stored_to_normalized to preserve account metadata."
+            )
         key = (account_name, account_number)
         grouped[key].append(txn)
 
