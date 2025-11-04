@@ -28,6 +28,12 @@ from .core.parser import (
 from .formatters.output import format_roll_chain_summary
 from .services.analyzer import calculate_breakeven, calculate_pnl
 from .services.chain_builder import detect_roll_chains
+from .services.leg_matching import (
+    MatchedLeg,
+    MatchedLegLot,
+    match_leg_fills,
+    match_legs,
+)
 
 
 # Legacy function compatibility - need to implement find_chain_by_position
@@ -60,4 +66,8 @@ __all__ = [
     "OptionLeg",
     "build_leg_fills",
     "aggregate_legs",
+    "match_legs",
+    "match_leg_fills",
+    "MatchedLeg",
+    "MatchedLegLot",
 ]
