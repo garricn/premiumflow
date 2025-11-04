@@ -65,37 +65,37 @@ def _sorted_legs(legs: Iterable[MatchedLeg]) -> List[MatchedLeg]:
     )
 
 
-def _determine_realized_label(realized_premium: Optional[Decimal]) -> str:
-    if realized_premium is None:
+def _determine_realized_label(realized_pnl: Optional[Decimal]) -> str:
+    if realized_pnl is None:
         return "P/L"
-    if realized_premium > 0:
+    if realized_pnl > 0:
         return "Profit"
-    if realized_premium < 0:
+    if realized_pnl < 0:
         return "Loss"
     return "P/L"
 
 
-def _determine_net_label(net_premium: Decimal) -> str:
-    if net_premium > 0:
+def _determine_net_label(net_pnl: Decimal) -> str:
+    if net_pnl > 0:
         return "Profit"
-    if net_premium < 0:
+    if net_pnl < 0:
         return "Loss"
     return "P/L"
 
 
 def _determine_leg_table_labels(legs: Sequence[MatchedLeg]) -> Tuple[str, str]:
-    total_realized = sum((leg.realized_premium or Decimal("0") for leg in legs), Decimal("0"))
+    total_realized = sum((leg.realized_pnl or Decimal("0") for leg in legs), Decimal("0"))
     total_net = sum(
-        (leg.realized_premium or Decimal("0") - leg.total_fees for leg in legs), Decimal("0")
+        (leg.realized_pnl or Decimal("0") - leg.total_fees for leg in legs), Decimal("0")
     )
 
     has_profit = False
     has_loss = False
     for leg in legs:
-        if leg.realized_premium is not None:
-            if leg.realized_premium > 0:
+        if leg.realized_pnl is not None:
+            if leg.realized_pnl > 0:
                 has_profit = True
-            elif leg.realized_premium < 0:
+            elif leg.realized_pnl < 0:
                 has_loss = True
 
     if has_profit and has_loss:
@@ -194,9 +194,9 @@ def _build_leg_table(legs: Sequence[MatchedLeg]) -> Table:
         total_credit_open = sum((lot.open_credit_gross for lot in leg.lots), Decimal("0"))
         total_close_cost = sum((lot.close_cost for lot in leg.lots), Decimal("0"))
         realized_display = (
-            "--" if leg.is_open else format_currency(leg.realized_premium or Decimal("0"))
+            "--" if leg.is_open else format_currency(leg.realized_pnl or Decimal("0"))
         )
-        net_value = (leg.realized_premium or Decimal("0")) - leg.total_fees
+        net_value = (leg.realized_pnl or Decimal("0")) - leg.total_fees
         net_display = "--" if leg.is_open else format_currency(net_value)
         credit_remaining = sum((lot.credit_remaining for lot in leg.lots), Decimal("0"))
 
@@ -225,7 +225,7 @@ def _build_leg_table(legs: Sequence[MatchedLeg]) -> Table:
         totals["open_credit"] += total_credit_open  # type: ignore[operator]
         totals["close_cost"] += total_close_cost  # type: ignore[operator]
         if not leg.is_open:
-            totals["realized"] += leg.realized_premium or Decimal("0")  # type: ignore[operator]
+            totals["realized"] += leg.realized_pnl or Decimal("0")  # type: ignore[operator]
             totals["net"] += net_value  # type: ignore[operator]
         totals["credit_remaining"] += credit_remaining  # type: ignore[operator]
 
@@ -310,8 +310,8 @@ def _build_lot_table(leg: MatchedLeg) -> Table:
     }
 
     for lot in leg.lots:
-        realized = lot.realized_premium
-        net_value = lot.net_premium
+        realized = lot.realized_pnl
+        net_value = lot.net_pnl
         table.add_row(
             lot.status.upper(),
             lot.opened_at.isoformat(),
@@ -341,8 +341,8 @@ def _build_lot_table(leg: MatchedLeg) -> Table:
         totals["close_cost"] += lot.close_cost  # type: ignore[operator]
         totals["close_fees"] += lot.close_fees  # type: ignore[operator]
         totals["close_cost_total"] += lot.close_cost_total  # type: ignore[operator]
-        totals["realized"] += lot.realized_premium or Decimal("0")  # type: ignore[operator]
-        totals["net"] += lot.net_premium or Decimal("0")  # type: ignore[operator]
+        totals["realized"] += lot.realized_pnl or Decimal("0")  # type: ignore[operator]
+        totals["net"] += lot.net_pnl or Decimal("0")  # type: ignore[operator]
         totals["credit_remaining"] += lot.credit_remaining  # type: ignore[operator]
         totals["quantity_remaining"] += lot.quantity_remaining  # type: ignore[operator]
         totals["total_fees"] += lot.total_fees  # type: ignore[operator]

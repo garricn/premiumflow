@@ -180,8 +180,8 @@ def serialize_leg_lot(lot: MatchedLegLot) -> Dict[str, Any]:
         "open_premium": _decimal_to_string(lot.open_premium),
         "close_premium": _decimal_to_string(lot.close_premium),
         "total_fees": _decimal_to_string(lot.total_fees),
-        "realized_premium": (
-            _decimal_to_string(lot.realized_premium) if lot.realized_premium is not None else None
+        "realized_pnl": (
+            _decimal_to_string(lot.realized_pnl) if lot.realized_pnl is not None else None
         ),
         "open_fees": _decimal_to_string(lot.open_fees),
         "close_fees": _decimal_to_string(lot.close_fees),
@@ -192,7 +192,7 @@ def serialize_leg_lot(lot: MatchedLegLot) -> Dict[str, Any]:
         "close_quantity": lot.close_quantity,
         "credit_remaining": _decimal_to_string(lot.credit_remaining),
         "quantity_remaining": lot.quantity_remaining,
-        "net_premium": _decimal_to_string(lot.net_premium) if lot.net_premium is not None else None,
+        "net_pnl": _decimal_to_string(lot.net_pnl) if lot.net_pnl is not None else None,
     }
 
 
@@ -212,7 +212,7 @@ def serialize_leg(leg: MatchedLeg) -> Dict[str, Any]:
         "lots": [serialize_leg_lot(lot) for lot in leg.lots],
         "net_contracts": leg.net_contracts,
         "open_quantity": leg.open_quantity,
-        "realized_premium": _decimal_to_string(leg.realized_premium),
+        "realized_pnl": _decimal_to_string(leg.realized_pnl),
         "open_premium": _decimal_to_string(leg.open_premium),
         "total_fees": _decimal_to_string(leg.total_fees),
         "days_to_expiration": leg.days_to_expiration,

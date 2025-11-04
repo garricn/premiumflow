@@ -218,21 +218,21 @@ class OptionLeg:
         return self.open_quantity > 0
 
     @property
-    def net_premium(self) -> Decimal:
+    def net_pnl(self) -> Decimal:
         return (self.gross_open_premium + self.gross_close_premium).quantize(Decimal("0.01"))
 
     @property
-    def realized_premium(self) -> Optional[Decimal]:
+    def realized_pnl(self) -> Optional[Decimal]:
         """
-        Net premium realized so far.
+        Net profit/loss realized so far.
 
-        When the leg is fully closed this equals ``net_premium``. For partially closed legs the
+        When the leg is fully closed this equals ``net_pnl``. For partially closed legs the
         value reflects aggregate cash impact to date; precise realized/open splits are delegated
         to the FIFO matching service in issue #136.
         """
         if self.closing_quantity == 0:
             return None
-        value = self.net_premium
+        value = self.net_pnl
         if self.is_open:
             return None
         return value
