@@ -899,3 +899,69 @@ def test_legs_command_lots_flag(tmp_path):
     output = result.output
     assert "Matched Legs with Lot Details" in output
     assert "TMC" in output
+
+
+def test_legs_command_json_output(tmp_path):
+    """Test legs command with --format json outputs JSON payload."""
+    csv_path = _write_legs_csv(tmp_path)
+    runner = CliRunner()
+
+    # Import transactions first
+    import_result = runner.invoke(
+        premiumflow_cli,
+        [
+            "import",
+            "--file",
+            str(csv_path),
+            "--account-name",
+            "Test Account",
+        ],
+    )
+    assert import_result.exit_code == 0
+
+    # Run legs command with JSON format
+    result = runner.invoke(
+        premiumflow_cli,
+        ["legs", "--account-name", "Test Account", "--format", "json"],
+    )
+
+    assert result.exit_code == 0
+    output = result.output
+    # Parse JSON output
+    import json
+
+    data = json.loads(output)
+    assert "legs" in data
+    assert "errors" in data
+    assert isinstance(data["legs"], list)
+    assert len(data["legs"]) > 0
+    # Verify leg structure - check that it has the expected fields
+    assert len(data["legs"]) > 0
+    leg = data["legs"][0]
+    assert "contract" in leg
+    assert "account_name" in leg
+    assert "lots" in leg
+    # The test data has TMC, so verify it's in the output
+    assert any(leg_item["contract"]["symbol"] == "TMC" for leg_item in data["legs"])
+
+
+def test_legs_command_json_output_no_legs(tmp_path):
+    """Test legs command with JSON format returns empty array when no legs match."""
+    runner = CliRunner()
+
+    # Run legs command with non-existent account
+    result = runner.invoke(
+        premiumflow_cli,
+        ["legs", "--account-name", "Nonexistent Account", "--format", "json"],
+    )
+
+    assert result.exit_code == 0
+    output = result.output
+    # Parse JSON output
+    import json
+
+    data = json.loads(output)
+    assert "legs" in data
+    assert "errors" in data
+    assert data["legs"] == []
+    assert data["errors"] == []

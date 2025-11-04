@@ -15,6 +15,7 @@ from rich.table import Table
 
 from ..persistence import SQLiteRepository
 from ..services.display import format_currency
+from ..services.json_serializer import serialize_leg
 from ..services.leg_matching import (
     MatchedLeg,
     _stored_to_normalized,
@@ -158,7 +159,14 @@ def _build_legs_table(legs_dict: Dict[LegKey, MatchedLeg], *, show_lots: bool = 
     is_flag=True,
     help="Show detailed lot information",
 )
-def legs(account_name, account_number, ticker, since, until, status, show_lots):
+@click.option(
+    "--format",
+    "output_format",
+    type=click.Choice(["table", "json"], case_sensitive=False),
+    default="table",
+    help="Output format (default: table)",
+)
+def legs(account_name, account_number, ticker, since, until, status, show_lots, output_format):
     """Display matched option legs with FIFO matching."""
     console = Console()
 
@@ -190,7 +198,13 @@ def legs(account_name, account_number, ticker, since, until, status, show_lots):
         )
 
         if not stored_txns:
-            console.print("[yellow]No transactions found matching the specified filters.[/yellow]")
+            if output_format == "json":
+                payload = {"legs": [], "errors": []}
+                console.print_json(data=payload)
+            else:
+                console.print(
+                    "[yellow]No transactions found matching the specified filters.[/yellow]"
+                )
             return
 
         # Convert stored transactions to normalized
@@ -208,20 +222,45 @@ def legs(account_name, account_number, ticker, since, until, status, show_lots):
         elif status == "closed":
             matched = {k: v for k, v in matched.items() if not v.is_open}
 
-        # Display errors if any
-        if errors:
-            console.print("[yellow]Matching Errors:[/yellow]")
-            for error in errors:
-                console.print(f"  [red]{error}[/red]")
-            console.print()
+        # Output based on format
+        if output_format == "json":
+            # JSON output: include errors in payload, don't print them
+            if not matched:
+                payload = {"legs": [], "errors": errors if errors else []}
+                console.print_json(data=payload)
+                return
+            # Serialize legs to JSON
+            legs_data = [
+                serialize_leg(leg)
+                for leg in sorted(
+                    matched.values(),
+                    key=lambda leg_item: (
+                        leg_item.contract.symbol,
+                        leg_item.contract.expiration,
+                        leg_item.contract.strike,
+                    ),
+                )
+            ]
+            payload = {
+                "legs": legs_data,
+                "errors": errors if errors else [],
+            }
+            console.print_json(data=payload)
+        else:
+            # Table output: display errors if any
+            if errors:
+                console.print("[yellow]Matching Errors:[/yellow]")
+                for error in errors:
+                    console.print(f"  [red]{error}[/red]")
+                console.print()
 
-        if not matched:
-            console.print("[yellow]No legs found matching the specified filters.[/yellow]")
-            return
-
-        # Display legs table
-        table = _build_legs_table(matched, show_lots=show_lots)
-        console.print(table)
+            # Table output: show message if no legs
+            if not matched:
+                console.print("[yellow]No legs found matching the specified filters.[/yellow]")
+                return
+            # Display legs table
+            table = _build_legs_table(matched, show_lots=show_lots)
+            console.print(table)
 
     except click.ClickException:
         raise
