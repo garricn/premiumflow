@@ -71,7 +71,12 @@ def _portion_from_fill(fill: LegFill, quantity: int) -> LotFillPortion:
         raise ValueError("quantity must be between 1 and the fill quantity")
 
     ratio = Decimal(quantity) / Decimal(fill.quantity)
-    premium = _quantize(fill.effective_premium * ratio)
+    # Use gross_notional (price * quantity * 100) apportioned by ratio; sign by trans code
+    gross_premium = fill.gross_notional * ratio
+    if fill.trans_code in {"STO", "STC"}:
+        premium = _quantize(gross_premium)  # credits are positive
+    else:
+        premium = _quantize(-gross_premium)  # debits are negative
     fees = _quantize(fill.fees * ratio)
     return LotFillPortion(fill=fill, quantity=quantity, premium=premium, fees=fees)
 
