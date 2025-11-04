@@ -165,7 +165,7 @@ def _apply_import_options(func):
         ),
         click.option(
             "--account-number",
-            help="Optional account identifier to echo in output.",
+            help="Account identifier to attach to this import (required when importing).",
         ),
         click.option(
             "--skip-existing",
@@ -211,8 +211,12 @@ def _run_import(
         ctx.fail("--account-name is required when importing transactions.")
         return
 
+    if not account_number or not account_number.strip():
+        ctx.fail("--account-number is required when importing transactions.")
+        return
+
     account_name = account_name.strip()
-    account_number = account_number.strip() if account_number else None
+    account_number = account_number.strip()
 
     csv_file = Path(csv_file)
 

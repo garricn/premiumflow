@@ -179,7 +179,7 @@ def create_app() -> FastAPI:
         request: Request,
         csv_file: UploadFile = File(...),
         account_name: str = Form(...),
-        account_number: str = Form(""),
+        account_number: str = Form(...),
         duplicate_strategy: DuplicateStrategy = Form("error"),
         options_only: bool = Form(True),
         open_only: bool = Form(False),
@@ -203,7 +203,39 @@ def create_app() -> FastAPI:
             }
         else:
             normalized_account_name = account_name.strip()
-            normalized_account_number = account_number.strip() or None
+            normalized_account_number = account_number.strip()
+
+            if not normalized_account_name:
+                message = {
+                    "type": "error",
+                    "title": "Account name required",
+                    "body": "Account name must contain non-whitespace characters.",
+                }
+                return templates.TemplateResponse(
+                    request=request,
+                    name="index.html",
+                    context={
+                        "title": "PremiumFlow Web UI",
+                        "message": message,
+                        "form": form_values,
+                    },
+                )
+
+            if not normalized_account_number:
+                message = {
+                    "type": "error",
+                    "title": "Account number required",
+                    "body": "Account number must contain non-whitespace characters.",
+                }
+                return templates.TemplateResponse(
+                    request=request,
+                    name="index.html",
+                    context={
+                        "title": "PremiumFlow Web UI",
+                        "message": message,
+                        "form": form_values,
+                    },
+                )
 
             storage = get_storage()
             uploads_dir = storage.db_path.parent / "uploads"

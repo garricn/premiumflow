@@ -68,6 +68,7 @@ def lookup(position_spec, csv_file):
         parsed = load_option_transactions(
             csv_file,
             account_name=Path(csv_file).stem or "Lookup Account",
+            account_number=f"{Path(csv_file).stem or 'Lookup Account'}-FILE",
         )
         transactions = normalized_to_csv_dicts(parsed.transactions)
         target_symbol = symbol.upper()

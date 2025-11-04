@@ -108,7 +108,7 @@ def _seed_import_for_cli(
     csv_name: str,
     transactions: list[NormalizedOptionTransaction],
     account_name: str = "Primary Account",
-    account_number: str | None = "ACCT-1",
+    account_number: str = "ACCT-1",
     options_only: bool = True,
     ticker: str | None = None,
     strategy: str | None = None,
@@ -138,7 +138,17 @@ def test_import_reports_missing_ticker(tmp_path):
 
     result = runner.invoke(
         premiumflow_cli,
-        ["import", "--ticker", "ZZZ", "--file", str(sample_csv), "--account-name", "Test Account"],
+        [
+            "import",
+            "--ticker",
+            "ZZZ",
+            "--file",
+            str(sample_csv),
+            "--account-name",
+            "Test Account",
+            "--account-number",
+            "ACCT-123",
+        ],
     )
 
     assert result.exit_code == 0
@@ -371,6 +381,8 @@ def test_import_open_only_message(tmp_path):
             str(csv_path),
             "--account-name",
             "Test Account",
+            "--account-number",
+            "ACCT-123",
         ],
     )
 
@@ -642,6 +654,8 @@ def test_import_json_output(tmp_path):
             "PLTR",
             "--account-name",
             "Test Account",
+            "--account-number",
+            "ACCT-123",
             "--json-output",
         ],
     )
@@ -675,6 +689,8 @@ def test_import_strategy_calls_only(tmp_path):
             "calls",
             "--account-name",
             "Test Account",
+            "--account-number",
+            "ACCT-123",
         ],
     )
 
@@ -689,7 +705,15 @@ def test_ingest_alias_is_removed(tmp_path):
 
     result = runner.invoke(
         premiumflow_cli,
-        ["ingest", "--file", str(sample_csv), "--account-name", "Test Account"],
+        [
+            "ingest",
+            "--file",
+            str(sample_csv),
+            "--account-name",
+            "Test Account",
+            "--account-number",
+            "ACCT-123",
+        ],
     )
 
     assert result.exit_code != 0
@@ -753,6 +777,7 @@ def _load_transaction_dicts(csv_path: str) -> list[dict]:
     parsed = load_option_transactions(
         csv_path,
         account_name="Test Account",
+        account_number="ACCT-123",
     )
     return normalized_to_csv_dicts(parsed.transactions)
 
@@ -790,7 +815,15 @@ def test_legs_command_table_output(tmp_path, monkeypatch):
 
     import_result = runner.invoke(
         premiumflow_cli,
-        ["import", "--file", str(csv_path), "--account-name", "Test Account"],
+        [
+            "import",
+            "--file",
+            str(csv_path),
+            "--account-name",
+            "Test Account",
+            "--account-number",
+            "ACCT-123",
+        ],
     )
     assert import_result.exit_code == 0
 
@@ -818,7 +851,15 @@ def test_legs_command_lots_table_output(tmp_path, monkeypatch):
 
     import_result = runner.invoke(
         premiumflow_cli,
-        ["import", "--file", str(csv_path), "--account-name", "Test Account"],
+        [
+            "import",
+            "--file",
+            str(csv_path),
+            "--account-name",
+            "Test Account",
+            "--account-number",
+            "ACCT-123",
+        ],
     )
     assert import_result.exit_code == 0
 
@@ -848,7 +889,15 @@ def test_legs_command_table_reports_warnings(tmp_path, monkeypatch):
 
     import_result = runner.invoke(
         premiumflow_cli,
-        ["import", "--file", str(csv_path), "--account-name", "Test Account"],
+        [
+            "import",
+            "--file",
+            str(csv_path),
+            "--account-name",
+            "Test Account",
+            "--account-number",
+            "ACCT-123",
+        ],
     )
     assert import_result.exit_code == 0
 
@@ -882,6 +931,8 @@ def test_legs_command_data_output(tmp_path, monkeypatch):
             str(csv_path),
             "--account-name",
             "Test Account",
+            "--account-number",
+            "ACCT-123",
         ],
     )
     assert import_result.exit_code == 0
@@ -928,6 +979,8 @@ def test_legs_command_status_filter(tmp_path, monkeypatch):
             str(csv_path),
             "--account-name",
             "Test Account",
+            "--account-number",
+            "ACCT-123",
         ],
     )
     assert import_result.exit_code == 0
@@ -1002,6 +1055,8 @@ def test_legs_command_ticker_filter(tmp_path, monkeypatch):
             str(csv_path),
             "--account-name",
             "Test Account",
+            "--account-number",
+            "ACCT-123",
         ],
     )
     assert import_result.exit_code == 0
@@ -1051,6 +1106,8 @@ def test_legs_command_lots_flag(tmp_path, monkeypatch):
             str(csv_path),
             "--account-name",
             "Test Account",
+            "--account-number",
+            "ACCT-123",
         ],
     )
     assert import_result.exit_code == 0
@@ -1099,6 +1156,8 @@ def test_legs_command_json_output(tmp_path, monkeypatch):
             str(csv_path),
             "--account-name",
             "Test Account",
+            "--account-number",
+            "ACCT-123",
         ],
     )
     assert import_result.exit_code == 0

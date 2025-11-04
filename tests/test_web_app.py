@@ -152,7 +152,7 @@ def test_upload_skips_existing_when_requested(client_with_storage):
             "/upload",
             data={
                 "account_name": "Skip Account",
-                "account_number": "",
+                "account_number": "SKIP-123",
                 "duplicate_strategy": "error",
                 "options_only": "true",
                 "open_only": "false",
@@ -165,7 +165,7 @@ def test_upload_skips_existing_when_requested(client_with_storage):
             "/upload",
             data={
                 "account_name": "Skip Account",
-                "account_number": "",
+                "account_number": "SKIP-123",
                 "duplicate_strategy": "skip",
                 "options_only": "true",
                 "open_only": "false",
@@ -187,7 +187,7 @@ def test_upload_reports_validation_errors(client_with_storage):
         "/upload",
         data={
             "account_name": "Broken Account",
-            "account_number": "",
+            "account_number": "BROKEN-123",
             "duplicate_strategy": "error",
             "options_only": "true",
             "open_only": "false",

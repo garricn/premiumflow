@@ -1,6 +1,7 @@
 # PremiumFlow Project Agent Guidelines
 
 - IGNORE the AGENTS.md file at project root.
+- DO NOT FORCE PUSH unless specifically asked to.
 
 ## Identity & Signature
 
