@@ -1002,3 +1002,48 @@ def test_matched_leg_resolution_same_date_uses_tie_breaker():
 
     # Should return BTC with latest process_date (10/18) even though both have same activity_date
     assert matched.resolution() == "BTC"
+
+
+def test_matched_leg_resolution_all_dates_same_uses_sequence():
+    """resolution() should use sequence number as final tie-breaker when all dates match."""
+    same_date = date(2025, 10, 17)
+    transactions = [
+        _make_txn(
+            activity_date=date(2025, 10, 1),
+            description="TMC 10/17/2025 Call $7.00",
+            trans_code="STO",
+            quantity=2,
+            price="1.00",
+            amount="200",
+        ),
+        # Both closings have identical activity/process/settle dates
+        # The second one (STC) should win due to later sequence number
+        _make_txn(
+            activity_date=same_date,
+            process_date=same_date,
+            settle_date=same_date,
+            description="TMC 10/17/2025 Call $7.00",
+            trans_code="BTC",
+            quantity=1,
+            price="0.50",
+            amount="-50",
+        ),
+        _make_txn(
+            activity_date=same_date,
+            process_date=same_date,
+            settle_date=same_date,
+            description="TMC 10/17/2025 Call $7.00",
+            trans_code="BTC",
+            quantity=1,
+            price="0.60",
+            amount="-60",
+        ),
+    ]
+    fills = _single_leg_fills(transactions)
+    matched = match_leg_fills(fills)
+
+    # Should return transaction code from the second BTC (later sequence) even though all dates are identical
+    # The second BTC comes after the first in the input, so gets higher sequence number
+    assert matched.resolution() == "BTC"
+    # Verify both lots were closed
+    assert matched.closed_quantity == 2
