@@ -108,7 +108,7 @@ def _seed_import_for_cli(
     csv_name: str,
     transactions: list[NormalizedOptionTransaction],
     account_name: str = "Primary Account",
-    account_number: str | None = "ACCT-1",
+    account_number: str = "ACCT-1",
     options_only: bool = True,
     ticker: str | None = None,
     strategy: str | None = None,
@@ -138,7 +138,17 @@ def test_import_reports_missing_ticker(tmp_path):
 
     result = runner.invoke(
         premiumflow_cli,
-        ["import", "--ticker", "ZZZ", "--file", str(sample_csv), "--account-name", "Test Account"],
+        [
+            "import",
+            "--ticker",
+            "ZZZ",
+            "--file",
+            str(sample_csv),
+            "--account-name",
+            "Test Account",
+            "--account-number",
+            "ACCT-1",
+        ],
     )
 
     assert result.exit_code == 0
@@ -371,6 +381,8 @@ def test_import_open_only_message(tmp_path):
             str(csv_path),
             "--account-name",
             "Test Account",
+            "--account-number",
+            "ACCT-1",
         ],
     )
 
@@ -642,6 +654,8 @@ def test_import_json_output(tmp_path):
             "PLTR",
             "--account-name",
             "Test Account",
+            "--account-number",
+            "ACCT-1",
             "--json-output",
         ],
     )
@@ -651,6 +665,7 @@ def test_import_json_output(tmp_path):
     assert payload["filters"]["ticker"] == "PLTR"
     assert payload["filters"]["options_only"] is True
     assert payload["account"]["name"] == "Test Account"
+    assert payload["account"]["number"] == "ACCT-1"
     assert "target_percents" not in payload
     assert payload["transactions"]
     first_txn = payload["transactions"][0]
@@ -675,6 +690,8 @@ def test_import_strategy_calls_only(tmp_path):
             "calls",
             "--account-name",
             "Test Account",
+            "--account-number",
+            "ACCT-1",
         ],
     )
 
@@ -689,7 +706,15 @@ def test_ingest_alias_is_removed(tmp_path):
 
     result = runner.invoke(
         premiumflow_cli,
-        ["ingest", "--file", str(sample_csv), "--account-name", "Test Account"],
+        [
+            "ingest",
+            "--file",
+            str(sample_csv),
+            "--account-name",
+            "Test Account",
+            "--account-number",
+            "ACCT-1",
+        ],
     )
 
     assert result.exit_code != 0
@@ -753,5 +778,6 @@ def _load_transaction_dicts(csv_path: str) -> list[dict]:
     parsed = load_option_transactions(
         csv_path,
         account_name="Test Account",
+        account_number="ACCT-1",
     )
     return normalized_to_csv_dicts(parsed.transactions)

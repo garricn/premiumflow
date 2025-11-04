@@ -65,9 +65,11 @@ def lookup(position_spec, csv_file):
         except ValueError as exc:
             raise click.BadParameter(str(exc)) from exc
 
+        account_label = Path(csv_file).stem or "Lookup Account"
         parsed = load_option_transactions(
             csv_file,
-            account_name=Path(csv_file).stem or "Lookup Account",
+            account_name=account_label,
+            account_number=account_label,
         )
         transactions = normalized_to_csv_dicts(parsed.transactions)
         target_symbol = symbol.upper()

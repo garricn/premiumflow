@@ -164,7 +164,7 @@ def _apply_import_options(func):
         ),
         click.option(
             "--account-number",
-            help="Optional account identifier to echo in output.",
+            help="Account identifier to echo in output (required when importing).",
         ),
         click.option(
             "--skip-existing",
@@ -211,7 +211,11 @@ def _run_import(
         return
 
     account_name = account_name.strip()
-    account_number = account_number.strip() if account_number else None
+    if not account_number or not account_number.strip():
+        ctx.fail("--account-number is required when importing transactions.")
+        return
+
+    account_number = account_number.strip()
 
     csv_file = Path(csv_file)
 
@@ -333,9 +337,9 @@ def _run_import(
         console.print("[yellow]No transactions match the provided filters.[/yellow]")
         return
 
-    account_line = f"[green]Account:[/green] {parsed.account_name}"
-    if parsed.account_number:
-        account_line += f" ({parsed.account_number})"
+    account_line = (
+        f"[green]Account:[/green] {parsed.account_name} ({parsed.account_number})"
+    )
     console.print(account_line)
 
     table = _build_transaction_table(parsed.account_name, filtered_transactions)
@@ -380,9 +384,7 @@ def import_group(
 
 
 def _format_account_label(import_record) -> str:
-    if import_record.account_number:
-        return f"{import_record.account_name} ({import_record.account_number})"
-    return import_record.account_name
+    return f"{import_record.account_name} ({import_record.account_number})"
 
 
 def _activity_ranges_for(

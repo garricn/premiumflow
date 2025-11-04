@@ -59,7 +59,7 @@ def _persist_import(
     directory: Path,
     *,
     account_name: str,
-    account_number: str | None,
+    account_number: str,
     csv_name: str,
     transactions: list[NormalizedOptionTransaction],
     options_only: bool = True,
@@ -213,7 +213,7 @@ def test_import_history_lists_recent_imports(client_with_storage, tmp_path):
     _persist_import(
         tmp_path,
         account_name="History Account B",
-        account_number=None,
+        account_number="ACC-2",
         csv_name="history-b.csv",
         transactions=[_make_transaction(instrument="AAPL")],
         ticker="AAPL",

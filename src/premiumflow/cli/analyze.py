@@ -70,9 +70,11 @@ def analyze(csv_file, output_format, open_only, target):
     try:
         # Parse CSV file
         console.print(f"[blue]Parsing {csv_file}...[/blue]")
+        account_label = Path(csv_file).stem or "Analysis Account"
         parsed = load_option_transactions(
             csv_file,
-            account_name=Path(csv_file).stem or "Analysis Account",
+            account_name=account_label,
+            account_number=account_label,
         )
         transactions = parsed.transactions
         console.print(f"[green]Found {len(transactions)} options transactions[/green]")

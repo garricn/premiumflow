@@ -51,10 +51,8 @@ class StoreResult:
 class DuplicateImportError(RuntimeError):
     """Raised when a duplicate import is detected and duplication policy is 'error'."""
 
-    def __init__(self, account_name: str, account_number: Optional[str]) -> None:
-        identifier = (
-            account_name if account_number is None else f"{account_name} ({account_number})"
-        )
+    def __init__(self, account_name: str, account_number: str) -> None:
+        identifier = f"{account_name} ({account_number})"
         super().__init__(
             f"Import already recorded for account {identifier}. Use --skip-existing or --replace-existing to continue."
         )
@@ -89,7 +87,7 @@ class SQLiteStorage:
                 CREATE TABLE IF NOT EXISTS accounts (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     name TEXT NOT NULL,
-                    number TEXT,
+                    number TEXT NOT NULL,
                     UNIQUE(name, number)
                 );
 
@@ -244,11 +242,9 @@ class SQLiteStorage:
             status: StoreStatus = "replaced" if existing else "inserted"
         return StoreResult(import_id=int(import_id), status=status)
 
-    def _get_or_create_account(
-        self, conn: sqlite3.Connection, name: str, number: Optional[str]
-    ) -> int:
+    def _get_or_create_account(self, conn: sqlite3.Connection, name: str, number: str) -> int:
         cur = conn.execute(
-            "SELECT id FROM accounts WHERE name = ? AND IFNULL(number, '') = IFNULL(?, '')",
+            "SELECT id FROM accounts WHERE name = ? AND number = ?",
             (name, number),
         )
         row = cur.fetchone()

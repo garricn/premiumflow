@@ -52,10 +52,8 @@ def _slugify(value: str) -> str:
     return slug or "account"
 
 
-def _account_folder(name: str, number: str | None) -> str:
-    parts = [_slugify(name)]
-    if number:
-        parts.append(_slugify(number))
+def _account_folder(name: str, number: str) -> str:
+    parts = [_slugify(name), _slugify(number)]
     return "-".join(parts)
 
 
@@ -115,7 +113,7 @@ def create_app() -> FastAPI:
         request: Request,
         csv_file: UploadFile = File(...),
         account_name: str = Form(...),
-        account_number: str = Form(""),
+        account_number: str = Form(...),
         duplicate_strategy: DuplicateStrategy = Form("error"),
         options_only: bool = Form(True),
         open_only: bool = Form(False),
@@ -139,7 +137,23 @@ def create_app() -> FastAPI:
             }
         else:
             normalized_account_name = account_name.strip()
-            normalized_account_number = account_number.strip() or None
+            normalized_account_number = account_number.strip()
+
+            if not normalized_account_number:
+                message = {
+                    "type": "error",
+                    "title": "Account number required",
+                    "body": "Provide an account number to continue importing.",
+                }
+                return templates.TemplateResponse(
+                    request=request,
+                    name="index.html",
+                    context={
+                        "title": "PremiumFlow Web UI",
+                        "message": message,
+                        "form": form_values,
+                    },
+                )
 
             storage = get_storage()
             uploads_dir = storage.db_path.parent / "uploads"
@@ -348,11 +362,7 @@ def create_app() -> FastAPI:
                 "id": record.id,
                 "account_name": record.account_name,
                 "account_number": record.account_number,
-                "account_label": (
-                    record.account_name
-                    if record.account_number is None
-                    else f"{record.account_name} ({record.account_number})"
-                ),
+                "account_label": f"{record.account_name} ({record.account_number})",
                 "imported_at": _format_timestamp(record.imported_at),
                 "row_count": record.row_count,
                 "options_only": record.options_only,
@@ -414,11 +424,7 @@ def create_app() -> FastAPI:
         if not deleted:
             raise HTTPException(status_code=404, detail="Import not found")
 
-        account_label = (
-            record.account_name
-            if record.account_number is None
-            else f"{record.account_name} ({record.account_number})"
-        )
+            account_label = f"{record.account_name} ({record.account_number})"
 
         redirect_params = {
             key: value
@@ -463,11 +469,7 @@ def create_app() -> FastAPI:
         activity_start, activity_end = repository.fetch_import_activity_ranges([import_id]).get(
             import_id, (None, None)
         )
-        account_label = (
-            record.account_name
-            if record.account_number is None
-            else f"{record.account_name} ({record.account_number})"
-        )
+            account_label = f"{record.account_name} ({record.account_number})"
 
         return templates.TemplateResponse(
             request=request,

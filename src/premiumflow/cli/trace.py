@@ -91,9 +91,11 @@ def trace(display_name, csv_file, target):
 
     try:
         console.print(f"[blue]Tracing {display_name} in {csv_file}[/blue]")
+        account_label = Path(csv_file).stem or "Trace Account"
         parsed = load_option_transactions(
             csv_file,
-            account_name=Path(csv_file).stem or "Trace Account",
+            account_name=account_label,
+            account_number=account_label,
         )
         raw_transactions = normalized_to_csv_dicts(parsed.transactions)
         chains = detect_roll_chains(raw_transactions)

@@ -13,7 +13,7 @@ Trans Code, Quantity, Price, Amount
 
 During import the parser:
 
-- Requires `--account-name` and trims both the account name and optional `--account-number`.
+- Requires `--account-name` and `--account-number`, trimming both values before validation.
 - Accepts prices in either `$1.23` or `(1.23)` format, and infers missing prices from `Amount` when possible (assignments default to `$0.00`).
 - Filters to supported option transaction codes (`STO`, `STC`, `BTO`, `BTC`, `OASGN`) and reports row numbers in every `ImportValidationError`.
 - Sorts transactions chronologically (Activity Date → Process Date → Settle Date) so downstream consumers get a stable ordering.
@@ -98,6 +98,7 @@ imports only need to happen once.
 ## Troubleshooting
 
 - `Missing option '--account-name'`: the flag is required for every import.
+- `Missing option '--account-number'`: supply the broker-provided identifier for the account.
 - `Row N: Column "Price" cannot be blank.`: supply the broker price or confirm the row is an option assignment; PremiumFlow will infer a zero price for `OASGN` entries when both `Price` and `Amount` are empty.
 - Broker commissions are currently ignored. Downstream tooling should compute fees if they are required for reporting.
 

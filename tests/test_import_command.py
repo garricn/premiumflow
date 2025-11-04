@@ -85,7 +85,14 @@ def test_import_command_table_output(tmp_path):
 
     result = runner.invoke(
         import_group,
-        ["--file", str(csv_path), "--account-name", "Test Account"],
+        [
+            "--file",
+            str(csv_path),
+            "--account-name",
+            "Test Account",
+            "--account-number",
+            "ACCT-1",
+        ],
     )
 
     assert result.exit_code == 0
@@ -93,6 +100,7 @@ def test_import_command_table_output(tmp_path):
     assert "Options Transactions" in result.output
     assert "TSLA" in result.output
     assert "Account:" in result.output
+    assert "Account: Test Account (ACCT-1)" in result.output
     assert "Credit" not in result.output
     assert "Net Premium" not in result.output
     assert "Totals:" not in result.output
@@ -107,7 +115,15 @@ def test_import_command_json_output(tmp_path):
 
     result = runner.invoke(
         import_group,
-        ["--file", str(csv_path), "--account-name", "Test Account", "--json-output"],
+        [
+            "--file",
+            str(csv_path),
+            "--account-name",
+            "Test Account",
+            "--account-number",
+            "ACCT-1",
+            "--json-output",
+        ],
     )
 
     assert result.exit_code == 0
@@ -115,7 +131,7 @@ def test_import_command_json_output(tmp_path):
     assert payload["source_file"] == str(csv_path)
     assert payload["filters"]["options_only"] is True
     assert payload["account"]["name"] == "Test Account"
-    assert payload["account"]["number"] is None
+    assert payload["account"]["number"] == "ACCT-1"
     assert "cash_flow" not in payload
     first_txn = payload["transactions"][0]
     assert first_txn["instrument"] == "TSLA"
@@ -130,7 +146,16 @@ def test_import_command_filters_by_ticker(tmp_path):
 
     result = runner.invoke(
         import_group,
-        ["--file", str(csv_path), "--account-name", "Test Account", "--ticker", "ZZZ"],
+        [
+            "--file",
+            str(csv_path),
+            "--account-name",
+            "Test Account",
+            "--account-number",
+            "ACCT-1",
+            "--ticker",
+            "ZZZ",
+        ],
     )
 
     assert result.exit_code == 0
@@ -144,7 +169,15 @@ def test_import_command_open_only(tmp_path):
 
     result = runner.invoke(
         import_group,
-        ["--file", str(csv_path), "--account-name", "Test Account", "--open-only"],
+        [
+            "--file",
+            str(csv_path),
+            "--account-name",
+            "Test Account",
+            "--account-number",
+            "ACCT-1",
+            "--open-only",
+        ],
     )
 
     assert result.exit_code == 0
@@ -158,7 +191,16 @@ def test_import_command_rejects_target_option(tmp_path):
 
     result = runner.invoke(
         import_group,
-        ["--file", str(csv_path), "--account-name", "Test Account", "--target", "invalid"],
+        [
+            "--file",
+            str(csv_path),
+            "--account-name",
+            "Test Account",
+            "--account-number",
+            "ACCT-1",
+            "--target",
+            "invalid",
+        ],
     )
 
     assert result.exit_code != 0
@@ -174,6 +216,20 @@ def test_import_command_requires_account_name(tmp_path):
 
     assert result.exit_code != 0
     assert "--account-name is required" in result.output
+
+
+def test_import_command_requires_account_number(tmp_path):
+    """Missing account number should fail before parsing."""
+    csv_path = _write_sample_csv(tmp_path)
+    runner = CliRunner()
+
+    result = runner.invoke(
+        import_group,
+        ["--file", str(csv_path), "--account-name", "Test Account"],
+    )
+
+    assert result.exit_code != 0
+    assert "--account-number is required" in result.output
 
 
 def test_import_command_surfaces_parser_errors(monkeypatch, tmp_path):
@@ -260,6 +316,8 @@ def test_import_command_infers_price_from_amount(tmp_path):
             str(csv_path),
             "--account-name",
             "Test Account",
+            "--account-number",
+            "ACCT-1",
             "--json-output",
         ],
     )
@@ -315,7 +373,15 @@ def test_import_command_skip_existing(monkeypatch, tmp_path):
 
     result = runner.invoke(
         import_group,
-        ["--file", str(csv_path), "--account-name", "Primary", "--skip-existing"],
+        [
+            "--file",
+            str(csv_path),
+            "--account-name",
+            "Primary",
+            "--account-number",
+            "ACCT-1",
+            "--skip-existing",
+        ],
     )
 
     assert result.exit_code == 0
@@ -343,7 +409,15 @@ def test_import_command_replace_existing(monkeypatch, tmp_path):
 
     result = runner.invoke(
         import_group,
-        ["--file", str(csv_path), "--account-name", "Primary", "--replace-existing"],
+        [
+            "--file",
+            str(csv_path),
+            "--account-name",
+            "Primary",
+            "--account-number",
+            "ACCT-1",
+            "--replace-existing",
+        ],
     )
 
     assert result.exit_code == 0
@@ -363,6 +437,8 @@ def test_import_command_allows_assignment_with_blank_price(tmp_path):
             str(csv_path),
             "--account-name",
             "Test Account",
+            "--account-number",
+            "ACCT-1",
             "--json-output",
         ],
     )
@@ -390,6 +466,8 @@ def test_import_skips_rows_without_option_trans_code(tmp_path):
             str(csv_path),
             "--account-name",
             "Test Account",
+            "--account-number",
+            "ACCT-1",
             "--json-output",
         ],
     )
@@ -412,6 +490,8 @@ def test_import_command_sorts_transactions_by_date(tmp_path):
             str(csv_path),
             "--account-name",
             "Test Account",
+            "--account-number",
+            "ACCT-1",
             "--json-output",
         ],
     )

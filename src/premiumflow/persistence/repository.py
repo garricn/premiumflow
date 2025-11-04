@@ -17,7 +17,7 @@ class StoredImport:
 
     id: int
     account_name: str
-    account_number: Optional[str]
+    account_number: str
     source_path: str
     source_hash: str
     imported_at: str
@@ -35,7 +35,7 @@ class StoredTransaction:
     id: int
     import_id: int
     account_name: str
-    account_number: Optional[str]
+    account_number: str
     row_index: int
     activity_date: str
     process_date: Optional[str]
@@ -93,7 +93,7 @@ class SQLiteRepository:
             clauses.append("a.name = ?")
             params.append(account_name)
         if account_number is not None:
-            clauses.append("IFNULL(a.number, '') = IFNULL(?, '')")
+            clauses.append("a.number = ?")
             params.append(account_number)
 
         if clauses:
@@ -212,7 +212,7 @@ class SQLiteRepository:
             clauses.append("a.name = ?")
             params.append(account_name)
         if account_number is not None:
-            clauses.append("IFNULL(a.number, '') = IFNULL(?, '')")
+            clauses.append("a.number = ?")
             params.append(account_number)
         if import_ids:
             placeholders = ", ".join("?" for _ in import_ids)

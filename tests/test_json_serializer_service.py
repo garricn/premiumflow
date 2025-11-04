@@ -284,7 +284,7 @@ class TestJsonSerializer(unittest.TestCase):
         result = build_ingest_payload(
             csv_file="test.csv",
             account_name="Test Account",
-            account_number=None,
+            account_number="ACCT-123",
             transactions=[],
             chains=chains,
             options_only=False,
@@ -297,13 +297,14 @@ class TestJsonSerializer(unittest.TestCase):
         self.assertEqual(len(result["chains"]), 1)
         self.assertEqual(result["chains"][0]["symbol"], "TSLA")
         self.assertEqual(result["chains"][0]["status"], "OPEN")
+        self.assertEqual(result["account"]["number"], "ACCT-123")
 
     def test_build_ingest_payload_minimal(self):
         """Test building ingest payload with minimal data."""
         result = build_ingest_payload(
             csv_file="test.csv",
             account_name="Test Account",
-            account_number=None,
+            account_number="ACCT-999",
             transactions=[],
             chains=[],
             options_only=False,
@@ -318,6 +319,7 @@ class TestJsonSerializer(unittest.TestCase):
         self.assertIsNone(result["filters"]["strategy"])
         self.assertEqual(result["filters"]["open_only"], False)
         self.assertEqual(result["transactions"], [])
+        self.assertEqual(result["account"]["number"], "ACCT-999")
         self.assertEqual(result["chains"], [])
 
 

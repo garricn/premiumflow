@@ -54,7 +54,7 @@ def _seed_import(
     tmp_dir: Path,
     *,
     account_name: str = "Primary Account",
-    account_number: str | None = "ACCT-1",
+    account_number: str = "ACCT-1",
     csv_name: str,
     transactions: list[NormalizedOptionTransaction],
     options_only: bool = True,

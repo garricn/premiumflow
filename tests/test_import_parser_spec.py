@@ -51,6 +51,7 @@ def test_load_option_transactions_accepts_option_expiration(tmp_path):
     result = load_option_transactions(
         csv_path,
         account_name="Robinhood IRA",
+        account_number="RH-12345",
     )
 
     assert len(result.transactions) == 1
@@ -72,6 +73,7 @@ def test_load_option_transactions_rejects_parenthesized_price(tmp_path):
         load_option_transactions(
             csv_path,
             account_name="Test Account",
+            account_number="ACCT-1",
         )
 
     assert 'Row 2: Invalid decimal in "Price"' in str(
@@ -91,6 +93,7 @@ def test_load_option_transactions_skips_non_option_rows(tmp_path):
     result = load_option_transactions(
         csv_path,
         account_name="Test Account",
+        account_number="ACCT-1",
     )
 
     assert result.transactions == []
@@ -107,6 +110,7 @@ def test_load_option_transactions_skips_incomplete_non_option_rows(tmp_path):
     result = load_option_transactions(
         csv_path,
         account_name="Test Account",
+        account_number="ACCT-1",
     )
 
     assert result.transactions == []
@@ -142,6 +146,7 @@ def test_load_option_transactions_reports_first_validation_error(tmp_path, field
         load_option_transactions(
             csv_path,
             account_name="Test Account",
+            account_number="ACCT-1",
         )
 
     assert "Row 2" in str(excinfo.value)
@@ -159,6 +164,7 @@ def test_load_option_transactions_requires_option_details(tmp_path):
         load_option_transactions(
             csv_path,
             account_name="Test Account",
+            account_number="ACCT-1",
         )
 
     assert "Row 2" in str(excinfo.value)
@@ -173,7 +179,7 @@ def test_load_option_transactions_requires_account_name(tmp_path):
     csv_path.write_text(csv_content, encoding="utf-8")
 
     with pytest.raises(ImportValidationError) as excinfo:
-        load_option_transactions(csv_path, account_name=" ")
+        load_option_transactions(csv_path, account_name=" ", account_number="ACCT-1")
 
     assert str(excinfo.value) == "--account-name is required."
 
@@ -192,4 +198,4 @@ def test_load_option_transactions_rejects_blank_account_number(tmp_path):
             account_number="   ",
         )
 
-    assert str(excinfo.value) == "--account-number cannot be blank."
+    assert str(excinfo.value) == "--account-number is required."

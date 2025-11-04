@@ -48,7 +48,7 @@ class ParsedImportResult:
     """Container for normalized import data and account metadata."""
 
     account_name: str
-    account_number: Optional[str]
+    account_number: str
     transactions: List[NormalizedOptionTransaction]
 
 
@@ -112,7 +112,7 @@ def load_option_transactions(
     csv_file: str,
     *,
     account_name: str,
-    account_number: Optional[str] = None,
+    account_number: str,
 ) -> ParsedImportResult:
     """
     Validate and normalize option transactions from a CSV file.
@@ -124,7 +124,7 @@ def load_option_transactions(
     account_name:
         Required CLI-supplied account label; must contain non-whitespace characters.
     account_number:
-        Optional account identifier. When provided, must contain non-whitespace characters.
+        Required account identifier; must contain non-whitespace characters.
 
     Returns
     -------
@@ -225,21 +225,16 @@ def _parse_trans_code(row: Dict[str, str], row_number: int) -> Optional[str]:
     return trans_code
 
 
-def _validate_account_metadata(
-    account_name: str, account_number: Optional[str]
-) -> tuple[str, Optional[str]]:
+def _validate_account_metadata(account_name: str, account_number: str) -> tuple[str, str]:
     if account_name is None:
         raise ImportValidationError("--account-name is required.")
     normalized_name = account_name.strip()
     if not normalized_name:
         raise ImportValidationError("--account-name is required.")
 
-    if account_number is None:
-        return normalized_name, None
-
     normalized_number = account_number.strip()
     if not normalized_number:
-        raise ImportValidationError("--account-number cannot be blank.")
+        raise ImportValidationError("--account-number is required.")
 
     return normalized_name, normalized_number
 

@@ -80,7 +80,7 @@ def build_ingest_payload(
     *,
     csv_file: str,
     account_name: str,
-    account_number: Optional[str],
+    account_number: str,
     transactions: Sequence[NormalizedOptionTransaction],
     chains: List[Dict[str, Any]],
     options_only: bool,
