@@ -21,6 +21,7 @@ from ..services.cli_helpers import format_account_label
 from ..services.display import format_currency
 from ..services.json_serializer import serialize_leg
 from ..services.leg_matching import (
+    LotFillPortion,
     MatchedLeg,
     _stored_to_normalized,
     group_fills_by_account,
@@ -116,7 +117,7 @@ def _leg_closed_at(leg: MatchedLeg) -> Optional[date]:
     return max(closed_dates)
 
 
-def _portion_resolution(portion) -> str:
+def _portion_resolution(portion: LotFillPortion) -> str:
     code = portion.fill.trans_code
     return _CLOSE_LABELS.get(code, code)
 
@@ -197,7 +198,7 @@ def _build_leg_table(legs: Sequence[MatchedLeg]) -> Table:
         )
         net_value = (leg.realized_premium or Decimal("0")) - leg.total_fees
         net_display = "--" if leg.is_open else format_currency(net_value)
-        credit_remaining = leg.open_premium
+        credit_remaining = sum((lot.credit_remaining for lot in leg.lots), Decimal("0"))
 
         table.add_row(
             account_label,
@@ -252,6 +253,7 @@ def _build_leg_table(legs: Sequence[MatchedLeg]) -> Table:
         net_totals_display,
         format_currency(cast(Decimal, totals["credit_remaining"])),
         "",
+        # DTE cannot be meaningfully aggregated; show "N/A" only when all legs are closed
         "N/A" if all(not leg.is_open for leg in legs) else "",
         end_section=True,
     )
@@ -453,7 +455,8 @@ def legs(
         warnings: List[str] = []
         for (acct_name, acct_number, leg_id), exc, bucket in errors:
             account_label = format_account_label(acct_name, acct_number)
-            descriptor = bucket[0].transaction.description
+            # bucket is guaranteed non-empty by match_legs_with_errors structure
+            descriptor = bucket[0].transaction.description if bucket else "Unknown"
             warnings.append(f"{account_label} • {leg_id} • {descriptor}: {exc}")
 
         if output_format == "json":
