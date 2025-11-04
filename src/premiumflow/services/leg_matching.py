@@ -257,10 +257,11 @@ class MatchedLeg:
 
     def resolution(self) -> Optional[str]:
         """
-        Return the transaction code for how closed lots in this leg were resolved.
+        Return the transaction code for the primary resolution of closed lots in this leg.
 
-        Returns the primary closing transaction code (e.g., "BTC", "STC", "OASGN", "OEXP").
-        Prioritizes Assignment/Expiration over BTC/STC. Returns None for open legs or when
+        Returns the primary closing transaction code (e.g., "BTC", "STC", "OASGN", "OEXP")
+        representing the last or most significant resolution type. Prioritizes Assignment/Expiration
+        over BTC/STC when multiple closing methods are present. Returns None for open legs or when
         no lots are closed.
 
         Display formatting should be handled in the CLI/formatter layer.
