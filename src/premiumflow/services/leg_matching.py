@@ -541,10 +541,18 @@ def match_legs(fills: Iterable[LegFill]) -> Dict[LegKey, MatchedLeg]:
 
 
 def _stored_to_normalized(stored: StoredTransaction) -> NormalizedOptionTransaction:
-    """Convert a StoredTransaction to a NormalizedOptionTransaction."""
+    """Convert a StoredTransaction to a NormalizedOptionTransaction.
+
+    Raises ValueError if raw_json is not valid JSON.
+    """
     import json
 
-    raw_dict = json.loads(stored.raw_json)
+    try:
+        raw_dict = json.loads(stored.raw_json)
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            f"Invalid JSON in stored transaction {stored.id} raw_json: {exc.msg}"
+        ) from exc
     # Preserve account metadata in raw dict for group_fills_by_account to extract
     raw_dict["Account Name"] = stored.account_name
     if stored.account_number:

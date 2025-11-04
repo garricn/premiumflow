@@ -1217,6 +1217,34 @@ def test_stored_to_normalized_handles_empty_string_amount():
     assert normalized.trans_code == "OEXP"
 
 
+def test_stored_to_normalized_raises_on_invalid_json():
+    """_stored_to_normalized should raise ValueError on invalid JSON in raw_json."""
+    stored = StoredTransaction(
+        id=3,
+        import_id=1,
+        account_name="Test Account",
+        account_number=None,
+        row_index=1,
+        activity_date="2025-10-01",
+        process_date="2025-10-01",
+        settle_date="2025-10-03",
+        instrument="TMC",
+        description="TMC 10/17/2025 Call $7.00",
+        trans_code="STO",
+        quantity=1,
+        price="1.00",
+        amount="100.00",
+        strike="7.00",
+        option_type="CALL",
+        expiration="2025-10-17",
+        action="SELL",
+        raw_json='{"invalid": json}',  # Invalid JSON
+    )
+
+    with pytest.raises(ValueError, match="Invalid JSON in stored transaction"):
+        _stored_to_normalized(stored)
+
+
 def test_group_fills_by_account_groups_by_account():
     """group_fills_by_account should group transactions by account and convert to LegFill."""
     txn1 = _make_txn(
