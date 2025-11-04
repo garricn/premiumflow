@@ -110,46 +110,79 @@ class MatchedLegLot:
 
     @property
     def open_fees(self) -> Money:
+        """Total fees paid when opening this lot (sum of fees from open portions)."""
         return _quantize(sum(p.fees for p in self.open_portions))
 
     @property
     def close_fees(self) -> Money:
+        """Total fees paid when closing this lot (sum of fees from close portions)."""
         return _quantize(sum(p.fees for p in self.close_portions))
 
     @property
     def open_credit_gross(self) -> Money:
+        """Gross credit received when opening this lot (before fees)."""
         return self.open_premium
 
     @property
     def open_credit_net(self) -> Money:
+        """Net credit received when opening this lot (gross credit minus opening fees)."""
         return _quantize(self.open_premium - self.open_fees)
 
     @property
     def close_cost(self) -> Money:
+        """
+        Cost paid to close this lot (before fees).
+
+        Returns the absolute value of close_premium when closing is a debit (cost to close).
+        Returns 0 if the lot is still open or if closing was a credit.
+        """
         if not self.is_closed or self.close_premium >= 0:
             return _quantize(0)
         return _quantize(abs(self.close_premium))
 
     @property
     def close_cost_total(self) -> Money:
+        """
+        Total cost paid to close this lot (cost plus closing fees).
+
+        Returns the sum of close_cost and close_fees when closing is a debit.
+        Returns 0 if the lot is still open or if closing was a credit.
+        """
         if not self.is_closed or self.close_premium >= 0:
             return _quantize(0)
         return _quantize(self.close_cost + self.close_fees)
 
     @property
     def close_quantity(self) -> int:
+        """Quantity of contracts closed in this lot. Returns 0 if lot is still open."""
         return self.quantity if self.is_closed else 0
 
     @property
     def credit_remaining(self) -> Money:
+        """
+        Remaining potential credit for open lots.
+
+        Returns open_premium for open lots (the credit that could be retained if expired).
+        Returns 0 for closed lots.
+        """
         return _quantize(self.open_premium) if self.is_open else _quantize(0)
 
     @property
     def quantity_remaining(self) -> int:
+        """Remaining quantity of open contracts in this lot. Returns 0 if lot is fully closed."""
         return self.quantity if self.is_open else 0
 
     @property
     def net_premium(self) -> Optional[Money]:
+        """
+        Net profit/loss for this lot after all fees (realized_premium - total_fees).
+
+        This represents the overall P/L for a closed lot, accounting for both opening and closing
+        fees. Returns None for open lots (since realized_premium is None).
+
+        Note: This differs from open_credit_net, which only considers the opening transaction.
+        net_premium is the complete trade P/L: (open_premium + close_premium) - (open_fees + close_fees).
+        """
         if self.realized_premium is None:
             return None
         return _quantize(self.realized_premium - self.total_fees)
