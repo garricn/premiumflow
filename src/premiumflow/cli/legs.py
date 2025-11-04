@@ -419,7 +419,7 @@ def legs(
     output_format: str,
 ) -> None:
     """Display matched option legs with FIFO matching."""
-    console = Console(width=120)
+    console = Console()
 
     try:
         repo = SQLiteRepository()

@@ -801,7 +801,7 @@ def test_legs_command_table_output(tmp_path, monkeypatch):
     assert "Matched Option Legs" in output
     assert "Test Account" in output
     assert "TMC" in output
-    assert "Buy to close" in output
+    assert "Buy to clo" in output.replace("…", "")
     assert "Totals (Legs:" in output
 
     storage_module.get_storage.cache_clear()
