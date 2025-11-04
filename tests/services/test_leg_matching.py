@@ -125,6 +125,14 @@ def test_match_leg_fills_handles_partial_close_with_open_lot():
     assert open_lot.open_premium == Decimal("200.00")
     assert open_lot.close_premium == Decimal("0.00")
     assert open_lot.realized_premium is None
+    # New computed props on lot
+    assert open_lot.open_fees == Decimal("0.00")
+    assert open_lot.close_fees == Decimal("0.00")
+    assert open_lot.open_credit_gross == Decimal("200.00")
+    assert open_lot.open_credit_net == Decimal("200.00")
+    assert open_lot.credit_remaining == Decimal("200.00")
+    assert open_lot.quantity_remaining == 2
+    assert open_lot.net_premium is None
 
 
 def test_match_leg_fills_sorts_transactions_before_matching():
@@ -236,6 +244,17 @@ def test_match_leg_fills_handles_long_position_closure():
     assert lot.status == "closed"
     assert lot.direction == "long"
     assert lot.realized_premium == Decimal("50.00")
+    # New computed props on closed lot
+    assert lot.open_fees == Decimal("0.00")
+    assert lot.close_fees == Decimal("0.00")
+    assert lot.open_credit_gross == Decimal("-90.00")  # long open is debit
+    assert lot.open_credit_net == Decimal("-90.00")
+    assert lot.close_cost == Decimal("0.00")  # close was a credit here (STC)
+    assert lot.close_cost_total == Decimal("0.00")
+    assert lot.close_quantity == 1
+    assert lot.credit_remaining == Decimal("0.00")
+    assert lot.quantity_remaining == 0
+    assert lot.net_premium == Decimal("50.00")
 
 
 def test_portion_premium_uses_gross_notional_sign_and_ratio():
@@ -419,3 +438,173 @@ def test_match_leg_fills_handles_partial_expiration_after_closes():
     )
     assert exp_lot.realized_premium == Decimal("130.00")
     assert matched.open_quantity == 0
+
+
+def test_matched_lot_close_cost_for_debit_close():
+    """close_cost should reflect debit (negative close_premium) when closing is a cost."""
+    transactions = [
+        _make_txn(
+            activity_date=date(2025, 10, 1),
+            description="TMC 10/17/2025 Call $7.00",
+            trans_code="STO",
+            quantity=2,
+            price="1.00",
+            amount="200",
+        ),
+        _make_txn(
+            activity_date=date(2025, 10, 5),
+            description="TMC 10/17/2025 Call $7.00",
+            trans_code="BTC",
+            quantity=2,
+            price="0.50",
+            amount="-100",
+        ),
+    ]
+    fills = _single_leg_fills(transactions)
+    matched = match_leg_fills(fills)
+
+    lot = matched.lots[0]
+    assert lot.status == "closed"
+    assert lot.close_premium == Decimal("-100.00")  # debit close
+    assert lot.close_cost == Decimal("100.00")  # cost is positive
+    assert lot.close_cost_total == Decimal("100.00")  # no fees in this case
+    assert lot.close_quantity == 2
+    assert lot.quantity_remaining == 0
+    assert lot.credit_remaining == Decimal("0.00")
+
+
+def test_matched_lot_close_cost_zero_for_credit_close():
+    """close_cost should be 0 when closing is a credit (positive close_premium)."""
+    transactions = [
+        _make_txn(
+            activity_date=date(2025, 9, 1),
+            description="TMC 10/17/2025 Call $7.00",
+            trans_code="BTO",
+            quantity=1,
+            price="0.90",
+            amount="-90",
+        ),
+        _make_txn(
+            activity_date=date(2025, 9, 15),
+            description="TMC 10/17/2025 Call $7.00",
+            trans_code="STC",
+            quantity=1,
+            price="1.40",
+            amount="140",
+        ),
+    ]
+    fills = _single_leg_fills(transactions)
+    matched = match_leg_fills(fills)
+
+    lot = matched.lots[0]
+    assert lot.status == "closed"
+    assert lot.close_premium == Decimal("140.00")  # credit close
+    assert lot.close_cost == Decimal("0.00")  # no cost when closing is a credit
+    assert lot.close_cost_total == Decimal("0.00")
+    assert lot.close_quantity == 1
+
+
+def test_matched_lot_credit_remaining_for_open_lot():
+    """credit_remaining should equal open_premium for open lots, 0 for closed."""
+    transactions = [
+        _make_txn(
+            activity_date=date(2025, 10, 1),
+            description="TMC 10/17/2025 Call $7.00",
+            trans_code="STO",
+            quantity=3,
+            price="1.00",
+            amount="300",
+        ),
+        _make_txn(
+            activity_date=date(2025, 10, 5),
+            description="TMC 10/17/2025 Call $7.00",
+            trans_code="BTC",
+            quantity=1,
+            price="0.30",
+            amount="-30",
+        ),
+    ]
+    fills = _single_leg_fills(transactions)
+    matched = match_leg_fills(fills)
+
+    lots = {lot.status: lot for lot in matched.lots}
+    closed_lot = lots["closed"]
+    assert closed_lot.credit_remaining == Decimal("0.00")
+    assert closed_lot.quantity_remaining == 0
+
+    open_lot = lots["open"]
+    assert open_lot.open_premium == Decimal("200.00")
+    assert open_lot.credit_remaining == Decimal("200.00")
+    assert open_lot.quantity_remaining == 2
+
+
+def test_matched_lot_net_premium_calculation():
+    """net_premium should equal realized_premium minus total_fees."""
+    transactions = [
+        _make_txn(
+            activity_date=date(2025, 10, 1),
+            description="TMC 10/17/2025 Call $7.00",
+            trans_code="STO",
+            quantity=2,
+            price="1.00",
+            amount="200",
+        ),
+        _make_txn(
+            activity_date=date(2025, 10, 5),
+            description="TMC 10/17/2025 Call $7.00",
+            trans_code="BTC",
+            quantity=2,
+            price="0.50",
+            amount="-100",
+        ),
+    ]
+    fills = _single_leg_fills(transactions)
+    matched = match_leg_fills(fills)
+
+    lot = matched.lots[0]
+    assert lot.status == "closed"
+    assert lot.realized_premium == Decimal("100.00")
+    assert lot.total_fees == Decimal("0.00")
+    assert lot.net_premium == Decimal("100.00")
+
+    # For open lots, net_premium should be None
+    open_transactions = [
+        _make_txn(
+            activity_date=date(2025, 10, 1),
+            description="TMC 10/17/2025 Call $7.00",
+            trans_code="STO",
+            quantity=1,
+            price="1.00",
+            amount="100",
+        ),
+    ]
+    open_fills = _single_leg_fills(open_transactions)
+    open_matched = match_leg_fills(open_fills)
+    open_lot = open_matched.lots[0]
+    assert open_lot.status == "open"
+    assert open_lot.realized_premium is None
+    assert open_lot.net_premium is None
+
+
+def test_matched_lot_open_credit_net_with_fees():
+    """open_credit_net should subtract fees from gross credit."""
+    # Create transaction with fees: gross_notional = 200, amount = 198 -> fees = 2
+    transactions = [
+        _make_txn(
+            activity_date=date(2025, 10, 1),
+            description="TMC 10/17/2025 Call $7.00",
+            trans_code="STO",
+            quantity=2,
+            price="1.00",
+            amount="198",  # Less than gross_notional (200) to simulate fees
+        ),
+    ]
+    fills = _single_leg_fills(transactions)
+    matched = match_leg_fills(fills)
+
+    lot = matched.lots[0]
+    assert lot.status == "open"
+    assert lot.open_premium == Decimal("200.00")  # gross_notional
+    assert lot.open_fees == Decimal("2.00")  # difference between gross and amount
+    assert lot.open_credit_gross == Decimal("200.00")
+    assert lot.open_credit_net == Decimal("198.00")  # gross minus fees
