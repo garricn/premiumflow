@@ -34,7 +34,7 @@ def test_cli_help_lists_all_commands():
 
     assert result.exit_code == 0
     output = result.output
-    for command in ("analyze", "import", "lookup", "trace"):
+    for command in ("analyze", "import", "legs", "lookup", "trace"):
         assert command in output
 
 
@@ -755,3 +755,117 @@ def _load_transaction_dicts(csv_path: str) -> list[dict]:
         account_name="Test Account",
     )
     return normalized_to_csv_dicts(parsed.transactions)
+
+
+def _write_legs_csv(tmp_path):
+    """Write CSV with transactions for testing legs command."""
+    csv_content = """Activity Date,Process Date,Settle Date,Instrument,Description,Trans Code,Quantity,Price,Amount
+9/1/2025,9/1/2025,9/3/2025,TMC,TMC 10/17/2025 Call $7.00,STO,2,$1.20,$240.00
+9/10/2025,9/10/2025,9/12/2025,TMC,TMC 10/17/2025 Call $7.00,BTC,1,$0.50,($50.00)
+9/15/2025,9/15/2025,9/17/2025,TMC,TMC 10/17/2025 Call $7.00,BTC,1,$0.30,($30.00)
+"""
+    sample_csv = tmp_path / "legs.csv"
+    sample_csv.write_text(csv_content, encoding="utf-8")
+    return sample_csv
+
+
+def test_legs_command_table_output(tmp_path):
+    """Test legs command displays matched legs in table format."""
+    csv_path = _write_legs_csv(tmp_path)
+    runner = CliRunner()
+
+    # Import transactions first
+    import_result = runner.invoke(
+        premiumflow_cli,
+        [
+            "import",
+            "--file",
+            str(csv_path),
+            "--account-name",
+            "Test Account",
+        ],
+    )
+    assert import_result.exit_code == 0
+
+    # Run legs command
+    result = runner.invoke(premiumflow_cli, ["legs", "--account-name", "Test Account"])
+
+    assert result.exit_code == 0
+    output = result.output
+    assert "Matched Legs" in output
+    assert "TMC" in output
+    # Rich truncates columns heavily, so just verify key elements are present
+    assert "7." in output or "7.00" in output  # Strike price
+
+
+def test_legs_command_status_filter(tmp_path):
+    """Test legs command filters by status."""
+    csv_path = _write_legs_csv(tmp_path)
+    runner = CliRunner()
+
+    # Import transactions first
+    import_result = runner.invoke(
+        premiumflow_cli,
+        [
+            "import",
+            "--file",
+            str(csv_path),
+            "--account-name",
+            "Test Account",
+        ],
+    )
+    assert import_result.exit_code == 0
+
+    # Run legs command with open status filter
+    result = runner.invoke(
+        premiumflow_cli, ["legs", "--account-name", "Test Account", "--status", "closed"]
+    )
+
+    assert result.exit_code == 0
+    # The test data has a closed leg (all contracts closed), so should show results
+    assert "Matched Legs" in result.output
+
+
+def test_legs_command_no_transactions(tmp_path):
+    """Test legs command reports when no transactions match filters."""
+    runner = CliRunner()
+
+    result = runner.invoke(premiumflow_cli, ["legs", "--account-name", "Nonexistent Account"])
+
+    assert result.exit_code == 0
+    assert "No transactions found" in result.output
+
+
+def test_legs_command_ticker_filter(tmp_path):
+    """Test legs command filters by ticker."""
+    csv_path = _write_legs_csv(tmp_path)
+    runner = CliRunner()
+
+    # Import transactions first
+    import_result = runner.invoke(
+        premiumflow_cli,
+        [
+            "import",
+            "--file",
+            str(csv_path),
+            "--account-name",
+            "Test Account",
+        ],
+    )
+    assert import_result.exit_code == 0
+
+    # Run legs command with ticker filter
+    result = runner.invoke(
+        premiumflow_cli, ["legs", "--account-name", "Test Account", "--ticker", "TMC"]
+    )
+
+    assert result.exit_code == 0
+    assert "TMC" in result.output
+
+    # Filter by non-existent ticker
+    result2 = runner.invoke(
+        premiumflow_cli, ["legs", "--account-name", "Test Account", "--ticker", "AAPL"]
+    )
+
+    assert result2.exit_code == 0
+    assert "No transactions found" in result2.output or "No legs found" in result2.output
