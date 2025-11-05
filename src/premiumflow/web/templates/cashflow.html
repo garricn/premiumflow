@@ -21,8 +21,8 @@
         <form method="get" class="filters-form">
           <label class="field">
             <span>Account name</span>
-            <select name="account_name">
-              <option value="">All Accounts</option>
+            <select name="account_name" required>
+              <option value="">Select account...</option>
               {% for account in accounts %}
               <option
                 value="{{ account.account_name }}"
@@ -35,7 +35,7 @@
           </label>
           <label class="field">
             <span>Account number</span>
-            <input type="text" name="account_number" value="{{ filters.account_number }}" />
+            <input type="text" name="account_number" value="{{ filters.account_number }}" required />
           </label>
           <label class="field">
             <span>Period</span>

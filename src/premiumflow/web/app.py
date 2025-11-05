@@ -675,13 +675,19 @@ def create_app() -> FastAPI:
         repository: SQLiteRepository = Depends(get_repository),
     ) -> HTMLResponse:
         """Display cash flow and P&L dashboard view."""
-        # Normalize empty strings to None
-        account_name_filter = (account_name or "").strip() or None
-        account_number_filter = (account_number or "").strip() or None
+        # Normalize empty strings
+        account_name_filter = (account_name or "").strip()
+        account_number_filter = (account_number or "").strip()
         ticker_filter = (ticker or "").strip() or None
         period_type = period.strip().lower() if period else "total"
         if period_type not in ("daily", "weekly", "monthly", "total"):
             period_type = "total"
+
+        # Validate required fields
+        if not account_name_filter:
+            raise HTTPException(status_code=400, detail="account_name is required")
+        if not account_number_filter:
+            raise HTTPException(status_code=400, detail="account_number is required")
 
         # Parse dates
         since_date = _parse_date_param(since)
@@ -691,7 +697,7 @@ def create_app() -> FastAPI:
         report = generate_cash_flow_pnl_report(
             repository,
             account_name=account_name_filter,
-            account_number=account_number_filter,
+            account_number=account_number_filter or None,
             period_type=period_type,  # type: ignore[arg-type]
             ticker=ticker_filter,
             since=since_date,
@@ -702,8 +708,8 @@ def create_app() -> FastAPI:
         accounts = _get_unique_accounts(repository)
 
         filters = {
-            "account_name": account_name_filter or "",
-            "account_number": account_number_filter or "",
+            "account_name": account_name_filter,
+            "account_number": account_number_filter,
             "period": period_type,
             "ticker": ticker_filter or "",
             "since": since or "",
@@ -733,13 +739,19 @@ def create_app() -> FastAPI:
         repository: SQLiteRepository = Depends(get_repository),
     ) -> dict[str, object]:
         """API endpoint returning cash flow and P&L report as JSON."""
-        # Normalize empty strings to None
-        account_name_filter = (account_name or "").strip() or None
-        account_number_filter = (account_number or "").strip() or None
+        # Normalize empty strings
+        account_name_filter = (account_name or "").strip()
+        account_number_filter = (account_number or "").strip()
         ticker_filter = (ticker or "").strip() or None
         period_type = period.strip().lower() if period else "total"
         if period_type not in ("daily", "weekly", "monthly", "total"):
             period_type = "total"
+
+        # Validate required fields
+        if not account_name_filter:
+            raise HTTPException(status_code=400, detail="account_name is required")
+        if not account_number_filter:
+            raise HTTPException(status_code=400, detail="account_number is required")
 
         # Parse dates
         since_date = _parse_date_param(since)
@@ -749,7 +761,7 @@ def create_app() -> FastAPI:
         report = generate_cash_flow_pnl_report(
             repository,
             account_name=account_name_filter,
-            account_number=account_number_filter,
+            account_number=account_number_filter or None,
             period_type=period_type,  # type: ignore[arg-type]
             ticker=ticker_filter,
             since=since_date,
