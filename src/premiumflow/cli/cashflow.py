@@ -15,7 +15,10 @@ from rich.console import Console
 from rich.table import Table
 
 from ..persistence import SQLiteRepository
-from ..services.cash_flow import generate_cash_flow_pnl_report
+from ..services.cash_flow import (
+    CashFlowPnlReport,
+    generate_cash_flow_pnl_report,
+)
 from ..services.cli_helpers import format_account_label
 from ..services.display import format_currency
 from ..services.json_serializer import serialize_cash_flow_pnl_report
@@ -31,7 +34,7 @@ def _parse_date(value: DateInput) -> Optional[date]:
     return value.date()
 
 
-def _build_cashflow_table(report) -> Table:
+def _build_cashflow_table(report: CashFlowPnlReport) -> Table:
     """Build a rich.Table for displaying cash flow and P&L metrics."""
     account_label = format_account_label(report.account_name, report.account_number)
     title = f"Cash Flow & P&L Report • {account_label}"
