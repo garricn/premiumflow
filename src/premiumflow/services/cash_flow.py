@@ -183,6 +183,18 @@ def _aggregate_pnl_by_period(
             return False
         return True
 
+    def _lot_overlaps_date_range(opened_at: date) -> bool:
+        """
+        Check if an open lot's lifetime overlaps the date range.
+
+        An open lot overlaps the range if it was opened before or during the range.
+        Since it's open, it's active throughout the range, so we include it if
+        opened_at <= until (or until is None).
+        """
+        if until is not None and opened_at > until:
+            return False
+        return True
+
     # Aggregate realized P&L from closed lots
     # Realized P&L should be attributed to the period when the lot was closed
     # Only include if closed_at is within the date range (if filtering)
@@ -202,12 +214,12 @@ def _aggregate_pnl_by_period(
     # Aggregate unrealized exposure from open lots
     # Unrealized exposure is the credit remaining on open positions
     # We attribute it to the period when each individual lot was opened
-    # Only include if opened_at is within the date range (if filtering)
+    # Include if the lot's lifetime overlaps the date range (opened before or during range)
     for leg in matched_legs:
         for lot in leg.lots:
             if lot.is_open:
-                # Only include if opened within the date range (or no filter)
-                if lot.opened_at and _date_in_range(lot.opened_at):
+                # Include if the lot overlaps the date range (opened <= until, or no filter)
+                if lot.opened_at and _lot_overlaps_date_range(lot.opened_at):
                     period_key, _ = _group_date_to_period_key(lot.opened_at, period_type)
                     if period_key not in period_data:
                         period_data[period_key] = {

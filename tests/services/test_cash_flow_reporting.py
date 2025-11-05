@@ -579,3 +579,46 @@ def test_generate_report_pnl_includes_legs_opened_before_range(tmp_path, reposit
     assert report.totals.realized_pnl > Decimal("0")
     # Should be approximately 400 (600 - 200), minus fees
     assert report.totals.realized_pnl < Decimal("500")
+
+
+def test_generate_report_unrealized_exposure_includes_positions_opened_before_range(
+    tmp_path, repository
+):
+    """Test that unrealized exposure includes positions opened before date range."""
+    _seed_import(
+        tmp_path,
+        csv_name="open_before_range.csv",
+        transactions=[
+            # Position opened before date range, still open
+            _make_transaction(
+                trans_code="STO",
+                action="SELL",
+                quantity=2,
+                price=Decimal("3.00"),
+                amount=Decimal("600.00"),
+                activity_date=date(2025, 9, 25),  # Before range (September)
+            ),
+            # No closing transaction, so position remains open
+        ],
+    )
+
+    report = generate_cash_flow_pnl_report(
+        repository,
+        account_name="Primary Account",
+        account_number="ACCT-1",
+        since=date(2025, 10, 7),  # October - start after opening
+        until=date(2025, 10, 20),
+    )
+
+    # Cash flow should show no transactions (all were before the range)
+    assert report.totals.credits == Decimal("0")
+    assert report.totals.debits == Decimal("0")
+
+    # Unrealized exposure should be included even though position was opened before range
+    # The position is still open during the requested period, so exposure should be included
+    assert report.totals.unrealized_exposure > Decimal("0")
+    # Should be approximately 600 (credit remaining on open positions)
+    assert report.totals.unrealized_exposure < Decimal("700")
+
+    # Realized P&L should be 0 since no positions were closed
+    assert report.totals.realized_pnl == Decimal("0")
