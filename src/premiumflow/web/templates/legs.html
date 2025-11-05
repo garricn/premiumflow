@@ -5,68 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{{ title }} • PremiumFlow Web UI</title>
     <link rel="stylesheet" href="{{ url_for('static', path='site.css') }}" />
-    <style>
-      .leg-card {
-        border: 1px solid #ddd;
-        border-radius: 4px;
-        margin-bottom: 1rem;
-        padding: 1rem;
-        background: #fff;
-      }
-      .leg-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: start;
-        cursor: pointer;
-      }
-      .leg-header:hover {
-        background: #f5f5f5;
-      }
-      .leg-details {
-        display: none;
-        margin-top: 1rem;
-        padding-top: 1rem;
-        border-top: 1px solid #eee;
-      }
-      .leg-details.expanded {
-        display: block;
-      }
-      .leg-summary {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-        gap: 0.5rem;
-        margin-bottom: 1rem;
-      }
-      .leg-summary-item {
-        display: flex;
-        flex-direction: column;
-      }
-      .leg-summary-label {
-        font-size: 0.875rem;
-        color: #666;
-        margin-bottom: 0.25rem;
-      }
-      .leg-summary-value {
-        font-weight: 500;
-      }
-      .lot-list {
-        margin-top: 1rem;
-      }
-      .lot-item {
-        border: 1px solid #eee;
-        border-radius: 4px;
-        padding: 0.75rem;
-        margin-bottom: 0.5rem;
-        background: #fafafa;
-      }
-      .warning-item {
-        background: #fff3cd;
-        border: 1px solid #ffc107;
-        border-radius: 4px;
-        padding: 0.75rem;
-        margin-bottom: 0.5rem;
-      }
-    </style>
   </head>
   <body>
     <header>
