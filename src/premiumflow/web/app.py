@@ -157,10 +157,12 @@ def _get_unique_accounts(repository: SQLiteRepository) -> list[dict[str, str | N
     accounts_map: dict[tuple[str | None, str | None], None] = {}
     for imp in imports:
         accounts_map[(imp.account_name, imp.account_number)] = None
-    return [
-        {"account_name": name, "account_number": number}
-        for (name, number) in sorted(accounts_map.keys())
-    ]
+    # Sort with a key that normalizes None to empty string to avoid TypeError
+    sorted_accounts = sorted(
+        accounts_map.keys(),
+        key=lambda pair: (pair[0] or "", pair[1] or ""),
+    )
+    return [{"account_name": name, "account_number": number} for (name, number) in sorted_accounts]
 
 
 def _parse_account_selection(account_value: str | None) -> tuple[str | None, str | None]:
