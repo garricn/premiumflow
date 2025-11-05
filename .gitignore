@@ -166,3 +166,4 @@ logs/
 
 # MCP Configuration (contains tokens)
 *mcp.json
+.gemini/settings.json
