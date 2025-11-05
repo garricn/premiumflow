@@ -124,6 +124,54 @@ def _lot_overlaps_date_range(opened_at: date, until: Optional[date] = None) -> b
     return True
 
 
+def _clamp_period_to_range(
+    period_key: str,
+    period_type: PeriodType,
+    since: Optional[date],
+) -> str:
+    """
+    Clamp a period_key to the first period in the date range if it's before the range.
+
+    If the period represents a date before `since`, return the period_key for
+    the first period in the range. Otherwise, return the original period_key.
+
+    Parameters
+    ----------
+    period_key
+        The period key to potentially clamp
+    period_type
+        The period type (daily, weekly, monthly, total)
+    since
+        The start date of the range (if None, no clamping needed)
+
+    Returns
+    -------
+    str
+        The clamped period_key if needed, or the original period_key
+    """
+    if since is None or period_type == "total":
+        return period_key
+
+    # Get the period key for the start date
+    first_period_key, _ = _group_date_to_period_key(since, period_type)
+
+    # Compare period keys to see if we need to clamp
+    if period_type == "daily":
+        # Simple string comparison works for ISO dates
+        if period_key < first_period_key:
+            return first_period_key
+    elif period_type == "weekly":
+        # Compare ISO week strings (YYYY-Www format)
+        if period_key < first_period_key:
+            return first_period_key
+    elif period_type == "monthly":
+        # Compare YYYY-MM format
+        if period_key < first_period_key:
+            return first_period_key
+
+    return period_key
+
+
 def _aggregate_cash_flow_by_period(
     transactions: List[NormalizedOptionTransaction],
     period_type: PeriodType,
@@ -160,6 +208,7 @@ def _collect_pnl_period_keys(
     *,
     since: Optional[date] = None,
     until: Optional[date] = None,
+    clamp_periods_to_range: bool = True,
 ) -> set[str]:
     """
     Collect all period keys that will be needed for P&L aggregation.
@@ -167,6 +216,12 @@ def _collect_pnl_period_keys(
     Collects period keys from transactions and matched_legs (from closed lots'
     closed_at dates and open lots' opened_at dates) to ensure all periods are
     initialized upfront.
+
+    Parameters
+    ----------
+    clamp_periods_to_range
+        If True, clamp unrealized exposure periods to the first period in the
+        range when positions were opened before the range start.
     """
     all_period_keys: set[str] = set()
 
@@ -187,6 +242,9 @@ def _collect_pnl_period_keys(
             elif lot.is_open:
                 if lot.opened_at and _lot_overlaps_date_range(lot.opened_at, until):
                     period_key, _ = _group_date_to_period_key(lot.opened_at, period_type)
+                    # Clamp period if needed
+                    if clamp_periods_to_range:
+                        period_key = _clamp_period_to_range(period_key, period_type, since)
                     all_period_keys.add(period_key)
 
     return all_period_keys
@@ -219,7 +277,9 @@ def _aggregate_unrealized_exposure(
     period_type: PeriodType,
     period_data: Dict[str, Dict[str, Decimal]],
     *,
+    since: Optional[date] = None,
     until: Optional[date] = None,
+    clamp_periods_to_range: bool = True,
 ) -> None:
     """
     Aggregate unrealized exposure from open lots into period_data.
@@ -227,12 +287,21 @@ def _aggregate_unrealized_exposure(
     Unrealized exposure is attributed to the period when each individual lot
     was opened. Includes lots whose lifetime overlaps the date range (opened
     before or during the range).
+
+    Parameters
+    ----------
+    clamp_periods_to_range
+        If True, clamp unrealized exposure periods to the first period in the
+        range when positions were opened before the range start.
     """
     for leg in matched_legs:
         for lot in leg.lots:
             if lot.is_open:
                 if lot.opened_at and _lot_overlaps_date_range(lot.opened_at, until):
                     period_key, _ = _group_date_to_period_key(lot.opened_at, period_type)
+                    # Clamp period if needed
+                    if clamp_periods_to_range:
+                        period_key = _clamp_period_to_range(period_key, period_type, since)
                     period_data[period_key]["unrealized_exposure"] += lot.credit_remaining
 
 
@@ -243,6 +312,7 @@ def _aggregate_pnl_by_period(
     *,
     since: Optional[date] = None,
     until: Optional[date] = None,
+    clamp_periods_to_range: bool = True,
 ) -> Dict[str, Dict[str, Decimal]]:
     """
     Aggregate realized P&L and unrealized exposure by time period.
@@ -259,6 +329,9 @@ def _aggregate_pnl_by_period(
         Optional start date filter - only include P&L within this range
     until
         Optional end date filter - only include P&L within this range
+    clamp_periods_to_range
+        If True, clamp unrealized exposure periods to the first period in the
+        range when positions were opened before the range start.
 
     Returns
     -------
@@ -269,7 +342,12 @@ def _aggregate_pnl_by_period(
     # Pre-populate period_data with all relevant period keys from both
     # transactions and matched_legs to ensure all periods are initialized upfront
     all_period_keys = _collect_pnl_period_keys(
-        matched_legs, transactions, period_type, since=since, until=until
+        matched_legs,
+        transactions,
+        period_type,
+        since=since,
+        until=until,
+        clamp_periods_to_range=clamp_periods_to_range,
     )
 
     # Initialize all periods upfront
@@ -284,7 +362,14 @@ def _aggregate_pnl_by_period(
     _aggregate_realized_pnl(matched_legs, period_type, period_data, since=since, until=until)
 
     # Aggregate unrealized exposure from open lots
-    _aggregate_unrealized_exposure(matched_legs, period_type, period_data, until=until)
+    _aggregate_unrealized_exposure(
+        matched_legs,
+        period_type,
+        period_data,
+        since=since,
+        until=until,
+        clamp_periods_to_range=clamp_periods_to_range,
+    )
 
     return period_data
 
@@ -449,6 +534,7 @@ def generate_cash_flow_pnl_report(
     ticker: Optional[str] = None,
     since: Optional[date] = None,
     until: Optional[date] = None,
+    clamp_periods_to_range: bool = True,
 ) -> CashFlowPnlReport:
     """
     Generate account-level cash flow and P&L report with time-based grouping.
@@ -469,6 +555,12 @@ def generate_cash_flow_pnl_report(
         Optional start date for filtering
     until
         Optional end date for filtering
+    clamp_periods_to_range
+        If True (default), clamp unrealized exposure periods to the first period
+        in the range when positions were opened before the range start. This
+        ensures that reports only show periods within the requested date range.
+        Set to False to show all periods with relevant data, including periods
+        before the range start for unrealized exposure.
 
     Returns
     -------
@@ -495,7 +587,12 @@ def generate_cash_flow_pnl_report(
     # Aggregate cash flow and P&L by period
     cash_flow_by_period = _aggregate_cash_flow_by_period(filtered_txns, period_type)
     pnl_by_period = _aggregate_pnl_by_period(
-        matched_legs, filtered_txns, period_type, since=since, until=until
+        matched_legs,
+        filtered_txns,
+        period_type,
+        since=since,
+        until=until,
+        clamp_periods_to_range=clamp_periods_to_range,
     )
 
     # Build period metrics and calculate totals

@@ -622,3 +622,74 @@ def test_generate_report_unrealized_exposure_includes_positions_opened_before_ra
 
     # Realized P&L should be 0 since no positions were closed
     assert report.totals.realized_pnl == Decimal("0")
+
+
+def test_generate_report_clamps_periods_to_range(tmp_path, repository):
+    """Test that periods are clamped to the date range when clamp_periods_to_range=True."""
+    _seed_import(
+        tmp_path,
+        csv_name="clamp_test.csv",
+        transactions=[
+            # Position opened in September, still open
+            _make_transaction(
+                trans_code="STO",
+                action="SELL",
+                quantity=2,
+                price=Decimal("3.00"),
+                amount=Decimal("600.00"),
+                activity_date=date(2025, 9, 15),  # September
+            ),
+            # Transaction in October
+            _make_transaction(
+                trans_code="STO",
+                action="SELL",
+                quantity=1,
+                price=Decimal("2.00"),
+                amount=Decimal("200.00"),
+                activity_date=date(2025, 10, 10),  # October
+            ),
+        ],
+    )
+
+    # With clamping enabled (default) - should only show October periods
+    report_clamped = generate_cash_flow_pnl_report(
+        repository,
+        account_name="Primary Account",
+        account_number="ACCT-1",
+        period_type="monthly",
+        since=date(2025, 10, 1),  # October only
+        until=date(2025, 10, 31),
+        clamp_periods_to_range=True,
+    )
+
+    # Should only have October period (September exposure clamped to October)
+    period_keys = [p.period_key for p in report_clamped.periods]
+    assert "2025-09" not in period_keys  # September period should not appear
+    assert "2025-10" in period_keys  # October period should appear
+
+    # Unrealized exposure should be in October period (clamped)
+    october_period = next(p for p in report_clamped.periods if p.period_key == "2025-10")
+    assert october_period.unrealized_exposure > Decimal("0")
+
+    # With clamping disabled - should show both September and October periods
+    report_unclamped = generate_cash_flow_pnl_report(
+        repository,
+        account_name="Primary Account",
+        account_number="ACCT-1",
+        period_type="monthly",
+        since=date(2025, 10, 1),
+        until=date(2025, 10, 31),
+        clamp_periods_to_range=False,
+    )
+
+    # Should have both September and October periods
+    period_keys_unclamped = [p.period_key for p in report_unclamped.periods]
+    assert "2025-09" in period_keys_unclamped  # September period should appear
+    assert "2025-10" in period_keys_unclamped  # October period should appear
+
+    # Unrealized exposure should be in September period (not clamped)
+    september_period = next(p for p in report_unclamped.periods if p.period_key == "2025-09")
+    assert september_period.unrealized_exposure > Decimal("0")
+
+    # Totals should be the same in both cases
+    assert report_clamped.totals.unrealized_exposure == report_unclamped.totals.unrealized_exposure
