@@ -163,6 +163,17 @@ def _get_unique_accounts(repository: SQLiteRepository) -> list[dict[str, str | N
     ]
 
 
+def _parse_account_selection(account_value: str | None) -> tuple[str | None, str | None]:
+    """Parse account selection from dropdown value (format: 'name|number' or just 'name')."""
+    if not account_value:
+        return (None, None)
+    # Format is "account_name|account_number" or just "account_name" if no number
+    parts = account_value.split("|", 1)
+    account_name = parts[0] if parts[0] else None
+    account_number = parts[1] if len(parts) > 1 and parts[1] else None
+    return (account_name, account_number)
+
+
 def _parse_date_param(value: str | None) -> date | None:
     """Parse date query parameter from YYYY-MM-DD string."""
     if not value:
@@ -666,8 +677,7 @@ def create_app() -> FastAPI:
     @app.get("/cashflow", response_class=HTMLResponse, tags=["ui"])
     async def cashflow_view(
         request: Request,
-        account_name: str | None = Query(default=None),
-        account_number: str | None = Query(default=None),
+        account: str | None = Query(default=None),
         period: str = Query(default="total"),
         ticker: str | None = Query(default=None),
         since: str | None = Query(default=None),
@@ -675,9 +685,8 @@ def create_app() -> FastAPI:
         repository: SQLiteRepository = Depends(get_repository),
     ) -> HTMLResponse:
         """Display cash flow and P&L dashboard view."""
-        # Normalize empty strings
-        account_name_filter = (account_name or "").strip()
-        account_number_filter = (account_number or "").strip()
+        # Parse account selection
+        account_name_filter, account_number_filter = _parse_account_selection(account)
         ticker_filter = (ticker or "").strip() or None
         period_type = period.strip().lower() if period else "total"
         if period_type not in ("daily", "weekly", "monthly", "total"):
@@ -686,17 +695,29 @@ def create_app() -> FastAPI:
         # Get unique accounts for dropdown
         accounts = _get_unique_accounts(repository)
 
+        # Default to first account if no account is selected and accounts exist
+        if not account_name_filter and accounts:
+            first_account = accounts[0]
+            account_name_filter = first_account["account_name"]
+            account_number_filter = first_account["account_number"]
+
+        # Build account value for form (format: "name|number" or just "name")
+        selected_account = None
+        if account_name_filter:
+            if account_number_filter:
+                selected_account = f"{account_name_filter}|{account_number_filter}"
+            else:
+                selected_account = account_name_filter
+
         filters = {
-            "account_name": account_name_filter,
-            "account_number": account_number_filter,
+            "account": selected_account or "",
             "period": period_type,
             "ticker": ticker_filter or "",
             "since": since or "",
             "until": until or "",
         }
 
-        # Only validate and generate report if account fields are provided
-        # On initial page load, show empty form
+        # Generate report if account is available
         report = None
         if account_name_filter and account_number_filter:
             # Parse dates
@@ -728,8 +749,7 @@ def create_app() -> FastAPI:
 
     @app.get("/api/cashflow", tags=["api"])
     async def cashflow_api(
-        account_name: str | None = Query(default=None),
-        account_number: str | None = Query(default=None),
+        account: str | None = Query(default=None),
         period: str = Query(default="total"),
         ticker: str | None = Query(default=None),
         since: str | None = Query(default=None),
@@ -737,9 +757,8 @@ def create_app() -> FastAPI:
         repository: SQLiteRepository = Depends(get_repository),
     ) -> dict[str, object]:
         """API endpoint returning cash flow and P&L report as JSON."""
-        # Normalize empty strings
-        account_name_filter = (account_name or "").strip()
-        account_number_filter = (account_number or "").strip()
+        # Parse account selection
+        account_name_filter, account_number_filter = _parse_account_selection(account)
         ticker_filter = (ticker or "").strip() or None
         period_type = period.strip().lower() if period else "total"
         if period_type not in ("daily", "weekly", "monthly", "total"):
@@ -747,9 +766,11 @@ def create_app() -> FastAPI:
 
         # Validate required fields
         if not account_name_filter:
-            raise HTTPException(status_code=400, detail="account_name is required")
+            raise HTTPException(status_code=400, detail="account is required")
         if not account_number_filter:
-            raise HTTPException(status_code=400, detail="account_number is required")
+            raise HTTPException(
+                status_code=400, detail="account number is required in account selection"
+            )
 
         # Parse dates
         since_date = _parse_date_param(since)

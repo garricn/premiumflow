@@ -596,7 +596,7 @@ def test_cashflow_view_renders_template(client_with_storage, tmp_path):
 
     response = client_with_storage.get(
         "/cashflow",
-        params={"account_name": "Cashflow Account", "account_number": "CF-1"},
+        params={"account": "Cashflow Account|CF-1"},
     )
     assert response.status_code == 200
     assert "Cash Flow" in response.text and "P&L" in response.text
@@ -623,7 +623,7 @@ def test_cashflow_view_filters_by_account(client_with_storage, tmp_path):
 
     response = client_with_storage.get(
         "/cashflow",
-        params={"account_name": "Filter Account", "account_number": "FILTER-1"},
+        params={"account": "Filter Account|FILTER-1"},
     )
     assert response.status_code == 200
     assert "Filter Account" in response.text
@@ -653,8 +653,7 @@ def test_cashflow_view_filters_by_period(client_with_storage, tmp_path):
     response = client_with_storage.get(
         "/cashflow",
         params={
-            "account_name": "Period Account",
-            "account_number": "PERIOD-1",
+            "account": "Period Account|PERIOD-1",
             "period": "monthly",
         },
     )
@@ -686,8 +685,7 @@ def test_cashflow_view_filters_by_date_range(client_with_storage, tmp_path):
     response = client_with_storage.get(
         "/cashflow",
         params={
-            "account_name": "Date Account",
-            "account_number": "DATE-1",
+            "account": "Date Account|DATE-1",
             "since": "2024-09-01",
             "until": "2024-09-10",
         },
@@ -697,17 +695,17 @@ def test_cashflow_view_filters_by_date_range(client_with_storage, tmp_path):
 
 
 def test_cashflow_view_empty_state_no_account(client_with_storage):
-    """Cashflow view shows empty state when no account is selected."""
+    """Cashflow view shows empty state when no accounts exist."""
     response = client_with_storage.get("/cashflow")
     assert response.status_code == 200
-    assert "Select an account" in response.text
+    assert "No accounts found" in response.text
 
 
 def test_cashflow_view_empty_state_no_transactions(client_with_storage):
     """Cashflow view shows empty state when no transactions exist for account."""
     response = client_with_storage.get(
         "/cashflow",
-        params={"account_name": "Empty Account", "account_number": "EMPTY-1"},
+        params={"account": "Empty Account|EMPTY-1"},
     )
     assert response.status_code == 200
     assert "No transactions found" in response.text
@@ -736,7 +734,7 @@ def test_cashflow_api_returns_json(client_with_storage, tmp_path):
 
     response = client_with_storage.get(
         "/api/cashflow",
-        params={"account_name": "API Account", "account_number": "API-1"},
+        params={"account": "API Account|API-1"},
     )
     assert response.status_code == 200
     data = response.json()
@@ -767,8 +765,7 @@ def test_cashflow_api_filters_work(client_with_storage, tmp_path):
     response = client_with_storage.get(
         "/api/cashflow",
         params={
-            "account_name": "API Filter Account",
-            "account_number": "API-FILTER-1",
+            "account": "API Filter Account|API-FILTER-1",
             "ticker": "TSLA",
             "period": "total",
         },
@@ -780,22 +777,49 @@ def test_cashflow_api_filters_work(client_with_storage, tmp_path):
     assert "totals" in data
 
 
-def test_cashflow_view_loads_without_account(client_with_storage):
-    """Cashflow view loads without account parameters, shows empty state."""
+def test_cashflow_view_defaults_to_first_account(client_with_storage, tmp_path):
+    """Cashflow view defaults to first account when no account is selected."""
+    _persist_import(
+        tmp_path,
+        account_name="First Account",
+        account_number="FIRST-1",
+        csv_name="first.csv",
+        transactions=[
+            _make_transaction(
+                instrument="TSLA",
+                amount=Decimal("100.00"),
+            ),
+        ],
+    )
+    _persist_import(
+        tmp_path,
+        account_name="Second Account",
+        account_number="SECOND-1",
+        csv_name="second.csv",
+        transactions=[
+            _make_transaction(
+                instrument="AAPL",
+                amount=Decimal("200.00"),
+            ),
+        ],
+    )
+
+    # Load without account parameter - should default to first account
     response = client_with_storage.get("/cashflow")
     assert response.status_code == 200
-    assert "Select an account" in response.text
+    assert "First Account" in response.text
+    assert "Cash Flow" in response.text and "P&L" in response.text
 
 
-def test_cashflow_api_requires_account_name(client_with_storage):
-    """Cashflow API requires account_name parameter."""
+def test_cashflow_api_requires_account(client_with_storage):
+    """Cashflow API requires account parameter."""
     response = client_with_storage.get("/api/cashflow")
     assert response.status_code == 400
-    assert "account_name is required" in response.text
+    assert "account is required" in response.text
 
 
 def test_cashflow_api_requires_account_number(client_with_storage, tmp_path):
-    """Cashflow API requires account_number parameter."""
+    """Cashflow API requires account_number in account selection."""
     _persist_import(
         tmp_path,
         account_name="Test Account",
@@ -804,6 +828,7 @@ def test_cashflow_api_requires_account_number(client_with_storage, tmp_path):
         transactions=[_make_transaction(instrument="TSLA", amount=Decimal("100.00"))],
     )
 
-    response = client_with_storage.get("/api/cashflow", params={"account_name": "Test Account"})
+    # Test with account name only (no account number)
+    response = client_with_storage.get("/api/cashflow", params={"account": "Test Account"})
     assert response.status_code == 400
-    assert "account_number is required" in response.text
+    assert "account number is required" in response.text
