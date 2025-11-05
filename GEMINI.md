@@ -63,8 +63,8 @@ uv run pytest
 
 ## Development Conventions
 
-See [docs/guidelines/development.md](docs/guidelines/development.md) for comprehensive development guidelines including coding style, testing, and project structure.
-See [docs/guidelines/code-review.md](docs/guidelines/code-review.md) for code review process and GitHub commands.
-See [docs/guidelines/commit-pr.md](docs/guidelines/commit-pr.md) for commit and PR guidelines.
-See [docs/guidelines/web-ui.md](docs/guidelines/web-ui.md) for comprehensive guidelines on creating new HTML pages and templates.
-See [docs/guidelines/cli.md](docs/guidelines/cli.md) for guidelines on creating CLI commands and separating UI logic from business logic.
+See [docs/developers/development.md](docs/developers/development.md) for comprehensive development guidelines including coding style, testing, and project structure.
+See [docs/developers/code-review.md](docs/developers/code-review.md) for code review process and GitHub commands.
+See [docs/developers/commit-pr.md](docs/developers/commit-pr.md) for commit and PR guidelines.
+See [docs/developers/web-ui.md](docs/developers/web-ui.md) for comprehensive guidelines on creating new HTML pages and templates.
+See [docs/developers/cli.md](docs/developers/cli.md) for guidelines on creating CLI commands and separating UI logic from business logic.
