@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 import sqlite3
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Literal
@@ -22,8 +22,10 @@ from ..persistence import (
     get_storage,
     store_import_result,
 )
+from ..services.cash_flow import generate_cash_flow_pnl_report
 from ..services.cli_helpers import format_account_label
-from ..services.json_serializer import serialize_leg
+from ..services.display import format_currency
+from ..services.json_serializer import serialize_cash_flow_pnl_report, serialize_leg
 from ..services.leg_matching import (
     _stored_to_normalized,
     group_fills_by_account,
@@ -147,6 +149,28 @@ def _fetch_matched_legs(
         legs_data = [serialize_leg(leg) for leg in legs_list]
 
     return legs_data, warnings
+
+
+def _get_unique_accounts(repository: SQLiteRepository) -> list[dict[str, str | None]]:
+    """Get unique account name/number pairs from existing imports."""
+    imports = repository.list_imports()
+    accounts_map: dict[tuple[str | None, str | None], None] = {}
+    for imp in imports:
+        accounts_map[(imp.account_name, imp.account_number)] = None
+    return [
+        {"account_name": name, "account_number": number}
+        for (name, number) in sorted(accounts_map.keys())
+    ]
+
+
+def _parse_date_param(value: str | None) -> date | None:
+    """Parse date query parameter from YYYY-MM-DD string."""
+    if not value:
+        return None
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date()
+    except ValueError:
+        return None
 
 
 def create_app() -> FastAPI:
@@ -638,5 +662,100 @@ def create_app() -> FastAPI:
             status=status,
         )
         return {"legs": legs_data, "warnings": warnings}
+
+    @app.get("/cashflow", response_class=HTMLResponse, tags=["ui"])
+    async def cashflow_view(
+        request: Request,
+        account_name: str | None = Query(default=None),
+        account_number: str | None = Query(default=None),
+        period: str = Query(default="total"),
+        ticker: str | None = Query(default=None),
+        since: str | None = Query(default=None),
+        until: str | None = Query(default=None),
+        repository: SQLiteRepository = Depends(get_repository),
+    ) -> HTMLResponse:
+        """Display cash flow and P&L dashboard view."""
+        # Normalize empty strings to None
+        account_name_filter = (account_name or "").strip() or None
+        account_number_filter = (account_number or "").strip() or None
+        ticker_filter = (ticker or "").strip() or None
+        period_type = period.strip().lower() if period else "total"
+        if period_type not in ("daily", "weekly", "monthly", "total"):
+            period_type = "total"
+
+        # Parse dates
+        since_date = _parse_date_param(since)
+        until_date = _parse_date_param(until)
+
+        # Generate report
+        report = generate_cash_flow_pnl_report(
+            repository,
+            account_name=account_name_filter,
+            account_number=account_number_filter,
+            period_type=period_type,  # type: ignore[arg-type]
+            ticker=ticker_filter,
+            since=since_date,
+            until=until_date,
+        )
+
+        # Get unique accounts for dropdown
+        accounts = _get_unique_accounts(repository)
+
+        filters = {
+            "account_name": account_name_filter or "",
+            "account_number": account_number_filter or "",
+            "period": period_type,
+            "ticker": ticker_filter or "",
+            "since": since or "",
+            "until": until or "",
+        }
+
+        return templates.TemplateResponse(
+            request=request,
+            name="cashflow.html",
+            context={
+                "title": "Cash Flow & P&L",
+                "report": report,
+                "accounts": accounts,
+                "filters": filters,
+                "format_currency": format_currency,
+            },
+        )
+
+    @app.get("/api/cashflow", tags=["api"])
+    async def cashflow_api(
+        account_name: str | None = Query(default=None),
+        account_number: str | None = Query(default=None),
+        period: str = Query(default="total"),
+        ticker: str | None = Query(default=None),
+        since: str | None = Query(default=None),
+        until: str | None = Query(default=None),
+        repository: SQLiteRepository = Depends(get_repository),
+    ) -> dict[str, object]:
+        """API endpoint returning cash flow and P&L report as JSON."""
+        # Normalize empty strings to None
+        account_name_filter = (account_name or "").strip() or None
+        account_number_filter = (account_number or "").strip() or None
+        ticker_filter = (ticker or "").strip() or None
+        period_type = period.strip().lower() if period else "total"
+        if period_type not in ("daily", "weekly", "monthly", "total"):
+            period_type = "total"
+
+        # Parse dates
+        since_date = _parse_date_param(since)
+        until_date = _parse_date_param(until)
+
+        # Generate report
+        report = generate_cash_flow_pnl_report(
+            repository,
+            account_name=account_name_filter,
+            account_number=account_number_filter,
+            period_type=period_type,  # type: ignore[arg-type]
+            ticker=ticker_filter,
+            since=since_date,
+            until=until_date,
+        )
+
+        return serialize_cash_flow_pnl_report(report)
 
     return app

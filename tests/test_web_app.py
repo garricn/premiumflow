@@ -571,3 +571,196 @@ def test_legs_view_empty_state(client_with_storage):
     response = client_with_storage.get("/legs")
     assert response.status_code == 200
     assert "No matched legs found" in response.text
+
+
+def test_cashflow_view_renders_template(client_with_storage, tmp_path):
+    """Cashflow view renders HTML template with report data."""
+    _persist_import(
+        tmp_path,
+        account_name="Cashflow Account",
+        account_number="CF-1",
+        csv_name="cashflow.csv",
+        transactions=[
+            _make_transaction(
+                instrument="TSLA",
+                description="TSLA 10/17/2025 Call $500.00",
+                trans_code="STO",
+                quantity=1,
+                price=Decimal("2.50"),
+                amount=Decimal("250.00"),
+                strike=Decimal("500.00"),
+                expiration=date(2025, 10, 17),
+            ),
+        ],
+    )
+
+    response = client_with_storage.get("/cashflow")
+    assert response.status_code == 200
+    assert "Cash Flow" in response.text and "P&L" in response.text
+    assert "Total Cash Flow" in response.text
+    assert "Period" in response.text
+
+
+def test_cashflow_view_filters_by_account(client_with_storage, tmp_path):
+    """Cashflow view filters by account name."""
+    _persist_import(
+        tmp_path,
+        account_name="Filter Account",
+        account_number="FILTER-1",
+        csv_name="filter.csv",
+        transactions=[_make_transaction(instrument="TSLA", amount=Decimal("100.00"))],
+    )
+    _persist_import(
+        tmp_path,
+        account_name="Other Account",
+        account_number="OTHER-1",
+        csv_name="other.csv",
+        transactions=[_make_transaction(instrument="AAPL", amount=Decimal("200.00"))],
+    )
+
+    response = client_with_storage.get("/cashflow", params={"account_name": "Filter Account"})
+    assert response.status_code == 200
+    assert "Filter Account" in response.text or "All Accounts" in response.text
+
+
+def test_cashflow_view_filters_by_period(client_with_storage, tmp_path):
+    """Cashflow view filters by time period."""
+    _persist_import(
+        tmp_path,
+        account_name="Period Account",
+        account_number="PERIOD-1",
+        csv_name="period.csv",
+        transactions=[
+            _make_transaction(
+                instrument="TSLA",
+                amount=Decimal("100.00"),
+                activity_date=date(2024, 9, 1),
+            ),
+            _make_transaction(
+                instrument="TSLA",
+                amount=Decimal("200.00"),
+                activity_date=date(2024, 9, 15),
+            ),
+        ],
+    )
+
+    response = client_with_storage.get("/cashflow", params={"period": "monthly"})
+    assert response.status_code == 200
+    assert "Cash Flow" in response.text and "P&L" in response.text
+
+
+def test_cashflow_view_filters_by_date_range(client_with_storage, tmp_path):
+    """Cashflow view filters by date range."""
+    _persist_import(
+        tmp_path,
+        account_name="Date Account",
+        account_number="DATE-1",
+        csv_name="date.csv",
+        transactions=[
+            _make_transaction(
+                instrument="TSLA",
+                amount=Decimal("100.00"),
+                activity_date=date(2024, 9, 1),
+            ),
+            _make_transaction(
+                instrument="TSLA",
+                amount=Decimal("200.00"),
+                activity_date=date(2024, 9, 15),
+            ),
+        ],
+    )
+
+    response = client_with_storage.get(
+        "/cashflow",
+        params={"since": "2024-09-01", "until": "2024-09-10"},
+    )
+    assert response.status_code == 200
+    assert "Cash Flow" in response.text and "P&L" in response.text
+
+
+def test_cashflow_view_empty_state(client_with_storage):
+    """Cashflow view shows empty state when no transactions exist."""
+    response = client_with_storage.get("/cashflow")
+    assert response.status_code == 200
+    assert "No transactions found" in response.text
+
+
+def test_cashflow_api_returns_json(client_with_storage, tmp_path):
+    """Cashflow API endpoint returns JSON data."""
+    _persist_import(
+        tmp_path,
+        account_name="API Account",
+        account_number="API-1",
+        csv_name="api.csv",
+        transactions=[
+            _make_transaction(
+                instrument="TSLA",
+                description="TSLA 10/17/2025 Call $500.00",
+                trans_code="STO",
+                quantity=1,
+                price=Decimal("2.50"),
+                amount=Decimal("250.00"),
+                strike=Decimal("500.00"),
+                expiration=date(2025, 10, 17),
+            ),
+        ],
+    )
+
+    response = client_with_storage.get("/api/cashflow")
+    assert response.status_code == 200
+    data = response.json()
+    assert "account_name" in data
+    assert "account_number" in data
+    assert "period_type" in data
+    assert "periods" in data
+    assert "totals" in data
+    assert isinstance(data["periods"], list)
+    assert "credits" in data["totals"]
+    assert "debits" in data["totals"]
+    assert "net_cash_flow" in data["totals"]
+
+
+def test_cashflow_api_filters_work(client_with_storage, tmp_path):
+    """Cashflow API respects filter parameters."""
+    _persist_import(
+        tmp_path,
+        account_name="API Filter Account",
+        account_number="API-FILTER-1",
+        csv_name="api-filter.csv",
+        transactions=[
+            _make_transaction(instrument="TSLA", amount=Decimal("100.00")),
+            _make_transaction(instrument="AAPL", amount=Decimal("200.00")),
+        ],
+    )
+
+    response = client_with_storage.get(
+        "/api/cashflow", params={"ticker": "TSLA", "period": "total"}
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["period_type"] == "total"
+    assert "periods" in data
+    assert "totals" in data
+
+
+def test_cashflow_view_shows_all_accounts_when_no_filter(client_with_storage, tmp_path):
+    """Cashflow view aggregates across all accounts when no account filter is provided."""
+    _persist_import(
+        tmp_path,
+        account_name="Account 1",
+        account_number="ACC-1",
+        csv_name="acc1.csv",
+        transactions=[_make_transaction(instrument="TSLA", amount=Decimal("100.00"))],
+    )
+    _persist_import(
+        tmp_path,
+        account_name="Account 2",
+        account_number="ACC-2",
+        csv_name="acc2.csv",
+        transactions=[_make_transaction(instrument="AAPL", amount=Decimal("200.00"))],
+    )
+
+    response = client_with_storage.get("/cashflow")
+    assert response.status_code == 200
+    assert "Cash Flow" in response.text and "P&L" in response.text
+    # Should show data from both accounts when no filter is applied

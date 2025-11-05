@@ -165,6 +165,42 @@ h1 {
   background-color: #f9fafb;
 }
 
+.data-table .text-right {
+  text-align: right;
+}
+
+.data-table .totals-row {
+  background-color: #f3f4f6;
+  font-weight: 600;
+}
+
+.summary-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.summary-card {
+  padding: 1.5rem;
+  border-radius: 0.5rem;
+  background-color: #ffffff;
+  border: 1px solid #e5e7eb;
+}
+
+.summary-card-label {
+  font-size: 0.875rem;
+  color: #6b7280;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.summary-card-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #1f2937;
+}
+
 .pager {
   display: flex;
   align-items: center;
@@ -500,5 +536,22 @@ h1 {
     background-color: #78350f;
     border-color: #f59e0b;
     color: #fef3c7;
+  }
+
+  .summary-card {
+    background-color: #1f2937;
+    border-color: #4b5563;
+  }
+
+  .summary-card-label {
+    color: #9ca3af;
+  }
+
+  .summary-card-value {
+    color: #f9fafb;
+  }
+
+  .data-table .totals-row {
+    background-color: #374151;
   }
 }

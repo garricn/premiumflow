@@ -65,8 +65,10 @@ def create_target_label(target_percents: List[Decimal]) -> str:
     return "Target (" + ", ".join(format_percent(value) for value in target_percents) + ")"
 
 
-def format_account_label(account_name: str, account_number: Optional[str]) -> str:
+def format_account_label(account_name: Optional[str], account_number: Optional[str]) -> str:
     """Format account name with optional account number for display."""
+    if not account_name:
+        return "All Accounts"
     if not account_number:
         return account_name
     return f"{account_name} ({account_number})"

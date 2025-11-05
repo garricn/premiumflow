@@ -64,7 +64,7 @@ class PeriodMetrics:
 class CashFlowPnlReport:
     """Complete account-level cash flow and P&L report."""
 
-    account_name: str
+    account_name: Optional[str]
     account_number: Optional[str]
     period_type: PeriodType
     periods: List[PeriodMetrics]
@@ -445,7 +445,7 @@ def _aggregate_pnl_by_period(
 
 
 def _create_empty_report(
-    account_name: str,
+    account_name: Optional[str],
     account_number: Optional[str],
     period_type: PeriodType,
 ) -> CashFlowPnlReport:
@@ -473,7 +473,7 @@ def _create_empty_report(
 def _fetch_and_normalize_transactions(
     repository: SQLiteRepository,
     *,
-    account_name: str,
+    account_name: Optional[str] = None,
     account_number: Optional[str] = None,
     ticker: Optional[str] = None,
 ) -> List[NormalizedOptionTransaction]:
@@ -618,7 +618,7 @@ def _calculate_totals(periods: List[PeriodMetrics]) -> PeriodMetrics:
 def generate_cash_flow_pnl_report(
     repository: SQLiteRepository,
     *,
-    account_name: str,
+    account_name: Optional[str] = None,
     account_number: Optional[str] = None,
     period_type: PeriodType = "total",
     ticker: Optional[str] = None,
@@ -634,9 +634,9 @@ def generate_cash_flow_pnl_report(
     repository
         SQLite repository for fetching transactions
     account_name
-        Account name to filter by
+        Optional account name to filter by. If None, aggregates across all accounts.
     account_number
-        Optional account number for disambiguation
+        Optional account number for disambiguation. Only used when account_name is provided.
     period_type
         Time period for grouping: "daily", "weekly", "monthly", or "total"
     ticker
