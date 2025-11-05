@@ -4,6 +4,7 @@ from decimal import Decimal
 from typing import Any, Dict, List, Optional, Sequence
 
 from ..core.parser import NormalizedOptionTransaction
+from .cash_flow import CashFlowPnlReport, PeriodMetrics
 from .display import ensure_display_name
 from .leg_matching import LotFillPortion, MatchedLeg, MatchedLegLot
 
@@ -227,4 +228,31 @@ def serialize_leg(leg: MatchedLeg) -> Dict[str, Any]:
         "open_fees": _decimal_to_string(leg.open_fees),
         "close_fees": _decimal_to_string(leg.close_fees),
         "resolution": leg.resolution(),
+    }
+
+
+def serialize_period_metrics(metrics: PeriodMetrics) -> Dict[str, Any]:
+    """Serialize a PeriodMetrics object to JSON-friendly structure."""
+    return {
+        "period_key": metrics.period_key,
+        "period_label": metrics.period_label,
+        "credits": _decimal_to_string(metrics.credits),
+        "debits": _decimal_to_string(metrics.debits),
+        "net_cash_flow": _decimal_to_string(metrics.net_cash_flow),
+        "gross_realized_pnl": _decimal_to_string(metrics.gross_realized_pnl),
+        "net_realized_pnl": _decimal_to_string(metrics.net_realized_pnl),
+        "unrealized_exposure": _decimal_to_string(metrics.unrealized_exposure),
+        "gross_pnl": _decimal_to_string(metrics.gross_pnl),
+        "net_pnl": _decimal_to_string(metrics.net_pnl),
+    }
+
+
+def serialize_cash_flow_pnl_report(report: CashFlowPnlReport) -> Dict[str, Any]:
+    """Serialize a CashFlowPnlReport object to JSON-friendly structure."""
+    return {
+        "account_name": report.account_name,
+        "account_number": report.account_number,
+        "period_type": report.period_type,
+        "periods": [serialize_period_metrics(p) for p in report.periods],
+        "totals": serialize_period_metrics(report.totals),
     }

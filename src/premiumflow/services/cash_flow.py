@@ -55,9 +55,9 @@ class PeriodMetrics:
     net_cash_flow: Decimal
     gross_realized_pnl: Decimal  # Gross realized P&L (before fees) - matches Robinhood
     net_realized_pnl: Decimal  # Realized P&L after fees (actual cash outcome)
-    unrealized_pnl: Decimal  # Credit remaining on open positions (unrealized P&L)
-    gross_pnl: Decimal  # gross_realized_pnl + unrealized_pnl
-    net_pnl: Decimal  # net_realized_pnl + unrealized_pnl
+    unrealized_exposure: Decimal  # Credit at risk on open positions (premium collected that could be retained if expired worthless)
+    gross_pnl: Decimal  # gross_realized_pnl + unrealized_exposure
+    net_pnl: Decimal  # net_realized_pnl + unrealized_exposure
 
 
 @dataclass(frozen=True)
@@ -149,6 +149,38 @@ def _lot_was_open_during_period(lot: MatchedLegLot, until: Optional[date] = None
     return False
 
 
+def _parse_period_key_to_date(period_key: str, period_type: PeriodType) -> Optional[date]:
+    """
+    Parse a period_key back to a date for comparison and label generation.
+
+    Parameters
+    ----------
+    period_key
+        The period key to parse (e.g., "2025-10-15", "2025-W42", "2025-10")
+    period_type
+        The period type (daily, weekly, monthly, total)
+
+    Returns
+    -------
+    Optional[date]
+        The date representing the start of the period, or None if parsing fails
+    """
+    try:
+        if period_type == "daily":
+            return date.fromisoformat(period_key)
+        elif period_type == "weekly":
+            # Parse YYYY-Www format
+            year, week = period_key.split("-W")
+            return date.fromisocalendar(int(year), int(week), 1)
+        elif period_type == "monthly":
+            # Parse YYYY-MM format
+            year, month = period_key.split("-")
+            return date(int(year), int(month), 1)
+    except (ValueError, AttributeError):
+        return None
+    return None
+
+
 def _clamp_period_to_range(
     period_key: str,
     period_type: PeriodType,
@@ -180,19 +212,18 @@ def _clamp_period_to_range(
     # Get the period key for the start date
     first_period_key, _ = _group_date_to_period_key(since, period_type)
 
-    # Compare period keys to see if we need to clamp
-    if period_type == "daily":
-        # Simple string comparison works for ISO dates
+    # Convert period keys back to dates for proper comparison
+    period_date = _parse_period_key_to_date(period_key, period_type)
+    first_date = _parse_period_key_to_date(first_period_key, period_type)
+
+    if period_date is None or first_date is None:
+        # Fallback to string comparison if parsing fails
         if period_key < first_period_key:
             return first_period_key
-    elif period_type == "weekly":
-        # Compare ISO week strings (YYYY-Www format)
-        if period_key < first_period_key:
-            return first_period_key
-    elif period_type == "monthly":
-        # Compare YYYY-MM format
-        if period_key < first_period_key:
-            return first_period_key
+        return period_key
+
+    if period_date < first_date:
+        return first_period_key
 
     return period_key
 
@@ -302,7 +333,7 @@ def _aggregate_realized_pnl(
                         period_data[period_key]["net_realized_pnl"] += lot.net_pnl
 
 
-def _aggregate_unrealized_pnl(
+def _aggregate_unrealized_exposure(
     matched_legs: List[MatchedLeg],
     period_type: PeriodType,
     period_data: Dict[str, Dict[str, Decimal]],
@@ -312,17 +343,20 @@ def _aggregate_unrealized_pnl(
     clamp_periods_to_range: bool = True,
 ) -> None:
     """
-    Aggregate unrealized P&L from lots that were open during the period.
+    Aggregate unrealized exposure from lots that were open during the period.
 
-    Unrealized P&L is attributed to the period when each individual lot
-    was opened. Includes lots whose lifetime overlaps the date range (opened
-    before or during the range). Also includes lots that were open during the
-    period but closed afterwards (for historical reports).
+    Unrealized exposure (credit at risk) is attributed to the period when each
+    individual lot was opened. Includes lots whose lifetime overlaps the date
+    range (opened before or during the range). Also includes lots that were
+    open during the period but closed afterwards (for historical reports).
+
+    Note: This represents the premium collected that could be retained if the
+    position expires worthless, not the mark-to-market unrealized P&L.
 
     Parameters
     ----------
     clamp_periods_to_range
-        If True, clamp unrealized P&L periods to the first period in the
+        If True, clamp unrealized exposure periods to the first period in the
         range when positions were opened before the range start.
     """
     for leg in matched_legs:
@@ -336,8 +370,8 @@ def _aggregate_unrealized_pnl(
                         period_key = _clamp_period_to_range(period_key, period_type, since)
                     # Use open_premium for unrealized exposure (credit_remaining is 0 for closed lots)
                     # For open lots, credit_remaining equals open_premium, so this works for both
-                    unrealized_exposure = lot.credit_remaining if lot.is_open else lot.open_premium
-                    period_data[period_key]["unrealized_pnl"] += unrealized_exposure
+                    exposure = lot.credit_remaining if lot.is_open else lot.open_premium
+                    period_data[period_key]["unrealized_exposure"] += exposure
 
 
 def _aggregate_pnl_by_period(
@@ -365,14 +399,14 @@ def _aggregate_pnl_by_period(
     until
         Optional end date filter - only include P&L within this range
     clamp_periods_to_range
-        If True, clamp unrealized P&L periods to the first period in the
+        If True, clamp unrealized exposure periods to the first period in the
         range when positions were opened before the range start.
 
     Returns
     -------
     Dict[str, Dict[str, Decimal]]
         Dictionary mapping period_key to a dict with 'gross_realized_pnl',
-        'net_realized_pnl', and 'unrealized_pnl' keys.
+        'net_realized_pnl', and 'unrealized_exposure' keys.
     """
     # Pre-populate period_data with all relevant period keys from both
     # transactions and matched_legs to ensure all periods are initialized upfront
@@ -391,14 +425,14 @@ def _aggregate_pnl_by_period(
         period_data[period_key] = {
             "gross_realized_pnl": ZERO,
             "net_realized_pnl": ZERO,
-            "unrealized_pnl": ZERO,
+            "unrealized_exposure": ZERO,
         }
 
     # Aggregate realized P&L from closed lots
     _aggregate_realized_pnl(matched_legs, period_type, period_data, since=since, until=until)
 
-    # Aggregate unrealized P&L from open lots
-    _aggregate_unrealized_pnl(
+    # Aggregate unrealized exposure from lots that were open during the period
+    _aggregate_unrealized_exposure(
         matched_legs,
         period_type,
         period_data,
@@ -429,7 +463,7 @@ def _create_empty_report(
             net_cash_flow=ZERO,
             gross_realized_pnl=ZERO,
             net_realized_pnl=ZERO,
-            unrealized_pnl=ZERO,
+            unrealized_exposure=ZERO,
             gross_pnl=ZERO,
             net_pnl=ZERO,
         ),
@@ -496,11 +530,17 @@ def _generate_period_label(
     if period_key == "total":
         return "Total"
 
-    # Find a transaction in this period to generate the label
+    # Try to find a transaction in this period to generate the label
     for txn in transactions:
         key, label = _group_date_to_period_key(txn.activity_date, period_type)
         if key == period_key:
             return label
+
+    # Fallback: parse period_key to generate label (useful for periods with no transactions)
+    period_date = _parse_period_key_to_date(period_key, period_type)
+    if period_date:
+        _, label = _group_date_to_period_key(period_date, period_type)
+        return label
 
     return period_key
 
@@ -521,7 +561,7 @@ def _build_period_metrics(
         cash_flow = cash_flow_by_period.get(period_key, {"credits": ZERO, "debits": ZERO})
         pnl = pnl_by_period.get(
             period_key,
-            {"gross_realized_pnl": ZERO, "net_realized_pnl": ZERO, "unrealized_pnl": ZERO},
+            {"gross_realized_pnl": ZERO, "net_realized_pnl": ZERO, "unrealized_exposure": ZERO},
         )
 
         credits = Decimal(cash_flow["credits"])
@@ -529,9 +569,9 @@ def _build_period_metrics(
         net_cash_flow = credits - debits
         gross_realized_pnl = Decimal(pnl["gross_realized_pnl"])
         net_realized_pnl = Decimal(pnl["net_realized_pnl"])
-        unrealized_pnl = Decimal(pnl["unrealized_pnl"])
-        gross_pnl = gross_realized_pnl + unrealized_pnl
-        net_pnl = net_realized_pnl + unrealized_pnl
+        unrealized_exposure = Decimal(pnl["unrealized_exposure"])
+        gross_pnl = gross_realized_pnl + unrealized_exposure
+        net_pnl = net_realized_pnl + unrealized_exposure
 
         periods.append(
             PeriodMetrics(
@@ -542,7 +582,7 @@ def _build_period_metrics(
                 net_cash_flow=net_cash_flow,
                 gross_realized_pnl=gross_realized_pnl,
                 net_realized_pnl=net_realized_pnl,
-                unrealized_pnl=unrealized_pnl,
+                unrealized_exposure=unrealized_exposure,
                 gross_pnl=gross_pnl,
                 net_pnl=net_pnl,
             )
@@ -557,9 +597,9 @@ def _calculate_totals(periods: List[PeriodMetrics]) -> PeriodMetrics:
     total_debits = Decimal(sum(p.debits for p in periods))
     total_gross_realized_pnl = Decimal(sum(p.gross_realized_pnl for p in periods))
     total_net_realized_pnl = Decimal(sum(p.net_realized_pnl for p in periods))
-    total_unrealized_pnl = Decimal(sum(p.unrealized_pnl for p in periods))
-    total_gross_pnl = total_gross_realized_pnl + total_unrealized_pnl
-    total_net_pnl = total_net_realized_pnl + total_unrealized_pnl
+    total_unrealized_exposure = Decimal(sum(p.unrealized_exposure for p in periods))
+    total_gross_pnl = total_gross_realized_pnl + total_unrealized_exposure
+    total_net_pnl = total_net_realized_pnl + total_unrealized_exposure
 
     return PeriodMetrics(
         period_key="total",
@@ -569,7 +609,7 @@ def _calculate_totals(periods: List[PeriodMetrics]) -> PeriodMetrics:
         net_cash_flow=total_credits - total_debits,
         gross_realized_pnl=total_gross_realized_pnl,
         net_realized_pnl=total_net_realized_pnl,
-        unrealized_pnl=total_unrealized_pnl,
+        unrealized_exposure=total_unrealized_exposure,
         gross_pnl=total_gross_pnl,
         net_pnl=total_net_pnl,
     )

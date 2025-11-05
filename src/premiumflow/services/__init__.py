@@ -32,12 +32,14 @@ from .display import (
 )
 from .json_serializer import (
     build_ingest_payload,
+    serialize_cash_flow_pnl_report,
     serialize_chain,
     serialize_decimal,
     serialize_leg,
     serialize_leg_lot,
     serialize_leg_portion,
     serialize_normalized_transaction,
+    serialize_period_metrics,
     serialize_transaction,
 )
 from .leg_matching import (
@@ -73,6 +75,8 @@ __all__ = [
     "serialize_leg_portion",
     "serialize_leg_lot",
     "serialize_leg",
+    "serialize_period_metrics",
+    "serialize_cash_flow_pnl_report",
     "build_ingest_payload",
     "is_open_chain",
     "parse_target_range",
