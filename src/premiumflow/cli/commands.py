@@ -9,6 +9,7 @@ from __future__ import annotations
 import click
 
 from .analyze import analyze
+from .cashflow import cashflow
 from .import_command import import_group
 from .legs import legs
 from .lookup import lookup
@@ -24,6 +25,7 @@ def main():
 
 # Register CLI subcommands
 main.add_command(analyze)
+main.add_command(cashflow)
 main.add_command(import_group)
 main.add_command(legs)
 main.add_command(lookup)

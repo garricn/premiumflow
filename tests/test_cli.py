@@ -34,7 +34,7 @@ def test_cli_help_lists_all_commands():
 
     assert result.exit_code == 0
     output = result.output
-    for command in ("analyze", "import", "legs", "lookup", "trace"):
+    for command in ("analyze", "cashflow", "import", "legs", "lookup", "trace"):
         assert command in output
 
 
