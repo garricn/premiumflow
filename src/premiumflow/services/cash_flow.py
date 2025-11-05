@@ -174,21 +174,21 @@ def _aggregate_pnl_by_period(
                         }
                     period_data[period_key]["realized_pnl"] += lot.realized_pnl
 
-    # Aggregate unrealized exposure from open legs
+    # Aggregate unrealized exposure from open lots
     # Unrealized exposure is the credit remaining on open positions
-    # We attribute it to the period when the leg was opened
+    # We attribute it to the period when each individual lot was opened
     for leg in matched_legs:
-        if leg.is_open:
-            # Sum credit_remaining across all open lots in this leg
-            leg_unrealized = sum(lot.credit_remaining for lot in leg.lots if lot.is_open)
-            if leg.opened_at:
-                period_key, _ = _group_date_to_period_key(leg.opened_at, period_type)
-                if period_key not in period_data:
-                    period_data[period_key] = {
-                        "realized_pnl": ZERO,
-                        "unrealized_exposure": ZERO,
-                    }
-                period_data[period_key]["unrealized_exposure"] += leg_unrealized
+        for lot in leg.lots:
+            if lot.is_open:
+                # Attribute each lot's credit_remaining to the period when that lot was opened
+                if lot.opened_at:
+                    period_key, _ = _group_date_to_period_key(lot.opened_at, period_type)
+                    if period_key not in period_data:
+                        period_data[period_key] = {
+                            "realized_pnl": ZERO,
+                            "unrealized_exposure": ZERO,
+                        }
+                    period_data[period_key]["unrealized_exposure"] += lot.credit_remaining
 
     return period_data
 
