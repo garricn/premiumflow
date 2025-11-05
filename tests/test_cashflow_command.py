@@ -5,6 +5,7 @@ from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
+import pytest
 from click.testing import CliRunner
 
 from premiumflow.cli.commands import main as premiumflow_cli
@@ -12,7 +13,16 @@ from premiumflow.core.parser import (
     NormalizedOptionTransaction,
     ParsedImportResult,
 )
+from premiumflow.persistence import storage as storage_module
 from premiumflow.persistence.storage import store_import_result
+
+
+@pytest.fixture(autouse=True)
+def clear_storage_cache():
+    """Clear storage cache before and after each test."""
+    storage_module.get_storage.cache_clear()
+    yield
+    storage_module.get_storage.cache_clear()
 
 
 def _write_sample_csv(tmp_path):
@@ -29,6 +39,7 @@ def _write_sample_csv(tmp_path):
 
 def _seed_import_for_cashflow(
     tmp_path: Path,
+    monkeypatch,
     *,
     csv_name: str,
     transactions: list[NormalizedOptionTransaction],
@@ -36,6 +47,11 @@ def _seed_import_for_cashflow(
     account_number: str = "ACCT-1",
 ) -> None:
     """Helper to seed database with transactions for cashflow testing."""
+    # Set up temporary database
+    db_path = tmp_path / "premiumflow.db"
+    monkeypatch.setenv(storage_module.DB_ENV_VAR, str(db_path))
+    storage_module.get_storage.cache_clear()
+
     csv_path = tmp_path / csv_name
     csv_path.write_text(csv_name, encoding="utf-8")
     parsed = ParsedImportResult(
@@ -158,8 +174,13 @@ def test_cashflow_empty_state_json(tmp_path):
     assert data["totals"]["debits"] == "0.00"
 
 
-def test_cashflow_table_output(tmp_path):
+def test_cashflow_table_output(tmp_path, monkeypatch):
     """Cashflow command displays table with cash flow and P&L data."""
+    # Set up temporary database
+    db_path = tmp_path / "premiumflow.db"
+    monkeypatch.setenv(storage_module.DB_ENV_VAR, str(db_path))
+    storage_module.get_storage.cache_clear()
+
     # Create transactions
     txns = [
         _make_normalized_transaction(
@@ -175,7 +196,7 @@ def test_cashflow_table_output(tmp_path):
             amount=Decimal("-150.00"),
         ),
     ]
-    _seed_import_for_cashflow(tmp_path, csv_name="test.csv", transactions=txns)
+    _seed_import_for_cashflow(tmp_path, monkeypatch, csv_name="test.csv", transactions=txns)
 
     runner = CliRunner()
     result = runner.invoke(
@@ -189,6 +210,7 @@ def test_cashflow_table_output(tmp_path):
             "--period",
             "total",
         ],
+        env={storage_module.DB_ENV_VAR: str(db_path)},
     )
 
     assert result.exit_code == 0
@@ -202,8 +224,13 @@ def test_cashflow_table_output(tmp_path):
     assert "Total" in result.output
 
 
-def test_cashflow_json_output(tmp_path):
+def test_cashflow_json_output(tmp_path, monkeypatch):
     """Cashflow command with --json-output returns valid JSON."""
+    # Set up temporary database
+    db_path = tmp_path / "premiumflow.db"
+    monkeypatch.setenv(storage_module.DB_ENV_VAR, str(db_path))
+    storage_module.get_storage.cache_clear()
+
     txns = [
         _make_normalized_transaction(
             activity_date=date(2025, 9, 1),
@@ -212,7 +239,7 @@ def test_cashflow_json_output(tmp_path):
             amount=Decimal("300.00"),
         ),
     ]
-    _seed_import_for_cashflow(tmp_path, csv_name="test.csv", transactions=txns)
+    _seed_import_for_cashflow(tmp_path, monkeypatch, csv_name="test.csv", transactions=txns)
 
     runner = CliRunner()
     result = runner.invoke(
@@ -225,6 +252,7 @@ def test_cashflow_json_output(tmp_path):
             "ACCT-1",
             "--json-output",
         ],
+        env={storage_module.DB_ENV_VAR: str(db_path)},
     )
 
     assert result.exit_code == 0
@@ -238,8 +266,13 @@ def test_cashflow_json_output(tmp_path):
     assert data["account_number"] == "ACCT-1"
 
 
-def test_cashflow_date_filtering(tmp_path):
+def test_cashflow_date_filtering(tmp_path, monkeypatch):
     """Cashflow command filters by date range."""
+    # Set up temporary database
+    db_path = tmp_path / "premiumflow.db"
+    monkeypatch.setenv(storage_module.DB_ENV_VAR, str(db_path))
+    storage_module.get_storage.cache_clear()
+
     txns = [
         _make_normalized_transaction(
             activity_date=date(2025, 9, 1),
@@ -254,7 +287,7 @@ def test_cashflow_date_filtering(tmp_path):
             amount=Decimal("200.00"),
         ),
     ]
-    _seed_import_for_cashflow(tmp_path, csv_name="test.csv", transactions=txns)
+    _seed_import_for_cashflow(tmp_path, monkeypatch, csv_name="test.csv", transactions=txns)
 
     runner = CliRunner()
     result = runner.invoke(
@@ -272,6 +305,7 @@ def test_cashflow_date_filtering(tmp_path):
             "--period",
             "total",
         ],
+        env={storage_module.DB_ENV_VAR: str(db_path)},
     )
 
     assert result.exit_code == 0
@@ -281,8 +315,13 @@ def test_cashflow_date_filtering(tmp_path):
     assert "Total" in result.output
 
 
-def test_cashflow_ticker_filtering(tmp_path):
+def test_cashflow_ticker_filtering(tmp_path, monkeypatch):
     """Cashflow command filters by ticker."""
+    # Set up temporary database
+    db_path = tmp_path / "premiumflow.db"
+    monkeypatch.setenv(storage_module.DB_ENV_VAR, str(db_path))
+    storage_module.get_storage.cache_clear()
+
     txns = [
         _make_normalized_transaction(
             instrument="TSLA",
@@ -299,7 +338,7 @@ def test_cashflow_ticker_filtering(tmp_path):
             amount=Decimal("200.00"),
         ),
     ]
-    _seed_import_for_cashflow(tmp_path, csv_name="test.csv", transactions=txns)
+    _seed_import_for_cashflow(tmp_path, monkeypatch, csv_name="test.csv", transactions=txns)
 
     runner = CliRunner()
     result = runner.invoke(
@@ -315,6 +354,7 @@ def test_cashflow_ticker_filtering(tmp_path):
             "--period",
             "total",
         ],
+        env={storage_module.DB_ENV_VAR: str(db_path)},
     )
 
     assert result.exit_code == 0
@@ -324,8 +364,13 @@ def test_cashflow_ticker_filtering(tmp_path):
     assert "Total" in result.output
 
 
-def test_cashflow_period_types(tmp_path):
+def test_cashflow_period_types(tmp_path, monkeypatch):
     """Cashflow command supports all period types."""
+    # Set up temporary database
+    db_path = tmp_path / "premiumflow.db"
+    monkeypatch.setenv(storage_module.DB_ENV_VAR, str(db_path))
+    storage_module.get_storage.cache_clear()
+
     txns = [
         _make_normalized_transaction(
             activity_date=date(2025, 9, 1),
@@ -334,7 +379,7 @@ def test_cashflow_period_types(tmp_path):
             amount=Decimal("300.00"),
         ),
     ]
-    _seed_import_for_cashflow(tmp_path, csv_name="test.csv", transactions=txns)
+    _seed_import_for_cashflow(tmp_path, monkeypatch, csv_name="test.csv", transactions=txns)
 
     for period_type in ["daily", "weekly", "monthly", "total"]:
         runner = CliRunner()
@@ -349,13 +394,19 @@ def test_cashflow_period_types(tmp_path):
                 "--period",
                 period_type,
             ],
+            env={storage_module.DB_ENV_VAR: str(db_path)},
         )
         assert result.exit_code == 0, f"Period type {period_type} failed"
         assert "Cash Flow & P&L Report" in result.output
 
 
-def test_cashflow_no_clamp_periods_flag(tmp_path):
+def test_cashflow_no_clamp_periods_flag(tmp_path, monkeypatch):
     """Cashflow command respects --no-clamp-periods flag."""
+    # Set up temporary database
+    db_path = tmp_path / "premiumflow.db"
+    monkeypatch.setenv(storage_module.DB_ENV_VAR, str(db_path))
+    storage_module.get_storage.cache_clear()
+
     txns = [
         _make_normalized_transaction(
             activity_date=date(2025, 8, 1),  # Before date range
@@ -364,7 +415,7 @@ def test_cashflow_no_clamp_periods_flag(tmp_path):
             amount=Decimal("300.00"),
         ),
     ]
-    _seed_import_for_cashflow(tmp_path, csv_name="test.csv", transactions=txns)
+    _seed_import_for_cashflow(tmp_path, monkeypatch, csv_name="test.csv", transactions=txns)
 
     runner = CliRunner()
     result = runner.invoke(
@@ -383,6 +434,7 @@ def test_cashflow_no_clamp_periods_flag(tmp_path):
             "--period",
             "monthly",
         ],
+        env={storage_module.DB_ENV_VAR: str(db_path)},
     )
 
     assert result.exit_code == 0
