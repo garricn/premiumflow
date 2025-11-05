@@ -818,17 +818,19 @@ def test_cashflow_api_requires_account(client_with_storage):
     assert "account is required" in response.text
 
 
-def test_cashflow_api_requires_account_number(client_with_storage, tmp_path):
-    """Cashflow API requires account_number in account selection."""
+def test_cashflow_api_supports_account_without_number(client_with_storage, tmp_path):
+    """Cashflow API supports accounts without account numbers."""
     _persist_import(
         tmp_path,
         account_name="Test Account",
-        account_number="TEST-1",
+        account_number=None,  # Account without number
         csv_name="test.csv",
         transactions=[_make_transaction(instrument="TSLA", amount=Decimal("100.00"))],
     )
 
-    # Test with account name only (no account number)
+    # Test with account name only (no account number) - should work
     response = client_with_storage.get("/api/cashflow", params={"account": "Test Account"})
-    assert response.status_code == 400
-    assert "account number is required" in response.text
+    assert response.status_code == 200
+    data = response.json()
+    assert data["account_name"] == "Test Account"
+    assert data["account_number"] is None

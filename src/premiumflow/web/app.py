@@ -721,7 +721,7 @@ def create_app() -> FastAPI:
 
         # Generate report if account is available
         report = None
-        if account_name_filter and account_number_filter:
+        if account_name_filter:
             # Parse dates
             since_date = _parse_date_param(since)
             until_date = _parse_date_param(until)
@@ -769,10 +769,6 @@ def create_app() -> FastAPI:
         # Validate required fields
         if not account_name_filter:
             raise HTTPException(status_code=400, detail="account is required")
-        if not account_number_filter:
-            raise HTTPException(
-                status_code=400, detail="account number is required in account selection"
-            )
 
         # Parse dates
         since_date = _parse_date_param(since)
