@@ -384,7 +384,7 @@ def _aggregate_pnl_by_period(
     clamp_periods_to_range: bool = True,
 ) -> Dict[str, Dict[str, Decimal]]:
     """
-    Aggregate gross/net realized P&L and unrealized P&L by time period.
+    Aggregate gross/net realized P&L and unrealized exposure by time period.
 
     Parameters
     ----------
