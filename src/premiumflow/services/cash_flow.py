@@ -17,6 +17,7 @@ from ..core.parser import NormalizedOptionTransaction
 from ..persistence import SQLiteRepository
 from .leg_matching import (
     MatchedLeg,
+    MatchedLegLot,
     _stored_to_normalized,
     group_fills_by_account,
     match_legs_with_errors,
@@ -124,6 +125,28 @@ def _lot_overlaps_date_range(opened_at: date, until: Optional[date] = None) -> b
     if until is not None and opened_at > until:
         return False
     return True
+
+
+def _lot_was_open_during_period(lot: MatchedLegLot, until: Optional[date] = None) -> bool:
+    """
+    Check if a lot was open during the requested period.
+
+    A lot was open during the period if:
+    - It's currently open (`lot.is_open`), OR
+    - It was closed after the period end (`closed_at > until`)
+
+    This ensures historical reports include unrealized exposure for positions
+    that were open during the period, even if they were closed afterwards.
+    """
+    if lot.is_open:
+        return True
+    if until is None:
+        # If no end date, only include currently open lots
+        return False
+    # Include lots closed after the period end (they were open during the period)
+    if lot.closed_at and lot.closed_at > until:
+        return True
+    return False
 
 
 def _clamp_period_to_range(
@@ -234,14 +257,15 @@ def _collect_pnl_period_keys(
 
     # Collect period keys from matched_legs
     # - From closed lots: period when they were closed (if within date range)
-    # - From open lots: period when they were opened (if overlapping date range)
+    # - From lots that were open during the period: period when they were opened (if overlapping date range)
     for leg in matched_legs:
         for lot in leg.lots:
             if lot.is_closed and lot.realized_pnl is not None:
                 if lot.closed_at and _date_in_range(lot.closed_at, since, until):
                     period_key, _ = _group_date_to_period_key(lot.closed_at, period_type)
                     all_period_keys.add(period_key)
-            elif lot.is_open:
+            # Include lots that were open during the period (currently open or closed after period end)
+            if _lot_was_open_during_period(lot, until):
                 if lot.opened_at and _lot_overlaps_date_range(lot.opened_at, until):
                     period_key, _ = _group_date_to_period_key(lot.opened_at, period_type)
                     # Clamp period if needed
@@ -288,11 +312,12 @@ def _aggregate_unrealized_pnl(
     clamp_periods_to_range: bool = True,
 ) -> None:
     """
-    Aggregate unrealized P&L from open lots into period_data.
+    Aggregate unrealized P&L from lots that were open during the period.
 
     Unrealized P&L is attributed to the period when each individual lot
     was opened. Includes lots whose lifetime overlaps the date range (opened
-    before or during the range).
+    before or during the range). Also includes lots that were open during the
+    period but closed afterwards (for historical reports).
 
     Parameters
     ----------
@@ -302,13 +327,17 @@ def _aggregate_unrealized_pnl(
     """
     for leg in matched_legs:
         for lot in leg.lots:
-            if lot.is_open:
+            # Include lots that were open during the period (currently open or closed after period end)
+            if _lot_was_open_during_period(lot, until):
                 if lot.opened_at and _lot_overlaps_date_range(lot.opened_at, until):
                     period_key, _ = _group_date_to_period_key(lot.opened_at, period_type)
                     # Clamp period if needed
                     if clamp_periods_to_range:
                         period_key = _clamp_period_to_range(period_key, period_type, since)
-                    period_data[period_key]["unrealized_pnl"] += lot.credit_remaining
+                    # Use open_premium for unrealized exposure (credit_remaining is 0 for closed lots)
+                    # For open lots, credit_remaining equals open_premium, so this works for both
+                    unrealized_exposure = lot.credit_remaining if lot.is_open else lot.open_premium
+                    period_data[period_key]["unrealized_pnl"] += unrealized_exposure
 
 
 def _aggregate_pnl_by_period(

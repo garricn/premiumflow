@@ -701,3 +701,57 @@ def test_generate_report_clamps_periods_to_range(tmp_path, repository):
 
     # Totals should be the same in both cases
     assert report_clamped.totals.unrealized_pnl == report_unclamped.totals.unrealized_pnl
+
+
+def test_generate_report_includes_unrealized_pnl_for_positions_closed_after_range(
+    tmp_path, repository
+):
+    """Test that unrealized P&L includes positions that were open during the period but closed after."""
+    _seed_import(
+        tmp_path,
+        csv_name="closed_after_range.csv",
+        transactions=[
+            # Position opened in September
+            _make_transaction(
+                trans_code="STO",
+                action="SELL",
+                quantity=2,
+                price=Decimal("3.00"),
+                amount=Decimal("600.00"),
+                activity_date=date(2025, 9, 15),  # September
+            ),
+            # Position closed in November (after the October range)
+            _make_transaction(
+                trans_code="BTC",
+                action="BUY",
+                quantity=2,
+                price=Decimal("1.50"),
+                amount=Decimal("-300.00"),
+                activity_date=date(2025, 11, 5),  # November
+            ),
+        ],
+    )
+
+    # Generate report for October (position was open during October but closed in November)
+    report = generate_cash_flow_pnl_report(
+        repository,
+        account_name="Primary Account",
+        account_number="ACCT-1",
+        period_type="monthly",
+        since=date(2025, 10, 1),  # October only
+        until=date(2025, 10, 31),
+    )
+
+    # Should have October period
+    assert "2025-10" in [p.period_key for p in report.periods]
+
+    # Unrealized P&L should be included even though position was closed after the period
+    # The position was open during October, so it should be included
+    october_period = next(p for p in report.periods if p.period_key == "2025-10")
+    assert october_period.unrealized_pnl > Decimal("0")
+    # Should be approximately 600 (credit remaining on position that was open during October)
+    assert october_period.unrealized_pnl < Decimal("700")
+
+    # Realized P&L should be 0 since no positions were closed during October
+    assert report.totals.gross_realized_pnl == Decimal("0")
+    assert report.totals.net_realized_pnl == Decimal("0")
