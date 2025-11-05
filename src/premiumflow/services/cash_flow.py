@@ -133,9 +133,25 @@ def _aggregate_pnl_by_period(
     matched_legs: List[MatchedLeg],
     transactions: List[NormalizedOptionTransaction],
     period_type: PeriodType,
+    *,
+    since: Optional[date] = None,
+    until: Optional[date] = None,
 ) -> Dict[str, Dict[str, Decimal]]:
     """
     Aggregate realized P&L and unrealized exposure by time period.
+
+    Parameters
+    ----------
+    matched_legs
+        All matched legs (from full account history for proper matching)
+    transactions
+        Filtered transactions (for period initialization)
+    period_type
+        Time period type for grouping
+    since
+        Optional start date filter - only include P&L within this range
+    until
+        Optional end date filter - only include P&L within this range
 
     Returns
     -------
@@ -159,13 +175,22 @@ def _aggregate_pnl_by_period(
             "unrealized_exposure": ZERO,
         }
 
+    def _date_in_range(check_date: date) -> bool:
+        """Check if a date falls within the filter range (if provided)."""
+        if since is not None and check_date < since:
+            return False
+        if until is not None and check_date > until:
+            return False
+        return True
+
     # Aggregate realized P&L from closed lots
     # Realized P&L should be attributed to the period when the lot was closed
+    # Only include if closed_at is within the date range (if filtering)
     for leg in matched_legs:
         for lot in leg.lots:
             if lot.is_closed and lot.realized_pnl is not None:
-                # Use closed_at date to determine period
-                if lot.closed_at:
+                # Only include if closed within the date range
+                if lot.closed_at and _date_in_range(lot.closed_at):
                     period_key, _ = _group_date_to_period_key(lot.closed_at, period_type)
                     if period_key not in period_data:
                         period_data[period_key] = {
@@ -177,11 +202,12 @@ def _aggregate_pnl_by_period(
     # Aggregate unrealized exposure from open lots
     # Unrealized exposure is the credit remaining on open positions
     # We attribute it to the period when each individual lot was opened
+    # Only include if opened_at is within the date range (if filtering)
     for leg in matched_legs:
         for lot in leg.lots:
             if lot.is_open:
-                # Attribute each lot's credit_remaining to the period when that lot was opened
-                if lot.opened_at:
+                # Only include if opened within the date range (or no filter)
+                if lot.opened_at and _date_in_range(lot.opened_at):
                     period_key, _ = _group_date_to_period_key(lot.opened_at, period_type)
                     if period_key not in period_data:
                         period_data[period_key] = {
@@ -228,17 +254,19 @@ def generate_cash_flow_pnl_report(
     CashFlowPnlReport
         Complete report with period-based metrics and totals
     """
-    # Fetch transactions
-    stored_txns = repository.fetch_transactions(
+    # Fetch ALL transactions for leg matching (no date filter)
+    # This ensures we can match opening and closing transactions even if they
+    # span across the date range boundary
+    all_stored_txns = repository.fetch_transactions(
         account_name=account_name,
         account_number=account_number,
         ticker=ticker,
-        since=since,
-        until=until,
+        since=None,  # No date filter for matching
+        until=None,
         status="all",
     )
 
-    if not stored_txns:
+    if not all_stored_txns:
         # Return empty report
         return CashFlowPnlReport(
             account_name=account_name,
@@ -257,19 +285,37 @@ def generate_cash_flow_pnl_report(
             ),
         )
 
-    # Convert to normalized transactions
-    normalized_txns = [_stored_to_normalized(stored) for stored in stored_txns]
+    # Convert all transactions to normalized format for leg matching
+    all_normalized_txns = [_stored_to_normalized(stored) for stored in all_stored_txns]
 
-    # Get matched legs for P&L calculation
-    all_fills = group_fills_by_account(normalized_txns)
+    # Get matched legs from ALL transactions (for proper matching)
+    all_fills = group_fills_by_account(all_normalized_txns)
     matched_map, _errors = match_legs_with_errors(all_fills)
     matched_legs = list(matched_map.values())
 
-    # Aggregate cash flow by period
-    cash_flow_by_period = _aggregate_cash_flow_by_period(normalized_txns, period_type)
+    # Filter transactions by date range for cash flow aggregation
+    # Cash flow shows actual cash movements within the specified date range
+    filtered_normalized_txns = all_normalized_txns
+    if since is not None or until is not None:
+        filtered_normalized_txns = [
+            txn
+            for txn in all_normalized_txns
+            if (since is None or txn.activity_date >= since)
+            and (until is None or txn.activity_date <= until)
+        ]
 
-    # Aggregate P&L by period
-    pnl_by_period = _aggregate_pnl_by_period(matched_legs, normalized_txns, period_type)
+    # Aggregate cash flow by period (using filtered transactions)
+    cash_flow_by_period = _aggregate_cash_flow_by_period(filtered_normalized_txns, period_type)
+
+    # Aggregate P&L by period (using all matched legs, but filtered by date range)
+    # P&L shows realized gains/losses within the date range
+    pnl_by_period = _aggregate_pnl_by_period(
+        matched_legs,
+        filtered_normalized_txns,  # Used for period initialization
+        period_type,
+        since=since,
+        until=until,
+    )
 
     # Combine into period metrics
     all_period_keys = set(cash_flow_by_period.keys()) | set(pnl_by_period.keys())
@@ -280,7 +326,7 @@ def generate_cash_flow_pnl_report(
         period_label = period_key
         if period_key != "total":
             # Find a transaction in this period to generate the label
-            for txn in normalized_txns:
+            for txn in filtered_normalized_txns:
                 key, label = _group_date_to_period_key(txn.activity_date, period_type)
                 if key == period_key:
                     period_label = label

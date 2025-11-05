@@ -533,3 +533,49 @@ def test_generate_report_multiple_imports_aggregation(tmp_path, repository):
 
     # Should aggregate across both imports
     assert report.totals.credits == Decimal("550.00")
+
+
+def test_generate_report_pnl_includes_legs_opened_before_range(tmp_path, repository):
+    """Test that realized P&L correctly includes positions opened before date range."""
+    _seed_import(
+        tmp_path,
+        csv_name="cross_range.csv",
+        transactions=[
+            # Position opened before date range
+            _make_transaction(
+                trans_code="STO",
+                action="SELL",
+                quantity=2,
+                price=Decimal("3.00"),
+                amount=Decimal("600.00"),
+                activity_date=date(2025, 10, 1),  # Before range
+            ),
+            # Position closed within date range
+            _make_transaction(
+                trans_code="BTC",
+                action="BUY",
+                quantity=2,
+                price=Decimal("1.00"),
+                amount=Decimal("-200.00"),
+                activity_date=date(2025, 10, 15),  # Within range
+            ),
+        ],
+    )
+
+    report = generate_cash_flow_pnl_report(
+        repository,
+        account_name="Primary Account",
+        account_number="ACCT-1",
+        since=date(2025, 10, 7),  # Start after opening
+        until=date(2025, 10, 20),
+    )
+
+    # Cash flow should only show closing transaction (debit) within range
+    assert report.totals.credits == Decimal("0")
+    assert report.totals.debits == Decimal("200.00")
+
+    # Realized P&L should be calculated correctly (opened for 600, closed for 200)
+    # Even though opening was before the date range
+    assert report.totals.realized_pnl > Decimal("0")
+    # Should be approximately 400 (600 - 200), minus fees
+    assert report.totals.realized_pnl < Decimal("500")
