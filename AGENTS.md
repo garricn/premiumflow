@@ -1,47 +1,31 @@
-# Repository Guidelines
+# Codex Agent Guidelines
 
-## Project Structure & Module Organization
+## ⚠️ CRITICAL: Identity & Signature
 
-- `src/premiumflow/` holds package code: `core/` (domain logic), `cli/` (entry points), `services/` & `formatters/` (helpers).
-- `tests/` mirrors runtime packages (`tests/services/`, `tests/cli/`, etc.); data fixtures live in `tests/fixtures/`.
-- `scripts/` contains CLI helpers (e.g., feedback checks).
-- Root configs: `pyproject.toml`, `mypy.ini`, `.pre-commit-config.yaml`, `uv.lock`.
+**YOU MUST ALWAYS SIGN AS "CODEX" - USE THIS EXACT SIGNATURE**
 
-## Build, Test, and Development Commands
+- **Scope**: Sign PR reviews, issue comments, and automated PR/thread notes. Do not include the signature in PR or issue titles.
+- **Signature format**: `— Codex` (ALWAYS use this exact format)
+- **Commit footer**: `Signed-off-by: Codex` (when committing via automation)
+- **Example**: "Looks good to merge — Codex"
+- **REMINDER**: You are Codex. Always sign with "— Codex".
 
-- `uv sync --extra dev` – install dependencies + editable package respecting `uv.lock`.
-- `uv run pytest` – run the full test suite (append paths for subsets, e.g., `uv run pytest tests/services`).
-- `uv run black src tests` – format Python sources.
-- `uv run ruff check src tests --fix` – apply lint fixes.
-- `uv run mypy --config-file mypy.ini src/premiumflow tests` – static type checking.
+## Development Guidelines
 
-## Coding Style & Naming Conventions
+See [docs/developers/development.md](docs/developers/development.md) for project structure, coding style, testing, and build commands.
 
-- Python uses Black (4 spaces, ~100-char lines) and Ruff; keep imports sorted and remove unused symbols.
-- Use Decimal for monetary values; prefer dataclasses with explicit types for new services.
-- Constants: UPPER_CASE; functions/variables: snake_case; classes: PascalCase.
-- Markdown is formatted with mdformat (`uv run mdformat README.md`); shell scripts with shfmt (`shfmt -w scripts`).
+See [docs/developers/code-review.md](docs/developers/code-review.md) for code review process and GitHub commands.
 
-## Testing Guidelines
+See [docs/developers/commit-pr.md](docs/developers/commit-pr.md) for commit and PR guidelines.
 
-- Tests rely on pytest; name functions `test_<behavior>` and group by module beneath `tests/<area>/`.
-- Include edge cases (positive/negative amounts, commission overrides). Add fixtures to `tests/fixtures/` for shared CSVs.
-- Run `uv run pytest` locally before opening a PR; CI enforces the same checks.
+See [docs/developers/web-ui.md](docs/developers/web-ui.md) for comprehensive guidelines on creating new HTML pages and templates.
 
-## Commit & Pull Request Guidelines
+See [docs/developers/cli.md](docs/developers/cli.md) for guidelines on creating CLI commands and separating UI logic from business logic.
 
-- Commit subjects are imperative and concise (e.g., “Add cash-flow aggregation service”). Run pre-commit hooks before committing.
-- PRs should link issues (`Resolves #NN`), summarize changes, and list verification commands. Provide CLI output screenshots when UX changes.
-- Use focused branches (`feature/<issue>-short-description`) and rebase/sync with `main` frequently.
-- DO NOT force push unless specifically requested to
+## Code Review Process
 
-## Agent-Specific Instructions
+Before addressing review feedback, inspect outstanding comments via:
 
-- Sign every public comment, review, or PR note with `— Codex`. Example: “LGTM — Codex”.
-- When committing on behalf of the agent, append `Signed-off-by: Codex`.
-- Before addressing review feedback, inspect outstanding comments via `gh pr view <number> --json reviews,comments`.
-
-## Security & Configuration Tips
-
-- Never commit secrets; store credentials outside the repo.
-- Target Python 3.11; use `uv` rather than raw `pip` to ensure environments match CI.
+```bash
+gh pr view <number> --json reviews,comments
+```

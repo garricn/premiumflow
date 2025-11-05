@@ -1,57 +1,29 @@
-# PremiumFlow Project Agent Guidelines
+# Cursor Agent Guidelines
+
+## ⚠️ CRITICAL: Identity & Signature
+
+**YOU MUST ALWAYS SIGN AS "CURSOR AGENT" - USE THIS EXACT SIGNATURE**
+
+- **Scope**: Sign PR reviews, issue comments, and automated PR/thread notes. Do not include the signature in PR or issue titles.
+- **Signature format**: `— Cursor Agent` (ALWAYS use this exact format)
+- **Commit footer**: `Signed-by: Cursor Agent` (when committing via automation)
+- **Example**: "Looks good to merge — Cursor Agent"
+- **REMINDER**: You are Cursor Agent. Always sign with "— Cursor Agent".
+
+## Quick Rules
 
 - IGNORE the AGENTS.md file at project root.
 - DO NOT FORCE PUSH unless specifically asked to.
+- **ALWAYS sign as "Cursor Agent" — use this exact signature**
 
-## Identity & Signature
+## Development Guidelines
 
-- Scope: Sign PR reviews, issue comments, and automated PR/thread notes. Do not include the signature in PR or issue titles.
-- Sign with: "— Cursor Agent".
-- For commit messages authored via automation, append a footer line: "Signed-by: Cursor Agent".
-- Example PR review closing line: "Looks good to merge — Cursor Agent".
+See [docs/developers/development.md](../docs/developers/development.md) for project structure, coding style, testing, and build commands.
 
-## Code Review Process
+See [docs/developers/code-review.md](../docs/developers/code-review.md) for code review process and GitHub commands.
 
-When asked to "address code review comment" or similar:
+See [docs/developers/commit-pr.md](../docs/developers/commit-pr.md) for commit and PR guidelines.
 
-1. **Always check for review comments first** using:
+See [docs/developers/web-ui.md](../docs/developers/web-ui.md) for comprehensive guidelines on creating new HTML pages and templates.
 
-   ```bash
-   gh api repos/garricn/premiumflow/pulls/{PR_NUMBER}/reviews
-   ```
-
-1. **For each review, check comments**:
-
-   ```bash
-   gh api repos/garricn/premiumflow/pulls/{PR_NUMBER}/reviews/{REVIEW_ID}/comments
-   ```
-
-1. **Look for P1/P2/P3 priority badges** in comment bodies
-
-1. **Parse the actual feedback** from the comment body, not just the review summary
-
-## GitHub Commands
-
-- Use `gh pr view {PR} --json reviews,comments` for comprehensive data
-- Always check both general comments AND review comments on specific lines
-- Look for Codex, human reviewers, and automated feedback
-- **Repository**: `garricn/premiumflow` (not `garric/premiumflow`)
-- **Owner**: `garricn` (correct GitHub username)
-
-### Quick commands (cheat sheet)
-
-```bash
-# Check specific PR
-gh pr view {PR} --json reviews,comments
-
-# Get all reviews
-gh api repos/garricn/premiumflow/pulls/{PR}/reviews
-
-# Get review comments
-gh api repos/garricn/premiumflow/pulls/{PR}/reviews/{REVIEW_ID}/comments
-
-# Scan for priority markers
-gh api repos/garricn/premiumflow/pulls/{PR}/reviews --jq '.[].id' | while read review_id; do
-  gh api repos/garricn/premiumflow/pulls/{PR}/reviews/$review_id/comments --jq '.[] | select(.body | contains("P1") or contains("P2") or contains("P3"))'
-done
-```
+See [docs/developers/cli.md](../docs/developers/cli.md) for guidelines on creating CLI commands and separating UI logic from business logic.
