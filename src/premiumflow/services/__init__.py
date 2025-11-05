@@ -1,7 +1,12 @@
 """Services for roll chain analysis."""
 
 from .analyzer import calculate_breakeven, calculate_pnl
-from .cash_flows import CashFlowRow, CashFlowSummary, CashFlowTotals, summarize_cash_flows
+from .cash_flow import (
+    CashFlowPnlReport,
+    PeriodMetrics,
+    PeriodType,
+    generate_cash_flow_pnl_report,
+)
 from .chain_builder import detect_roll_chains
 from .cli_helpers import (
     create_target_label,
@@ -27,12 +32,14 @@ from .display import (
 )
 from .json_serializer import (
     build_ingest_payload,
+    serialize_cash_flow_pnl_report,
     serialize_chain,
     serialize_decimal,
     serialize_leg,
     serialize_leg_lot,
     serialize_leg_portion,
     serialize_normalized_transaction,
+    serialize_period_metrics,
     serialize_transaction,
 )
 from .leg_matching import (
@@ -68,6 +75,8 @@ __all__ = [
     "serialize_leg_portion",
     "serialize_leg_lot",
     "serialize_leg",
+    "serialize_period_metrics",
+    "serialize_cash_flow_pnl_report",
     "build_ingest_payload",
     "is_open_chain",
     "parse_target_range",
@@ -75,10 +84,6 @@ __all__ = [
     "format_expiration_date",
     "format_account_label",
     "create_target_label",
-    "summarize_cash_flows",
-    "CashFlowSummary",
-    "CashFlowTotals",
-    "CashFlowRow",
     "normalized_to_csv_dicts",
     "match_legs",
     "match_leg_fills",
@@ -86,4 +91,8 @@ __all__ = [
     "group_fills_by_account",
     "MatchedLeg",
     "MatchedLegLot",
+    "generate_cash_flow_pnl_report",
+    "CashFlowPnlReport",
+    "PeriodMetrics",
+    "PeriodType",
 ]
