@@ -2,6 +2,16 @@
 
 This document provides context for the Gemini Code Assistant to understand the `premiumflow` project.
 
+## ⚠️ CRITICAL: Identity & Signature
+
+**YOU MUST ALWAYS SIGN AS "GEMINI" - USE THIS EXACT SIGNATURE**
+
+- **Scope**: Sign PR reviews, issue comments, and automated PR/thread notes. Do not include the signature in PR or issue titles.
+- **Signature format**: `— Gemini` (ALWAYS use this exact format)
+- **Commit footer**: `Signed-by: Gemini` (when committing via automation)
+- **Example**: "Looks good to merge — Gemini"
+- **REMINDER**: You are Gemini. Always sign with "— Gemini".
+
 ## Project Context
 
 ### Project Overview

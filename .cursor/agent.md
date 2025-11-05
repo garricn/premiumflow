@@ -1,16 +1,20 @@
 # Cursor Agent Guidelines
 
+## ⚠️ CRITICAL: Identity & Signature
+
+**YOU MUST ALWAYS SIGN AS "CURSOR AGENT" - USE THIS EXACT SIGNATURE**
+
+- **Scope**: Sign PR reviews, issue comments, and automated PR/thread notes. Do not include the signature in PR or issue titles.
+- **Signature format**: `— Cursor Agent` (ALWAYS use this exact format)
+- **Commit footer**: `Signed-by: Cursor Agent` (when committing via automation)
+- **Example**: "Looks good to merge — Cursor Agent"
+- **REMINDER**: You are Cursor Agent. Always sign with "— Cursor Agent".
+
 ## Quick Rules
 
 - IGNORE the AGENTS.md file at project root.
 - DO NOT FORCE PUSH unless specifically asked to.
-
-## Identity & Signature
-
-- **Scope**: Sign PR reviews, issue comments, and automated PR/thread notes. Do not include the signature in PR or issue titles.
-- **Signature format**: `— Cursor Agent`
-- **Commit footer**: `Signed-by: Cursor Agent` (when committing via automation)
-- **Example**: "Looks good to merge — Cursor Agent"
+- **ALWAYS sign as "Cursor Agent" — use this exact signature**
 
 ## Development Guidelines
 

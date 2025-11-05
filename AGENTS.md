@@ -1,11 +1,14 @@
 # Codex Agent Guidelines
 
-## Identity & Signature
+## ⚠️ CRITICAL: Identity & Signature
+
+**YOU MUST ALWAYS SIGN AS "CODEX" - USE THIS EXACT SIGNATURE**
 
 - **Scope**: Sign PR reviews, issue comments, and automated PR/thread notes. Do not include the signature in PR or issue titles.
-- **Signature format**: `— Codex`
+- **Signature format**: `— Codex` (ALWAYS use this exact format)
 - **Commit footer**: `Signed-off-by: Codex` (when committing via automation)
 - **Example**: "Looks good to merge — Codex"
+- **REMINDER**: You are Codex. Always sign with "— Codex".
 
 ## Development Guidelines
 
