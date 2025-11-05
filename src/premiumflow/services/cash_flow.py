@@ -159,21 +159,6 @@ def _aggregate_pnl_by_period(
         Dictionary mapping period_key to a dict with 'realized_pnl' and
         'unrealized_exposure' keys.
     """
-    period_data: Dict[str, Dict[str, Decimal]] = {}
-
-    # Create a lookup map: transaction date -> period key
-    # We'll use this to determine which period a lot's P&L belongs to
-    txn_date_to_period: Dict[date, str] = {}
-    for txn in transactions:
-        period_key, _ = _group_date_to_period_key(txn.activity_date, period_type)
-        txn_date_to_period[txn.activity_date] = period_key
-
-    # Initialize all periods we've seen
-    for period_key in set(txn_date_to_period.values()):
-        period_data[period_key] = {
-            "realized_pnl": ZERO,
-            "unrealized_exposure": ZERO,
-        }
 
     def _date_in_range(check_date: date) -> bool:
         """Check if a date falls within the filter range (if provided)."""
@@ -195,6 +180,37 @@ def _aggregate_pnl_by_period(
             return False
         return True
 
+    # Pre-populate period_data with all relevant period keys from both
+    # transactions and matched_legs to ensure all periods are initialized upfront
+    all_period_keys: set[str] = set()
+
+    # Collect period keys from transactions
+    for txn in transactions:
+        period_key, _ = _group_date_to_period_key(txn.activity_date, period_type)
+        all_period_keys.add(period_key)
+
+    # Collect period keys from matched_legs
+    # - From closed lots: period when they were closed (if within date range)
+    # - From open lots: period when they were opened (if overlapping date range)
+    for leg in matched_legs:
+        for lot in leg.lots:
+            if lot.is_closed and lot.realized_pnl is not None:
+                if lot.closed_at and _date_in_range(lot.closed_at):
+                    period_key, _ = _group_date_to_period_key(lot.closed_at, period_type)
+                    all_period_keys.add(period_key)
+            elif lot.is_open:
+                if lot.opened_at and _lot_overlaps_date_range(lot.opened_at):
+                    period_key, _ = _group_date_to_period_key(lot.opened_at, period_type)
+                    all_period_keys.add(period_key)
+
+    # Initialize all periods upfront
+    period_data: Dict[str, Dict[str, Decimal]] = {}
+    for period_key in all_period_keys:
+        period_data[period_key] = {
+            "realized_pnl": ZERO,
+            "unrealized_exposure": ZERO,
+        }
+
     # Aggregate realized P&L from closed lots
     # Realized P&L should be attributed to the period when the lot was closed
     # Only include if closed_at is within the date range (if filtering)
@@ -204,11 +220,6 @@ def _aggregate_pnl_by_period(
                 # Only include if closed within the date range
                 if lot.closed_at and _date_in_range(lot.closed_at):
                     period_key, _ = _group_date_to_period_key(lot.closed_at, period_type)
-                    if period_key not in period_data:
-                        period_data[period_key] = {
-                            "realized_pnl": ZERO,
-                            "unrealized_exposure": ZERO,
-                        }
                     period_data[period_key]["realized_pnl"] += lot.realized_pnl
 
     # Aggregate unrealized exposure from open lots
@@ -221,11 +232,6 @@ def _aggregate_pnl_by_period(
                 # Include if the lot overlaps the date range (opened <= until, or no filter)
                 if lot.opened_at and _lot_overlaps_date_range(lot.opened_at):
                     period_key, _ = _group_date_to_period_key(lot.opened_at, period_type)
-                    if period_key not in period_data:
-                        period_data[period_key] = {
-                            "realized_pnl": ZERO,
-                            "unrealized_exposure": ZERO,
-                        }
                     period_data[period_key]["unrealized_exposure"] += lot.credit_remaining
 
     return period_data
