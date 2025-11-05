@@ -1,15 +1,28 @@
-# Repository Guidelines
+# Codex Agent Guidelines
 
-## Development
+## Identity & Signature
+
+- **Scope**: Sign PR reviews, issue comments, and automated PR/thread notes. Do not include the signature in PR or issue titles.
+- **Signature format**: `— Codex`
+- **Commit footer**: `Signed-off-by: Codex` (when committing via automation)
+- **Example**: "Looks good to merge — Codex"
+
+## Development Guidelines
 
 See [docs/developers/development.md](docs/developers/development.md) for project structure, coding style, testing, and build commands.
+
 See [docs/developers/code-review.md](docs/developers/code-review.md) for code review process and GitHub commands.
+
 See [docs/developers/commit-pr.md](docs/developers/commit-pr.md) for commit and PR guidelines.
+
 See [docs/developers/web-ui.md](docs/developers/web-ui.md) for comprehensive guidelines on creating new HTML pages and templates.
+
 See [docs/developers/cli.md](docs/developers/cli.md) for guidelines on creating CLI commands and separating UI logic from business logic.
 
-## Agent-Specific Instructions (Codex)
+## Code Review Process
 
-- Sign every public comment, review, or PR note with `— Codex`. Example: "LGTM — Codex".
-- When committing on behalf of the agent, append `Signed-off-by: Codex`.
-- Before addressing review feedback, inspect outstanding comments via `gh pr view <number> --json reviews,comments`.
+Before addressing review feedback, inspect outstanding comments via:
+
+```bash
+gh pr view <number> --json reviews,comments
+```
