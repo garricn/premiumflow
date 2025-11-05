@@ -696,8 +696,15 @@ def test_cashflow_view_filters_by_date_range(client_with_storage, tmp_path):
     assert "Cash Flow" in response.text and "P&L" in response.text
 
 
-def test_cashflow_view_empty_state(client_with_storage):
-    """Cashflow view shows empty state when no transactions exist."""
+def test_cashflow_view_empty_state_no_account(client_with_storage):
+    """Cashflow view shows empty state when no account is selected."""
+    response = client_with_storage.get("/cashflow")
+    assert response.status_code == 200
+    assert "Select an account" in response.text
+
+
+def test_cashflow_view_empty_state_no_transactions(client_with_storage):
+    """Cashflow view shows empty state when no transactions exist for account."""
     response = client_with_storage.get(
         "/cashflow",
         params={"account_name": "Empty Account", "account_number": "EMPTY-1"},
@@ -773,15 +780,22 @@ def test_cashflow_api_filters_work(client_with_storage, tmp_path):
     assert "totals" in data
 
 
-def test_cashflow_view_requires_account_name(client_with_storage):
-    """Cashflow view requires account_name parameter."""
+def test_cashflow_view_loads_without_account(client_with_storage):
+    """Cashflow view loads without account parameters, shows empty state."""
     response = client_with_storage.get("/cashflow")
+    assert response.status_code == 200
+    assert "Select an account" in response.text
+
+
+def test_cashflow_api_requires_account_name(client_with_storage):
+    """Cashflow API requires account_name parameter."""
+    response = client_with_storage.get("/api/cashflow")
     assert response.status_code == 400
     assert "account_name is required" in response.text
 
 
-def test_cashflow_view_requires_account_number(client_with_storage, tmp_path):
-    """Cashflow view requires account_number parameter."""
+def test_cashflow_api_requires_account_number(client_with_storage, tmp_path):
+    """Cashflow API requires account_number parameter."""
     _persist_import(
         tmp_path,
         account_name="Test Account",
@@ -790,6 +804,6 @@ def test_cashflow_view_requires_account_number(client_with_storage, tmp_path):
         transactions=[_make_transaction(instrument="TSLA", amount=Decimal("100.00"))],
     )
 
-    response = client_with_storage.get("/cashflow", params={"account_name": "Test Account"})
+    response = client_with_storage.get("/api/cashflow", params={"account_name": "Test Account"})
     assert response.status_code == 400
     assert "account_number is required" in response.text

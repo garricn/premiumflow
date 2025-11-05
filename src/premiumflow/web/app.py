@@ -683,27 +683,6 @@ def create_app() -> FastAPI:
         if period_type not in ("daily", "weekly", "monthly", "total"):
             period_type = "total"
 
-        # Validate required fields
-        if not account_name_filter:
-            raise HTTPException(status_code=400, detail="account_name is required")
-        if not account_number_filter:
-            raise HTTPException(status_code=400, detail="account_number is required")
-
-        # Parse dates
-        since_date = _parse_date_param(since)
-        until_date = _parse_date_param(until)
-
-        # Generate report
-        report = generate_cash_flow_pnl_report(
-            repository,
-            account_name=account_name_filter,
-            account_number=account_number_filter or None,
-            period_type=period_type,  # type: ignore[arg-type]
-            ticker=ticker_filter,
-            since=since_date,
-            until=until_date,
-        )
-
         # Get unique accounts for dropdown
         accounts = _get_unique_accounts(repository)
 
@@ -715,6 +694,25 @@ def create_app() -> FastAPI:
             "since": since or "",
             "until": until or "",
         }
+
+        # Only validate and generate report if account fields are provided
+        # On initial page load, show empty form
+        report = None
+        if account_name_filter and account_number_filter:
+            # Parse dates
+            since_date = _parse_date_param(since)
+            until_date = _parse_date_param(until)
+
+            # Generate report
+            report = generate_cash_flow_pnl_report(
+                repository,
+                account_name=account_name_filter,
+                account_number=account_number_filter or None,
+                period_type=period_type,  # type: ignore[arg-type]
+                ticker=ticker_filter,
+                since=since_date,
+                until=until_date,
+            )
 
         return templates.TemplateResponse(
             request=request,
