@@ -52,9 +52,11 @@ class PeriodMetrics:
     credits: Decimal
     debits: Decimal
     net_cash_flow: Decimal
-    realized_pnl: Decimal
-    unrealized_exposure: Decimal
-    total_pnl: Decimal  # realized + unrealized
+    gross_realized_pnl: Decimal  # Gross realized P&L (before fees) - matches Robinhood
+    net_realized_pnl: Decimal  # Realized P&L after fees (actual cash outcome)
+    unrealized_pnl: Decimal  # Credit remaining on open positions (unrealized P&L)
+    gross_pnl: Decimal  # gross_realized_pnl + unrealized_pnl
+    net_pnl: Decimal  # net_realized_pnl + unrealized_pnl
 
 
 @dataclass(frozen=True)
@@ -259,7 +261,7 @@ def _aggregate_realized_pnl(
     until: Optional[date] = None,
 ) -> None:
     """
-    Aggregate realized P&L from closed lots into period_data.
+    Aggregate gross and net realized P&L from closed lots into period_data.
 
     Realized P&L is attributed to the period when the lot was closed.
     Only includes lots closed within the date range (if filtering).
@@ -269,10 +271,14 @@ def _aggregate_realized_pnl(
             if lot.is_closed and lot.realized_pnl is not None:
                 if lot.closed_at and _date_in_range(lot.closed_at, since, until):
                     period_key, _ = _group_date_to_period_key(lot.closed_at, period_type)
-                    period_data[period_key]["realized_pnl"] += lot.realized_pnl
+                    # Aggregate gross realized P&L (before fees)
+                    period_data[period_key]["gross_realized_pnl"] += lot.realized_pnl
+                    # Aggregate net realized P&L (after fees)
+                    if lot.net_pnl is not None:
+                        period_data[period_key]["net_realized_pnl"] += lot.net_pnl
 
 
-def _aggregate_unrealized_exposure(
+def _aggregate_unrealized_pnl(
     matched_legs: List[MatchedLeg],
     period_type: PeriodType,
     period_data: Dict[str, Dict[str, Decimal]],
@@ -282,16 +288,16 @@ def _aggregate_unrealized_exposure(
     clamp_periods_to_range: bool = True,
 ) -> None:
     """
-    Aggregate unrealized exposure from open lots into period_data.
+    Aggregate unrealized P&L from open lots into period_data.
 
-    Unrealized exposure is attributed to the period when each individual lot
+    Unrealized P&L is attributed to the period when each individual lot
     was opened. Includes lots whose lifetime overlaps the date range (opened
     before or during the range).
 
     Parameters
     ----------
     clamp_periods_to_range
-        If True, clamp unrealized exposure periods to the first period in the
+        If True, clamp unrealized P&L periods to the first period in the
         range when positions were opened before the range start.
     """
     for leg in matched_legs:
@@ -302,7 +308,7 @@ def _aggregate_unrealized_exposure(
                     # Clamp period if needed
                     if clamp_periods_to_range:
                         period_key = _clamp_period_to_range(period_key, period_type, since)
-                    period_data[period_key]["unrealized_exposure"] += lot.credit_remaining
+                    period_data[period_key]["unrealized_pnl"] += lot.credit_remaining
 
 
 def _aggregate_pnl_by_period(
@@ -315,7 +321,7 @@ def _aggregate_pnl_by_period(
     clamp_periods_to_range: bool = True,
 ) -> Dict[str, Dict[str, Decimal]]:
     """
-    Aggregate realized P&L and unrealized exposure by time period.
+    Aggregate gross/net realized P&L and unrealized P&L by time period.
 
     Parameters
     ----------
@@ -330,14 +336,14 @@ def _aggregate_pnl_by_period(
     until
         Optional end date filter - only include P&L within this range
     clamp_periods_to_range
-        If True, clamp unrealized exposure periods to the first period in the
+        If True, clamp unrealized P&L periods to the first period in the
         range when positions were opened before the range start.
 
     Returns
     -------
     Dict[str, Dict[str, Decimal]]
-        Dictionary mapping period_key to a dict with 'realized_pnl' and
-        'unrealized_exposure' keys.
+        Dictionary mapping period_key to a dict with 'gross_realized_pnl',
+        'net_realized_pnl', and 'unrealized_pnl' keys.
     """
     # Pre-populate period_data with all relevant period keys from both
     # transactions and matched_legs to ensure all periods are initialized upfront
@@ -354,15 +360,16 @@ def _aggregate_pnl_by_period(
     period_data: Dict[str, Dict[str, Decimal]] = {}
     for period_key in all_period_keys:
         period_data[period_key] = {
-            "realized_pnl": ZERO,
-            "unrealized_exposure": ZERO,
+            "gross_realized_pnl": ZERO,
+            "net_realized_pnl": ZERO,
+            "unrealized_pnl": ZERO,
         }
 
     # Aggregate realized P&L from closed lots
     _aggregate_realized_pnl(matched_legs, period_type, period_data, since=since, until=until)
 
-    # Aggregate unrealized exposure from open lots
-    _aggregate_unrealized_exposure(
+    # Aggregate unrealized P&L from open lots
+    _aggregate_unrealized_pnl(
         matched_legs,
         period_type,
         period_data,
@@ -391,9 +398,11 @@ def _create_empty_report(
             credits=ZERO,
             debits=ZERO,
             net_cash_flow=ZERO,
-            realized_pnl=ZERO,
-            unrealized_exposure=ZERO,
-            total_pnl=ZERO,
+            gross_realized_pnl=ZERO,
+            net_realized_pnl=ZERO,
+            unrealized_pnl=ZERO,
+            gross_pnl=ZERO,
+            net_pnl=ZERO,
         ),
     )
 
@@ -481,14 +490,19 @@ def _build_period_metrics(
         period_label = _generate_period_label(period_key, filtered_transactions, period_type)
 
         cash_flow = cash_flow_by_period.get(period_key, {"credits": ZERO, "debits": ZERO})
-        pnl = pnl_by_period.get(period_key, {"realized_pnl": ZERO, "unrealized_exposure": ZERO})
+        pnl = pnl_by_period.get(
+            period_key,
+            {"gross_realized_pnl": ZERO, "net_realized_pnl": ZERO, "unrealized_pnl": ZERO},
+        )
 
         credits = Decimal(cash_flow["credits"])
         debits = Decimal(cash_flow["debits"])
         net_cash_flow = credits - debits
-        realized_pnl = Decimal(pnl["realized_pnl"])
-        unrealized_exposure = Decimal(pnl["unrealized_exposure"])
-        total_pnl = realized_pnl + unrealized_exposure
+        gross_realized_pnl = Decimal(pnl["gross_realized_pnl"])
+        net_realized_pnl = Decimal(pnl["net_realized_pnl"])
+        unrealized_pnl = Decimal(pnl["unrealized_pnl"])
+        gross_pnl = gross_realized_pnl + unrealized_pnl
+        net_pnl = net_realized_pnl + unrealized_pnl
 
         periods.append(
             PeriodMetrics(
@@ -497,9 +511,11 @@ def _build_period_metrics(
                 credits=credits,
                 debits=debits,
                 net_cash_flow=net_cash_flow,
-                realized_pnl=realized_pnl,
-                unrealized_exposure=unrealized_exposure,
-                total_pnl=total_pnl,
+                gross_realized_pnl=gross_realized_pnl,
+                net_realized_pnl=net_realized_pnl,
+                unrealized_pnl=unrealized_pnl,
+                gross_pnl=gross_pnl,
+                net_pnl=net_pnl,
             )
         )
 
@@ -510,8 +526,11 @@ def _calculate_totals(periods: List[PeriodMetrics]) -> PeriodMetrics:
     """Calculate grand totals across all periods."""
     total_credits = Decimal(sum(p.credits for p in periods))
     total_debits = Decimal(sum(p.debits for p in periods))
-    total_realized_pnl = Decimal(sum(p.realized_pnl for p in periods))
-    total_unrealized = Decimal(sum(p.unrealized_exposure for p in periods))
+    total_gross_realized_pnl = Decimal(sum(p.gross_realized_pnl for p in periods))
+    total_net_realized_pnl = Decimal(sum(p.net_realized_pnl for p in periods))
+    total_unrealized_pnl = Decimal(sum(p.unrealized_pnl for p in periods))
+    total_gross_pnl = total_gross_realized_pnl + total_unrealized_pnl
+    total_net_pnl = total_net_realized_pnl + total_unrealized_pnl
 
     return PeriodMetrics(
         period_key="total",
@@ -519,9 +538,11 @@ def _calculate_totals(periods: List[PeriodMetrics]) -> PeriodMetrics:
         credits=total_credits,
         debits=total_debits,
         net_cash_flow=total_credits - total_debits,
-        realized_pnl=total_realized_pnl,
-        unrealized_exposure=total_unrealized,
-        total_pnl=total_realized_pnl + total_unrealized,
+        gross_realized_pnl=total_gross_realized_pnl,
+        net_realized_pnl=total_net_realized_pnl,
+        unrealized_pnl=total_unrealized_pnl,
+        gross_pnl=total_gross_pnl,
+        net_pnl=total_net_pnl,
     )
 
 

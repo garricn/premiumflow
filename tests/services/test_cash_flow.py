@@ -107,8 +107,9 @@ def test_generate_report_empty_account(repository):
     assert len(report.periods) == 0
     assert report.totals.credits == Decimal("0")
     assert report.totals.debits == Decimal("0")
-    assert report.totals.realized_pnl == Decimal("0")
-    assert report.totals.unrealized_exposure == Decimal("0")
+    assert report.totals.gross_realized_pnl == Decimal("0")
+    assert report.totals.net_realized_pnl == Decimal("0")
+    assert report.totals.unrealized_pnl == Decimal("0")
 
 
 def test_generate_report_total_period_simple_flow(tmp_path, repository):
@@ -152,10 +153,11 @@ def test_generate_report_total_period_simple_flow(tmp_path, repository):
     assert report.periods[0].debits == Decimal("150.00")
     assert report.periods[0].net_cash_flow == Decimal("450.00")
     # Realized P&L should be calculated from matched legs
-    # One lot closed: opened with 600, closed with 150, realized_pnl should be positive
-    assert report.periods[0].realized_pnl > Decimal("0")
+    # One lot closed: opened with 600, closed with 150, gross_realized_pnl should be positive
+    assert report.periods[0].gross_realized_pnl > Decimal("0")
+    assert report.periods[0].net_realized_pnl > Decimal("0")
     # One lot still open (1 contract remaining)
-    assert report.periods[0].unrealized_exposure > Decimal("0")
+    assert report.periods[0].unrealized_pnl > Decimal("0")
 
 
 def test_generate_report_daily_period(tmp_path, repository):
@@ -410,13 +412,14 @@ def test_generate_report_realized_pnl_from_closed_lots(tmp_path, repository):
     )
 
     # Realized P&L should be positive (sold for 600, bought back for 200)
-    assert report.totals.realized_pnl > Decimal("0")
+    assert report.totals.gross_realized_pnl > Decimal("0")
+    assert report.totals.net_realized_pnl > Decimal("0")
     # Unrealized should be 0 since all lots are closed
-    assert report.totals.unrealized_exposure == Decimal("0")
+    assert report.totals.unrealized_pnl == Decimal("0")
 
 
-def test_generate_report_unrealized_exposure_from_open_lots(tmp_path, repository):
-    """Test that unrealized exposure correctly aggregates from open matched leg lots."""
+def test_generate_report_unrealized_pnl_from_open_lots(tmp_path, repository):
+    """Test that unrealized P&L correctly aggregates from open matched leg lots."""
     _seed_import(
         tmp_path,
         csv_name="unrealized.csv",
@@ -440,10 +443,11 @@ def test_generate_report_unrealized_exposure_from_open_lots(tmp_path, repository
         period_type="total",
     )
 
-    # Unrealized exposure should be positive (credit remaining on open positions)
-    assert report.totals.unrealized_exposure > Decimal("0")
+    # Unrealized P&L should be positive (credit remaining on open positions)
+    assert report.totals.unrealized_pnl > Decimal("0")
     # Realized P&L should be 0 since no lots are closed
-    assert report.totals.realized_pnl == Decimal("0")
+    assert report.totals.gross_realized_pnl == Decimal("0")
+    assert report.totals.net_realized_pnl == Decimal("0")
 
 
 def test_generate_report_multiple_accounts_isolation(tmp_path, repository):
@@ -576,15 +580,18 @@ def test_generate_report_pnl_includes_legs_opened_before_range(tmp_path, reposit
 
     # Realized P&L should be calculated correctly (opened for 600, closed for 200)
     # Even though opening was before the date range
-    assert report.totals.realized_pnl > Decimal("0")
-    # Should be approximately 400 (600 - 200), minus fees
-    assert report.totals.realized_pnl < Decimal("500")
+    assert report.totals.gross_realized_pnl > Decimal("0")
+    # Gross should be approximately 400 (600 - 200)
+    assert report.totals.gross_realized_pnl < Decimal("500")
+    # Net should be less than or equal to gross (after fees, but fees may be zero in test data)
+    assert report.totals.net_realized_pnl > Decimal("0")
+    assert report.totals.net_realized_pnl <= report.totals.gross_realized_pnl
 
 
-def test_generate_report_unrealized_exposure_includes_positions_opened_before_range(
+def test_generate_report_unrealized_pnl_includes_positions_opened_before_range(
     tmp_path, repository
 ):
-    """Test that unrealized exposure includes positions opened before date range."""
+    """Test that unrealized P&L includes positions opened before date range."""
     _seed_import(
         tmp_path,
         csv_name="open_before_range.csv",
@@ -614,14 +621,15 @@ def test_generate_report_unrealized_exposure_includes_positions_opened_before_ra
     assert report.totals.credits == Decimal("0")
     assert report.totals.debits == Decimal("0")
 
-    # Unrealized exposure should be included even though position was opened before range
+    # Unrealized P&L should be included even though position was opened before range
     # The position is still open during the requested period, so exposure should be included
-    assert report.totals.unrealized_exposure > Decimal("0")
+    assert report.totals.unrealized_pnl > Decimal("0")
     # Should be approximately 600 (credit remaining on open positions)
-    assert report.totals.unrealized_exposure < Decimal("700")
+    assert report.totals.unrealized_pnl < Decimal("700")
 
     # Realized P&L should be 0 since no positions were closed
-    assert report.totals.realized_pnl == Decimal("0")
+    assert report.totals.gross_realized_pnl == Decimal("0")
+    assert report.totals.net_realized_pnl == Decimal("0")
 
 
 def test_generate_report_clamps_periods_to_range(tmp_path, repository):
@@ -667,9 +675,9 @@ def test_generate_report_clamps_periods_to_range(tmp_path, repository):
     assert "2025-09" not in period_keys  # September period should not appear
     assert "2025-10" in period_keys  # October period should appear
 
-    # Unrealized exposure should be in October period (clamped)
+    # Unrealized P&L should be in October period (clamped)
     october_period = next(p for p in report_clamped.periods if p.period_key == "2025-10")
-    assert october_period.unrealized_exposure > Decimal("0")
+    assert october_period.unrealized_pnl > Decimal("0")
 
     # With clamping disabled - should show both September and October periods
     report_unclamped = generate_cash_flow_pnl_report(
@@ -687,9 +695,9 @@ def test_generate_report_clamps_periods_to_range(tmp_path, repository):
     assert "2025-09" in period_keys_unclamped  # September period should appear
     assert "2025-10" in period_keys_unclamped  # October period should appear
 
-    # Unrealized exposure should be in September period (not clamped)
+    # Unrealized P&L should be in September period (not clamped)
     september_period = next(p for p in report_unclamped.periods if p.period_key == "2025-09")
-    assert september_period.unrealized_exposure > Decimal("0")
+    assert september_period.unrealized_pnl > Decimal("0")
 
     # Totals should be the same in both cases
-    assert report_clamped.totals.unrealized_exposure == report_unclamped.totals.unrealized_exposure
+    assert report_clamped.totals.unrealized_pnl == report_unclamped.totals.unrealized_pnl
