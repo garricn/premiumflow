@@ -1,7 +1,12 @@
 """Services for roll chain analysis."""
 
 from .analyzer import calculate_breakeven, calculate_pnl
-from .cash_flows import CashFlowRow, CashFlowSummary, CashFlowTotals, summarize_cash_flows
+from .cash_flow import (
+    CashFlowPnlReport,
+    PeriodMetrics,
+    PeriodType,
+    generate_cash_flow_pnl_report,
+)
 from .chain_builder import detect_roll_chains
 from .cli_helpers import (
     create_target_label,
@@ -75,10 +80,6 @@ __all__ = [
     "format_expiration_date",
     "format_account_label",
     "create_target_label",
-    "summarize_cash_flows",
-    "CashFlowSummary",
-    "CashFlowTotals",
-    "CashFlowRow",
     "normalized_to_csv_dicts",
     "match_legs",
     "match_leg_fills",
@@ -86,4 +87,8 @@ __all__ = [
     "group_fills_by_account",
     "MatchedLeg",
     "MatchedLegLot",
+    "generate_cash_flow_pnl_report",
+    "CashFlowPnlReport",
+    "PeriodMetrics",
+    "PeriodType",
 ]
