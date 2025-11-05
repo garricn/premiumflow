@@ -28,6 +28,27 @@
 - Include edge cases (positive/negative amounts, commission overrides). Add fixtures to `tests/fixtures/` for shared CSVs.
 - Run `uv run pytest` locally before opening a PR; CI enforces the same checks.
 
+### What to Test
+
+- **Test your code, not dependencies**: Don't test third-party libraries or frameworks (e.g., Click, FastAPI, Rich). Test that you use them correctly, but assume they work as documented.
+- **Test business logic**: Focus tests on `core/` and `services/` modules where business logic lives.
+- **Test integration points**: Test that CLI commands call services correctly, that services use repositories correctly, etc.
+- **Test edge cases**: Boundary conditions, error cases, empty inputs, etc.
+
+### What NOT to Test
+
+- **Don't test dependencies**: We don't test Click's argument parsing, FastAPI's routing, or Rich's table rendering. We test that we use them correctly.
+- **Don't test framework behavior**: If a framework provides a feature (like Click's `--help`), we assume it works.
+- **Don't duplicate dependency tests**: If a library has its own test suite, we don't need to re-test it.
+- **Don't test implementation details**: Focus on behavior and outcomes, not internal implementation.
+
+### Testing Patterns
+
+- **Unit tests**: Test individual functions and classes in isolation (use mocks for dependencies).
+- **Integration tests**: Test how components work together (e.g., service + repository, CLI + service).
+- **Mock external dependencies**: Mock database calls, file I/O, network requests when testing business logic.
+- **Use fixtures**: Share test data via `tests/fixtures/` for CSV files and other test data.
+
 ## Service-Oriented Architecture
 
 - The application is structured around self-contained services.

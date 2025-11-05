@@ -25,3 +25,7 @@ See [docs/commit-pr-guidelines.md](../docs/commit-pr-guidelines.md) for commit a
 ## Web UI Development
 
 See [docs/web-ui-guidelines.md](../docs/web-ui-guidelines.md) for comprehensive guidelines on creating new HTML pages and templates.
+
+## CLI Development
+
+See [docs/cli-guidelines.md](../docs/cli-guidelines.md) for guidelines on creating CLI commands and separating UI logic from business logic.

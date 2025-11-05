@@ -16,6 +16,10 @@ See [docs/commit-pr-guidelines.md](docs/commit-pr-guidelines.md) for commit and 
 
 See [docs/web-ui-guidelines.md](docs/web-ui-guidelines.md) for comprehensive guidelines on creating new HTML pages and templates.
 
+## CLI Development
+
+See [docs/cli-guidelines.md](docs/cli-guidelines.md) for guidelines on creating CLI commands and separating UI logic from business logic.
+
 ## Agent-Specific Instructions (Codex)
 
 - Sign every public comment, review, or PR note with `— Codex`. Example: "LGTM — Codex".
