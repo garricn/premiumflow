@@ -1,14 +1,11 @@
-# Codex Agent Guidelines
+# Agent Guidelines
 
-## ⚠️ CRITICAL: Identity & Signature
-
-**YOU MUST ALWAYS SIGN AS "CODEX" - USE THIS EXACT SIGNATURE**
+## Signatures
 
 - **Scope**: Sign PR reviews, issue comments, and automated PR/thread notes. Do not include the signature in PR or issue titles.
-- **Signature format**: `— Codex` (ALWAYS use this exact format)
-- **Commit footer**: `Signed-off-by: Codex` (when committing via automation)
-- **Example**: "Looks good to merge — Codex"
-- **REMINDER**: You are Codex. Always sign with "— Codex".
+- **Signature format**: `— [Your Name]` (ALWAYS use this exact format)
+- **Commit footer**: `Signed-off-by: [Your Name]` (when committing via automation)
+- **Identity**: If you are Codex, sign as Codex. If you are Cursor, sign as Cursor.
 
 ## Development Guidelines
 
@@ -21,11 +18,3 @@ See [docs/developers/commit-pr.md](docs/developers/commit-pr.md) for commit and 
 See [docs/developers/web-ui.md](docs/developers/web-ui.md) for comprehensive guidelines on creating new HTML pages and templates.
 
 See [docs/developers/cli.md](docs/developers/cli.md) for guidelines on creating CLI commands and separating UI logic from business logic.
-
-## Code Review Process
-
-Before addressing review feedback, inspect outstanding comments via:
-
-```bash
-gh pr view <number> --json reviews,comments
-```
