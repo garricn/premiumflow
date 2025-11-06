@@ -818,6 +818,62 @@ def test_cashflow_api_requires_account(client_with_storage):
     assert "account is required" in response.text
 
 
+def test_cashflow_view_validates_date_range(client_with_storage, tmp_path):
+    """Cashflow view shows error when start date is after end date."""
+    _persist_import(
+        tmp_path,
+        account_name="Date Account",
+        account_number="DATE-1",
+        csv_name="date.csv",
+        transactions=[
+            _make_transaction(
+                instrument="TSLA",
+                amount=Decimal("100.00"),
+                activity_date=date(2024, 9, 1),
+            ),
+        ],
+    )
+
+    response = client_with_storage.get(
+        "/cashflow",
+        params={
+            "account": "Date Account|DATE-1",
+            "since": "2024-09-10",
+            "until": "2024-09-01",
+        },
+    )
+    assert response.status_code == 200
+    assert "Start date must be before or equal to end date" in response.text
+
+
+def test_cashflow_api_validates_date_range(client_with_storage, tmp_path):
+    """Cashflow API returns error when start date is after end date."""
+    _persist_import(
+        tmp_path,
+        account_name="Date Account",
+        account_number="DATE-1",
+        csv_name="date.csv",
+        transactions=[
+            _make_transaction(
+                instrument="TSLA",
+                amount=Decimal("100.00"),
+                activity_date=date(2024, 9, 1),
+            ),
+        ],
+    )
+
+    response = client_with_storage.get(
+        "/api/cashflow",
+        params={
+            "account": "Date Account|DATE-1",
+            "since": "2024-09-10",
+            "until": "2024-09-01",
+        },
+    )
+    assert response.status_code == 400
+    assert "Start date must be before or equal to end date" in response.json()["detail"]
+
+
 def test_cashflow_api_supports_account_without_number(client_with_storage, tmp_path):
     """Cashflow API supports accounts without account numbers."""
     _persist_import(

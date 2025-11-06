@@ -721,21 +721,26 @@ def create_app() -> FastAPI:
 
         # Generate report if account is available
         report = None
+        error_message = None
         if account_name_filter:
             # Parse dates
             since_date = _parse_date_param(since)
             until_date = _parse_date_param(until)
 
-            # Generate report
-            report = generate_cash_flow_pnl_report(
-                repository,
-                account_name=account_name_filter,
-                account_number=account_number_filter or None,
-                period_type=period_type,  # type: ignore[arg-type]
-                ticker=ticker_filter,
-                since=since_date,
-                until=until_date,
-            )
+            # Validate date range
+            if since_date and until_date and since_date > until_date:
+                error_message = "Start date must be before or equal to end date"
+            else:
+                # Generate report
+                report = generate_cash_flow_pnl_report(
+                    repository,
+                    account_name=account_name_filter,
+                    account_number=account_number_filter or None,
+                    period_type=period_type,  # type: ignore[arg-type]
+                    ticker=ticker_filter,
+                    since=since_date,
+                    until=until_date,
+                )
 
         return templates.TemplateResponse(
             request=request,
@@ -746,6 +751,7 @@ def create_app() -> FastAPI:
                 "accounts": accounts,
                 "filters": filters,
                 "format_currency": format_currency,
+                "error_message": error_message,
             },
         )
 
@@ -773,6 +779,12 @@ def create_app() -> FastAPI:
         # Parse dates
         since_date = _parse_date_param(since)
         until_date = _parse_date_param(until)
+
+        # Validate date range
+        if since_date and until_date and since_date > until_date:
+            raise HTTPException(
+                status_code=400, detail="Start date must be before or equal to end date"
+            )
 
         # Generate report
         report = generate_cash_flow_pnl_report(
