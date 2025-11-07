@@ -244,3 +244,68 @@ def test_rebuild_stock_lots_buy_covers_short_and_opens_long(repository, tmp_path
     assert open_row["quantity"] == 50
     assert Decimal(open_row["cost_basis_per_share"]) == Decimal("10.0000")
     assert Decimal(open_row["assignment_premium_total"]) == Decimal("0")
+
+
+def test_rebuild_stock_lots_isolates_symbols(repository, tmp_path):
+    """Lots are matched FIFO per symbol so symbols do not cross-consume."""
+    _persist(
+        tmp_path,
+        account_name="Primary",
+        account_number="ACCT-1",
+        transactions=[],
+        stock_transactions=[
+            _make_stock_transaction(
+                instrument="HOOD",
+                trans_code="Buy",
+                action="BUY",
+                price=Decimal("10.00"),
+                amount=Decimal("-1000.00"),
+                quantity=100,
+                activity_date=date(2025, 8, 20),
+            ),
+            _make_stock_transaction(
+                instrument="TSLA",
+                trans_code="Buy",
+                action="BUY",
+                price=Decimal("200.00"),
+                amount=Decimal("-20000.00"),
+                quantity=100,
+                activity_date=date(2025, 8, 21),
+            ),
+            _make_stock_transaction(
+                instrument="TSLA",
+                trans_code="Sell",
+                action="SELL",
+                price=Decimal("210.00"),
+                amount=Decimal("21000.00"),
+                quantity=100,
+                activity_date=date(2025, 8, 22),
+            ),
+            _make_stock_transaction(
+                instrument="HOOD",
+                trans_code="Sell",
+                action="SELL",
+                price=Decimal("11.00"),
+                amount=Decimal("1100.00"),
+                quantity=100,
+                activity_date=date(2025, 8, 23),
+            ),
+        ],
+    )
+
+    rebuild_stock_lots(repository, account_name="Primary", account_number="ACCT-1")
+
+    with repository._storage._connect() as conn:  # type: ignore[attr-defined]
+        rows = conn.execute(
+            "SELECT * FROM stock_lots WHERE status='closed' ORDER BY symbol"
+        ).fetchall()
+
+    assert len(rows) == 2
+    hood = next(row for row in rows if row["symbol"] == "HOOD")
+    assert Decimal(hood["cost_basis_per_share"]) == Decimal("10.0000")
+    assert Decimal(hood["proceeds_per_share"]) == Decimal("11.0000")
+    assert Decimal(hood["realized_pnl_total"]).quantize(Decimal("0.01")) == Decimal("100.00")
+    tsla = next(row for row in rows if row["symbol"] == "TSLA")
+    assert Decimal(tsla["cost_basis_per_share"]) == Decimal("200.0000")
+    assert Decimal(tsla["proceeds_per_share"]) == Decimal("210.0000")
+    assert Decimal(tsla["realized_pnl_total"]).quantize(Decimal("0.01")) == Decimal("1000.00")

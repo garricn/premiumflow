@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections import deque
+from collections import defaultdict, deque
 from dataclasses import dataclass
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
@@ -177,11 +177,13 @@ def _assignment_portion_to_event(
 
 
 def _match_stock_lots(events: List[ShareEvent]) -> List[PersistedStockLot]:
-    long_lots: deque[LotState] = deque()
-    short_lots: deque[ShortLotState] = deque()
+    long_lot_queues: defaultdict[str, deque[LotState]] = defaultdict(deque)
+    short_lot_queues: defaultdict[str, deque[ShortLotState]] = defaultdict(deque)
     results: List[PersistedStockLot] = []
 
     for event in events:
+        long_lots = long_lot_queues[event.symbol]
+        short_lots = short_lot_queues[event.symbol]
         if event.quantity > 0:
             remaining = event.quantity
             remaining_cost = event.total_value - event.premium_total
@@ -250,58 +252,60 @@ def _match_stock_lots(events: List[ShareEvent]) -> List[PersistedStockLot]:
                 )
                 short_lots.append(short_state)
 
-    while long_lots:
-        lot_state = long_lots.popleft()
-        results.append(
-            PersistedStockLot(
-                symbol=lot_state.symbol,
-                opened_at=lot_state.opened_at,
-                closed_at=None,
-                quantity=lot_state.quantity_remaining,
-                direction="long",
-                cost_basis_total=lot_state.cost_basis_remaining,
-                cost_basis_per_share=lot_state.cost_per_share,
-                open_fee_total=lot_state.open_fee_total,
-                assignment_premium_total=lot_state.premium_total,
-                proceeds_total=None,
-                proceeds_per_share=None,
-                close_fee_total=Decimal("0"),
-                realized_pnl_total=None,
-                realized_pnl_per_share=None,
-                open_source=lot_state.source,
-                open_source_id=lot_state.source_id,
-                close_source=None,
-                close_source_id=None,
-                status="open",
+    for long_lots in long_lot_queues.values():
+        while long_lots:
+            lot_state = long_lots.popleft()
+            results.append(
+                PersistedStockLot(
+                    symbol=lot_state.symbol,
+                    opened_at=lot_state.opened_at,
+                    closed_at=None,
+                    quantity=lot_state.quantity_remaining,
+                    direction="long",
+                    cost_basis_total=lot_state.cost_basis_remaining,
+                    cost_basis_per_share=lot_state.cost_per_share,
+                    open_fee_total=lot_state.open_fee_total,
+                    assignment_premium_total=lot_state.premium_total,
+                    proceeds_total=None,
+                    proceeds_per_share=None,
+                    close_fee_total=Decimal("0"),
+                    realized_pnl_total=None,
+                    realized_pnl_per_share=None,
+                    open_source=lot_state.source,
+                    open_source_id=lot_state.source_id,
+                    close_source=None,
+                    close_source_id=None,
+                    status="open",
+                )
             )
-        )
 
-    while short_lots:
-        short_state = short_lots.popleft()
-        results.append(
-            PersistedStockLot(
-                symbol=short_state.symbol,
-                opened_at=short_state.opened_at,
-                closed_at=None,
-                quantity=-short_state.quantity_remaining,
-                direction="short",
-                cost_basis_total=Decimal("0"),
-                cost_basis_per_share=Decimal("0"),
-                open_fee_total=short_state.open_fee_total,
-                assignment_premium_total=Decimal("0"),
-                proceeds_total=short_state.proceeds_per_share
-                * Decimal(short_state.quantity_remaining),
-                proceeds_per_share=short_state.proceeds_per_share,
-                close_fee_total=Decimal("0"),
-                realized_pnl_total=None,
-                realized_pnl_per_share=None,
-                open_source=short_state.source,
-                open_source_id=short_state.source_id,
-                close_source=None,
-                close_source_id=None,
-                status="open",
+    for short_lots in short_lot_queues.values():
+        while short_lots:
+            short_state = short_lots.popleft()
+            results.append(
+                PersistedStockLot(
+                    symbol=short_state.symbol,
+                    opened_at=short_state.opened_at,
+                    closed_at=None,
+                    quantity=-short_state.quantity_remaining,
+                    direction="short",
+                    cost_basis_total=Decimal("0"),
+                    cost_basis_per_share=Decimal("0"),
+                    open_fee_total=short_state.open_fee_total,
+                    assignment_premium_total=Decimal("0"),
+                    proceeds_total=short_state.proceeds_per_share
+                    * Decimal(short_state.quantity_remaining),
+                    proceeds_per_share=short_state.proceeds_per_share,
+                    close_fee_total=Decimal("0"),
+                    realized_pnl_total=None,
+                    realized_pnl_per_share=None,
+                    open_source=short_state.source,
+                    open_source_id=short_state.source_id,
+                    close_source=None,
+                    close_source_id=None,
+                    status="open",
+                )
             )
-        )
 
     return results
 
