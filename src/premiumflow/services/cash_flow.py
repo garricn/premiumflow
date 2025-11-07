@@ -359,15 +359,25 @@ def _aggregate_opening_fees(
     *,
     since: Optional[date] = None,
     until: Optional[date] = None,
+    clamp_periods_to_range: bool = True,
 ) -> None:
     """Aggregate opening fees by the period in which each lot was opened."""
     for leg in matched_legs:
         for lot in leg.lots:
-            if lot.opened_at is None or not _date_in_range(lot.opened_at, since, until):
+            if lot.opened_at is None:
                 continue
 
             period_key, _ = _group_date_to_period_key(lot.opened_at, period_type)
+            if since is not None and lot.opened_at < since:
+                if not clamp_periods_to_range:
+                    continue
+                period_key = _clamp_period_to_range(period_key, period_type, since)
+            elif not _date_in_range(lot.opened_at, since, until):
+                continue
+
             open_fees = Decimal(lot.open_fees)
+            if open_fees == ZERO:
+                continue
             period_data[period_key]["opening_fees"] += open_fees
             period_data[period_key]["total_fees"] += open_fees
 
@@ -499,7 +509,14 @@ def _aggregate_pnl_by_period(
     _aggregate_realized_pnl(matched_legs, period_type, period_data, since=since, until=until)
 
     # Aggregate fees
-    _aggregate_opening_fees(matched_legs, period_type, period_data, since=since, until=until)
+    _aggregate_opening_fees(
+        matched_legs,
+        period_type,
+        period_data,
+        since=since,
+        until=until,
+        clamp_periods_to_range=clamp_periods_to_range,
+    )
     _aggregate_closing_fees(matched_legs, period_type, period_data, since=since, until=until)
 
     # Aggregate unrealized exposure from lots that were open during the period

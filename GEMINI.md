@@ -1,5 +1,10 @@
 # Gemini Agent Guidelines
 
+## Important
+
+- DO NOT support backwards compatibility unless specifically asked.
+- DO NOT fail gracefully. Fail hard and fast.
+
 ## Signatures
 
 - **Scope**: Sign PR reviews, issue comments, and automated PR/thread notes. Do not include the signature in PR or issue titles.
