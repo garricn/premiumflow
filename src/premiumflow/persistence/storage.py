@@ -141,7 +141,7 @@ class SQLiteStorage:
                 CREATE TABLE IF NOT EXISTS stock_lots (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
-                    source_transaction_id INTEGER NOT NULL REFERENCES option_transactions(id) ON DELETE CASCADE,
+                    source_transaction_id INTEGER REFERENCES option_transactions(id) ON DELETE SET NULL,
                     symbol TEXT NOT NULL,
                     opened_at TEXT NOT NULL,
                     closed_at TEXT,
@@ -163,13 +163,10 @@ class SQLiteStorage:
                     updated_at TEXT NOT NULL
                 );
 
-                DROP INDEX IF EXISTS idx_stock_lots_source_transaction;
-                CREATE INDEX IF NOT EXISTS idx_stock_lots_source_transaction
-                    ON stock_lots(source_transaction_id);
-                CREATE INDEX IF NOT EXISTS idx_stock_lots_account_status
-                    ON stock_lots(account_id, status);
                 """
             )
+            self._ensure_stock_lots_source_column(conn)
+            self._ensure_stock_lot_indexes(conn)
             self._create_stock_transactions_table(conn, if_not_exists=True)
             self._ensure_stock_transactions_schema(conn)
             # Clean up any legacy duplicates that may exist from versions prior to
@@ -190,6 +187,29 @@ class SQLiteStorage:
                 """
             )
         self._initialized = True
+
+    def _ensure_stock_lots_source_column(self, conn: sqlite3.Connection) -> None:
+        columns = self._get_table_info(conn, "stock_lots")
+        if not columns:
+            return
+        column_names = {row["name"] for row in columns}
+        if "source_transaction_id" in column_names:
+            return
+        conn.execute("ALTER TABLE stock_lots ADD COLUMN source_transaction_id INTEGER")
+
+    def _ensure_stock_lot_indexes(self, conn: sqlite3.Connection) -> None:
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_stock_lots_source_transaction
+                ON stock_lots(source_transaction_id);
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_stock_lots_account_status
+                ON stock_lots(account_id, status);
+            """
+        )
 
     def _create_stock_transactions_table(
         self, conn: sqlite3.Connection, *, if_not_exists: bool

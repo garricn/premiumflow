@@ -392,3 +392,49 @@ def test_initialization_does_not_drop_existing_stock_lots(tmp_path, monkeypatch)
         rows = conn.execute("SELECT symbol, quantity FROM stock_lots").fetchall()
 
     assert [tuple(row) for row in rows] == [("TSLA", 100)]
+
+
+def test_initialization_backfills_source_transaction_column(tmp_path):
+    db_path = tmp_path / "premiumflow.db"
+    storage = storage_module.SQLiteStorage(db_path)
+    storage._ensure_initialized()
+
+    with storage._connect() as conn:  # type: ignore[attr-defined]
+        conn.execute("DROP TABLE stock_lots")
+        conn.execute(
+            """
+            CREATE TABLE stock_lots (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                account_id INTEGER NOT NULL,
+                symbol TEXT NOT NULL,
+                opened_at TEXT NOT NULL,
+                closed_at TEXT,
+                quantity INTEGER NOT NULL,
+                direction TEXT NOT NULL,
+                option_type TEXT NOT NULL,
+                strike_price TEXT NOT NULL,
+                expiration TEXT NOT NULL,
+                share_price_total TEXT NOT NULL,
+                share_price_per_share TEXT NOT NULL,
+                open_premium_total TEXT NOT NULL,
+                open_premium_per_share TEXT NOT NULL,
+                open_fee_total TEXT NOT NULL,
+                net_credit_total TEXT NOT NULL,
+                net_credit_per_share TEXT NOT NULL,
+                assignment_kind TEXT,
+                status TEXT NOT NULL DEFAULT 'open',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+
+    storage = storage_module.SQLiteStorage(db_path)
+    storage._ensure_initialized()
+
+    with storage._connect() as conn:  # type: ignore[attr-defined]
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(stock_lots)")}
+        indexes = {row["name"] for row in conn.execute("PRAGMA index_list('stock_lots')")}
+
+    assert "source_transaction_id" in columns
+    assert "idx_stock_lots_source_transaction" in indexes
