@@ -391,6 +391,13 @@ def _close_short_lots(
     price_per_share = (buy_cost_total / Decimal(buy_qty)).quantize(
         Decimal("0.0001"), rounding=ROUND_HALF_UP
     )
+    gross_price_per_share = (
+        ((buy_cost_total + buy_premium_total) / Decimal(buy_qty)).quantize(
+            Decimal("0.0001"), rounding=ROUND_HALF_UP
+        )
+        if buy_qty
+        else Decimal("0")
+    )
     premium_per_share = (
         (buy_premium_total / Decimal(buy_qty)).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
         if buy_premium_total
@@ -400,9 +407,10 @@ def _close_short_lots(
         lot = short_lots[0]
         cover_qty = min(remaining_buy, lot.quantity_remaining)
         cover_cost = price_per_share * Decimal(cover_qty)
+        cover_cost_gross = gross_price_per_share * Decimal(cover_qty)
         cover_premium = premium_per_share * Decimal(cover_qty)
         proceeds_total = lot.proceeds_per_share * Decimal(cover_qty)
-        realized = proceeds_total - cover_cost
+        realized = proceeds_total - cover_cost_gross
 
         results.append(
             PersistedStockLot(
@@ -411,10 +419,10 @@ def _close_short_lots(
                 closed_at=event.activity_date,
                 quantity=-cover_qty,
                 direction="short",
-                cost_basis_total=cover_cost,
-                cost_basis_per_share=price_per_share,
+                cost_basis_total=cover_cost_gross,
+                cost_basis_per_share=gross_price_per_share,
                 open_fee_total=lot.open_fee_total,
-                assignment_premium_total=Decimal("0"),
+                assignment_premium_total=cover_premium,
                 proceeds_total=proceeds_total,
                 proceeds_per_share=lot.proceeds_per_share,
                 close_fee_total=Decimal("0"),

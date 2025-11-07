@@ -432,3 +432,57 @@ def test_rebuild_stock_lots_respects_same_day_order(repository, tmp_path):
     assert lot["status"] == "closed"
     assert lot["open_source"] == "stock_buy"
     assert lot["close_source"] == "assignment_call"
+
+
+def test_rebuild_stock_lots_preserves_assignment_premium_on_short_close(repository, tmp_path):
+    """Covering a short lot with a put assignment retains the assignment premium."""
+    _persist(
+        tmp_path,
+        account_name="Primary",
+        account_number="ACCT-1",
+        transactions=[
+            _make_option_transaction(
+                instrument="HOOD",
+                option_type="PUT",
+                trans_code="STO",
+                quantity=1,
+                price=Decimal("1.75"),
+                amount=Decimal("175.00"),
+                activity_date=date(2025, 9, 1),
+                description="HOOD 10/01/2025 Put $100.00",
+                strike=Decimal("100.00"),
+            ),
+            _make_option_transaction(
+                instrument="HOOD",
+                option_type="PUT",
+                trans_code="OASGN",
+                quantity=1,
+                price=Decimal("0.00"),
+                amount=None,
+                activity_date=date(2025, 9, 2),
+                description="Assignment HOOD 10/01/2025 Put $100.00",
+                strike=Decimal("100.00"),
+            ),
+        ],
+        stock_transactions=[
+            _make_stock_transaction(
+                instrument="HOOD",
+                trans_code="Sell",
+                action="SELL",
+                price=Decimal("110.00"),
+                amount=Decimal("11000.00"),
+                quantity=100,
+                activity_date=date(2025, 9, 1),
+            ),
+        ],
+    )
+
+    rebuild_stock_lots(repository, account_name="Primary", account_number="ACCT-1")
+
+    with repository._storage._connect() as conn:  # type: ignore[attr-defined]
+        row = conn.execute("SELECT * FROM stock_lots WHERE status='closed'").fetchone()
+
+    assert row is not None
+    assert row["direction"] == "short"
+    assert Decimal(row["assignment_premium_total"]).quantize(Decimal("0.01")) == Decimal("175.00")
+    assert Decimal(row["realized_pnl_total"]).quantize(Decimal("0.01")) == Decimal("1000.00")
