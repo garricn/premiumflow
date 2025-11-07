@@ -18,6 +18,51 @@ from ..core.parser import ParsedImportResult
 DEFAULT_DB_PATH = Path.home() / ".premiumflow" / "premiumflow.db"
 DB_ENV_VAR = "PREMIUMFLOW_DB_PATH"
 
+STOCK_LOTS_EXPECTED_COLUMNS = {
+    "id",
+    "account_id",
+    "symbol",
+    "opened_at",
+    "closed_at",
+    "quantity",
+    "direction",
+    "cost_basis_total",
+    "cost_basis_per_share",
+    "open_fee_total",
+    "assignment_premium_total",
+    "proceeds_total",
+    "proceeds_per_share",
+    "close_fee_total",
+    "realized_pnl_total",
+    "realized_pnl_per_share",
+    "open_source",
+    "open_source_id",
+    "close_source",
+    "close_source_id",
+    "status",
+    "created_at",
+    "updated_at",
+}
+
+LEGACY_STOCK_LOTS_COLUMNS = {
+    "account_id",
+    "source_transaction_id",
+    "symbol",
+    "opened_at",
+    "closed_at",
+    "quantity",
+    "direction",
+    "share_price_total",
+    "share_price_per_share",
+    "open_fee_total",
+    "open_premium_total",
+    "net_credit_total",
+    "net_credit_per_share",
+    "status",
+    "created_at",
+    "updated_at",
+}
+
 
 def _determine_db_path() -> Path:
     override = os.environ.get(DB_ENV_VAR)
@@ -162,36 +207,10 @@ class SQLiteStorage:
                 CREATE INDEX IF NOT EXISTS idx_stock_transactions_activity_date
                     ON stock_transactions(activity_date);
 
-                CREATE TABLE IF NOT EXISTS stock_lots (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
-                    symbol TEXT NOT NULL,
-                    opened_at TEXT NOT NULL,
-                    closed_at TEXT,
-                    quantity INTEGER NOT NULL,
-                    direction TEXT NOT NULL,
-                    cost_basis_total TEXT NOT NULL,
-                    cost_basis_per_share TEXT NOT NULL,
-                    open_fee_total TEXT NOT NULL,
-                    assignment_premium_total TEXT,
-                    proceeds_total TEXT,
-                    proceeds_per_share TEXT,
-                    close_fee_total TEXT,
-                    realized_pnl_total TEXT,
-                    realized_pnl_per_share TEXT,
-                    open_source TEXT NOT NULL,
-                    open_source_id INTEGER,
-                    close_source TEXT,
-                    close_source_id INTEGER,
-                    status TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
-                );
-
-                CREATE INDEX IF NOT EXISTS idx_stock_lots_account_symbol
-                    ON stock_lots(account_id, symbol);
                 """
             )
+            self._create_stock_lots_table(conn, if_not_exists=True)
+            self._migrate_stock_lots_if_needed(conn)
             # Clean up any legacy duplicates that may exist from versions prior to
             # the unique constraint so schema migrations succeed without manual
             # intervention.
@@ -210,6 +229,145 @@ class SQLiteStorage:
                 """
             )
         self._initialized = True
+
+    def _create_stock_lots_table(self, conn: sqlite3.Connection, *, if_not_exists: bool) -> None:
+        clause = "IF NOT EXISTS " if if_not_exists else ""
+        conn.execute(
+            f"""
+            CREATE TABLE {clause}stock_lots (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+                symbol TEXT NOT NULL,
+                opened_at TEXT NOT NULL,
+                closed_at TEXT,
+                quantity INTEGER NOT NULL,
+                direction TEXT NOT NULL,
+                cost_basis_total TEXT NOT NULL,
+                cost_basis_per_share TEXT NOT NULL,
+                open_fee_total TEXT NOT NULL,
+                assignment_premium_total TEXT,
+                proceeds_total TEXT,
+                proceeds_per_share TEXT,
+                close_fee_total TEXT,
+                realized_pnl_total TEXT,
+                realized_pnl_per_share TEXT,
+                open_source TEXT NOT NULL,
+                open_source_id INTEGER,
+                close_source TEXT,
+                close_source_id INTEGER,
+                status TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_stock_lots_account_symbol
+                ON stock_lots(account_id, symbol);
+            """
+        )
+
+    def _get_table_columns(self, conn: sqlite3.Connection, table: str) -> set[str]:
+        try:
+            rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+        except sqlite3.OperationalError:
+            return set()
+        return {row["name"] for row in rows}
+
+    def _migrate_stock_lots_if_needed(self, conn: sqlite3.Connection) -> None:
+        columns = self._get_table_columns(conn, "stock_lots")
+        if not columns:
+            return
+        if STOCK_LOTS_EXPECTED_COLUMNS.issubset(columns):
+            return
+
+        conn.execute("DROP INDEX IF EXISTS idx_stock_lots_account_symbol")
+        conn.execute("ALTER TABLE stock_lots RENAME TO stock_lots_legacy")
+        self._create_stock_lots_table(conn, if_not_exists=False)
+
+        if LEGACY_STOCK_LOTS_COLUMNS.issubset(columns):
+            legacy_rows = conn.execute(
+                """
+                SELECT
+                    account_id,
+                    source_transaction_id,
+                    symbol,
+                    opened_at,
+                    closed_at,
+                    quantity,
+                    direction,
+                    share_price_total,
+                    share_price_per_share,
+                    open_fee_total,
+                    open_premium_total,
+                    net_credit_total,
+                    net_credit_per_share,
+                    status,
+                    created_at,
+                    updated_at
+                FROM stock_lots_legacy
+                """
+            ).fetchall()
+            if legacy_rows:
+                payload = [
+                    (
+                        row["account_id"],
+                        row["symbol"],
+                        row["opened_at"],
+                        row["closed_at"],
+                        row["quantity"],
+                        row["direction"],
+                        row["share_price_total"] or "0",
+                        row["share_price_per_share"] or "0",
+                        row["open_fee_total"] or "0",
+                        row["open_premium_total"],
+                        row["net_credit_total"],
+                        row["net_credit_per_share"],
+                        None,
+                        None,
+                        None,
+                        "legacy_migration",
+                        row["source_transaction_id"],
+                        None,
+                        None,
+                        row["status"],
+                        row["created_at"],
+                        row["updated_at"],
+                    )
+                    for row in legacy_rows
+                ]
+                conn.executemany(
+                    """
+                    INSERT INTO stock_lots (
+                        account_id,
+                        symbol,
+                        opened_at,
+                        closed_at,
+                        quantity,
+                        direction,
+                        cost_basis_total,
+                        cost_basis_per_share,
+                        open_fee_total,
+                        assignment_premium_total,
+                        proceeds_total,
+                        proceeds_per_share,
+                        close_fee_total,
+                        realized_pnl_total,
+                        realized_pnl_per_share,
+                        open_source,
+                        open_source_id,
+                        close_source,
+                        close_source_id,
+                        status,
+                        created_at,
+                        updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    payload,
+                )
+
+        conn.execute("DROP TABLE IF EXISTS stock_lots_legacy")
 
     def store_import(
         self,

@@ -317,3 +317,166 @@ def test_initialization_preserves_existing_stock_lots(tmp_path):
         rows = conn.execute("SELECT symbol, quantity FROM stock_lots").fetchall()
 
     assert [tuple(row) for row in rows] == [("HOOD", 100)]
+
+
+def test_initialization_migrates_legacy_stock_lots(tmp_path):
+    db_path = tmp_path / "premiumflow.db"
+    storage = storage_module.SQLiteStorage(db_path)
+    storage._ensure_initialized()
+
+    with storage._connect() as conn:  # type: ignore[attr-defined]
+        conn.execute("INSERT INTO accounts (name, number) VALUES (?, ?)", ("Acct", "123"))
+        account_id = conn.execute("SELECT id FROM accounts LIMIT 1").fetchone()[0]
+        conn.execute(
+            """
+            INSERT INTO imports (
+                account_id, source_path, source_hash, imported_at,
+                options_only, ticker, strategy, open_only, row_count
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                account_id,
+                "legacy.csv",
+                "hash",
+                "2025-09-02T00:00:00Z",
+                1,
+                None,
+                None,
+                0,
+                1,
+            ),
+        )
+        import_id = conn.execute("SELECT id FROM imports LIMIT 1").fetchone()[0]
+        conn.execute(
+            """
+            INSERT INTO option_transactions (
+                import_id, row_index, activity_date, process_date, settle_date,
+                instrument, description, trans_code, quantity, price, amount,
+                strike, option_type, expiration, action, raw_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                import_id,
+                1,
+                "2025-09-01",
+                "2025-09-01",
+                "2025-09-02",
+                "HOOD",
+                "HOOD 10/01/2025 Put $100",
+                "STO",
+                1,
+                "1.00",
+                "100.00",
+                "100.00",
+                "PUT",
+                "2025-10-01",
+                "SELL",
+                "{}",
+            ),
+        )
+        option_txn_id = conn.execute("SELECT id FROM option_transactions LIMIT 1").fetchone()[0]
+        conn.execute("DROP TABLE stock_lots")
+        conn.execute(
+            """
+            CREATE TABLE stock_lots (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+                source_transaction_id INTEGER NOT NULL REFERENCES option_transactions(id) ON DELETE CASCADE,
+                symbol TEXT NOT NULL,
+                opened_at TEXT NOT NULL,
+                closed_at TEXT,
+                quantity INTEGER NOT NULL,
+                direction TEXT NOT NULL,
+                option_type TEXT NOT NULL,
+                strike_price TEXT NOT NULL,
+                expiration TEXT NOT NULL,
+                share_price_total TEXT NOT NULL,
+                share_price_per_share TEXT NOT NULL,
+                open_premium_total TEXT NOT NULL,
+                open_premium_per_share TEXT NOT NULL,
+                open_fee_total TEXT NOT NULL,
+                net_credit_total TEXT NOT NULL,
+                net_credit_per_share TEXT NOT NULL,
+                assignment_kind TEXT,
+                status TEXT NOT NULL DEFAULT 'open',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO stock_lots (
+                account_id,
+                source_transaction_id,
+                symbol,
+                opened_at,
+                closed_at,
+                quantity,
+                direction,
+                option_type,
+                strike_price,
+                expiration,
+                share_price_total,
+                share_price_per_share,
+                open_premium_total,
+                open_premium_per_share,
+                open_fee_total,
+                net_credit_total,
+                net_credit_per_share,
+                assignment_kind,
+                status,
+                created_at,
+                updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                account_id,
+                option_txn_id,
+                "HOOD",
+                "2025-09-01",
+                None,
+                100,
+                "long",
+                "PUT",
+                "100.00",
+                "2025-10-01",
+                "1000.00",
+                "10.00",
+                "175.00",
+                "1.75",
+                "0.00",
+                "0.00",
+                "0.00",
+                "assignment",
+                "open",
+                "2025-09-02T00:00:00Z",
+                "2025-09-02T00:00:00Z",
+            ),
+        )
+
+    storage = storage_module.SQLiteStorage(db_path)
+    storage._ensure_initialized()
+
+    with storage._connect() as conn:  # type: ignore[attr-defined]
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(stock_lots)")}
+        assert "cost_basis_total" in columns
+        migrated = conn.execute(
+            """
+            SELECT
+                symbol,
+                cost_basis_total,
+                assignment_premium_total,
+                proceeds_total,
+                open_source,
+                open_source_id
+            FROM stock_lots
+            """
+        ).fetchone()
+
+    assert migrated["symbol"] == "HOOD"
+    assert migrated["cost_basis_total"] == "1000.00"
+    assert migrated["assignment_premium_total"] == "175.00"
+    assert migrated["proceeds_total"] == "0.00"
+    assert migrated["open_source"] == "legacy_migration"
+    assert migrated["open_source_id"] == option_txn_id
