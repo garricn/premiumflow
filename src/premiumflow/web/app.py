@@ -31,7 +31,7 @@ from ..services.leg_matching import (
     group_fills_by_account,
     match_legs_with_errors,
 )
-from ..services.stock_lot_builder import rebuild_assignment_stock_lots
+from ..services.stock_lot_service import rebuild_stock_lots
 from .dependencies import get_repository
 
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
@@ -367,7 +367,7 @@ def create_app() -> FastAPI:
                             duplicate_strategy=duplicate_strategy,
                         )
                         if store_result.status != "skipped":
-                            rebuild_assignment_stock_lots(
+                            rebuild_stock_lots(
                                 repository,
                                 account_name=parsed.account_name,
                                 account_number=parsed.account_number,

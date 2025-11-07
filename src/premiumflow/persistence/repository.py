@@ -55,25 +55,50 @@ class StoredTransaction:
 
 
 @dataclass(frozen=True)
-class AssignmentStockLotRecord:
-    """Stock lot opened by an assignment event."""
+class StoredStockTransaction:
+    """Representation of a persisted stock (equity) transaction."""
+
+    id: int
+    import_id: int
+    account_name: str
+    account_number: Optional[str]
+    row_index: int
+    activity_date: str
+    process_date: Optional[str]
+    settle_date: Optional[str]
+    instrument: str
+    description: str
+    trans_code: str
+    action: str
+    quantity: int
+    price: str
+    amount: str
+    raw_json: str
+
+
+@dataclass(frozen=True)
+class PersistedStockLot:
+    """Representation of a matched stock lot to store in persistence."""
 
     symbol: str
     opened_at: date
-    share_quantity: int
+    closed_at: Optional[date]
+    quantity: int
     direction: str
-    option_type: str
-    strike_price: Decimal
-    expiration: date
-    share_price_total: Decimal
-    share_price_per_share: Decimal
-    open_premium_total: Decimal
-    open_premium_per_share: Decimal
+    cost_basis_total: Decimal
+    cost_basis_per_share: Decimal
     open_fee_total: Decimal
-    net_credit_total: Decimal
-    net_credit_per_share: Decimal
-    assignment_kind: str
-    source_transaction_id: int
+    assignment_premium_total: Decimal
+    proceeds_total: Optional[Decimal]
+    proceeds_per_share: Optional[Decimal]
+    close_fee_total: Decimal
+    realized_pnl_total: Optional[Decimal]
+    realized_pnl_per_share: Optional[Decimal]
+    open_source: str
+    open_source_id: Optional[int]
+    close_source: Optional[str]
+    close_source_id: Optional[int]
+    status: str
 
 
 class SQLiteRepository:
@@ -275,80 +300,170 @@ class SQLiteRepository:
             rows = conn.execute(sql, params).fetchall()
         return [_row_to_stored_transaction(row) for row in rows]
 
-    def replace_assignment_stock_lots(
+    def fetch_stock_transactions(
+        self,
+        *,
+        account_name: Optional[str] = None,
+        account_number: Optional[str] = None,
+        ticker: Optional[str] = None,
+        since: Optional[date] = None,
+        until: Optional[date] = None,
+        limit: Optional[int] = None,
+        offset: int = 0,
+    ) -> List[StoredStockTransaction]:
+        """Return persisted stock transactions applying the requested filters."""
+
+        self._storage._ensure_initialized()  # type: ignore[attr-defined]
+        query = [
+            "SELECT",
+            "  t.id,",
+            "  t.import_id,",
+            "  a.name AS account_name,",
+            "  a.number AS account_number,",
+            "  t.row_index,",
+            "  t.activity_date,",
+            "  t.process_date,",
+            "  t.settle_date,",
+            "  t.instrument,",
+            "  t.description,",
+            "  t.trans_code,",
+            "  t.action,",
+            "  t.quantity,",
+            "  t.price,",
+            "  t.amount,",
+            "  t.raw_json",
+            "FROM stock_transactions AS t",
+            "JOIN imports AS i ON t.import_id = i.id",
+            "JOIN accounts AS a ON i.account_id = a.id",
+        ]
+        clauses: list[str] = []
+        params: list[object] = []
+
+        if account_name is not None:
+            clauses.append("a.name = ?")
+            params.append(account_name)
+        if account_number is not None:
+            clauses.append("IFNULL(a.number, '') = IFNULL(?, '')")
+            params.append(account_number)
+        if ticker is not None:
+            clauses.append("UPPER(t.instrument) = ?")
+            params.append(ticker.strip().upper())
+        if since is not None:
+            clauses.append("t.activity_date >= ?")
+            params.append(since.isoformat())
+        if until is not None:
+            clauses.append("t.activity_date <= ?")
+            params.append(until.isoformat())
+
+        if clauses:
+            query.append("WHERE " + " AND ".join(clauses))
+
+        query.append("ORDER BY t.activity_date ASC, t.row_index ASC, t.id ASC")
+
+        if limit is not None:
+            query.append("LIMIT ?")
+            params.append(limit)
+            if offset:
+                query.append("OFFSET ?")
+                params.append(offset)
+        elif offset:
+            query.append("LIMIT -1 OFFSET ?")
+            params.append(offset)
+
+        sql = "\n".join(query)
+        with self._storage._connect() as conn:  # type: ignore[attr-defined]
+            rows = conn.execute(sql, params).fetchall()
+        return [_row_to_stored_stock_transaction(row) for row in rows]
+
+    def replace_stock_lots(
         self,
         *,
         account_name: str,
         account_number: Optional[str],
-        records: Sequence[AssignmentStockLotRecord],
+        rows: Sequence[PersistedStockLot],
     ) -> None:
-        """Replace assignment-sourced stock lots for the specified account."""
+        """Replace persisted stock lots (open + closed) for an account."""
 
         self._storage._ensure_initialized()  # type: ignore[attr-defined]
         with self._storage._connect() as conn:  # type: ignore[attr-defined]
             account_id = self._get_account_id(conn, account_name, account_number)
-            conn.execute(
-                "DELETE FROM stock_lots WHERE account_id = ? AND assignment_kind IS NOT NULL",
-                (account_id,),
-            )
-            if not records:
+            conn.execute("DELETE FROM stock_lots WHERE account_id = ?", (account_id,))
+            if not rows:
                 return
 
             timestamp = datetime.utcnow().isoformat(timespec="seconds") + "Z"
-            rows = [
+            payload = [
                 (
                     account_id,
-                    record.source_transaction_id,
-                    record.symbol,
-                    record.opened_at.isoformat(),
-                    None,  # closed_at
-                    record.share_quantity,
-                    record.direction,
-                    record.option_type,
-                    self._decimal_to_text(record.strike_price),
-                    record.expiration.isoformat(),
-                    self._decimal_to_text(record.share_price_total),
-                    self._decimal_to_text(record.share_price_per_share),
-                    self._decimal_to_text(record.open_premium_total),
-                    self._decimal_to_text(record.open_premium_per_share),
-                    self._decimal_to_text(record.open_fee_total),
-                    self._decimal_to_text(record.net_credit_total),
-                    self._decimal_to_text(record.net_credit_per_share),
-                    record.assignment_kind,
-                    "open",
+                    lot.symbol,
+                    lot.opened_at.isoformat(),
+                    lot.closed_at.isoformat() if lot.closed_at else None,
+                    lot.quantity,
+                    lot.direction,
+                    self._decimal_to_text(lot.cost_basis_total),
+                    self._decimal_to_text(lot.cost_basis_per_share),
+                    self._decimal_to_text(lot.open_fee_total),
+                    self._decimal_to_text(lot.assignment_premium_total),
+                    (
+                        self._decimal_to_text(lot.proceeds_total)
+                        if lot.proceeds_total is not None
+                        else None
+                    ),
+                    (
+                        self._decimal_to_text(lot.proceeds_per_share)
+                        if lot.proceeds_per_share is not None
+                        else None
+                    ),
+                    self._decimal_to_text(lot.close_fee_total),
+                    (
+                        self._decimal_to_text(lot.realized_pnl_total)
+                        if lot.realized_pnl_total is not None
+                        else None
+                    ),
+                    (
+                        self._decimal_to_text(lot.realized_pnl_per_share)
+                        if lot.realized_pnl_per_share is not None
+                        else None
+                    ),
+                    lot.open_source,
+                    lot.open_source_id,
+                    lot.close_source,
+                    lot.close_source_id,
+                    lot.status,
                     timestamp,
                     timestamp,
                 )
-                for record in records
+                for lot in rows
             ]
             conn.executemany(
                 """
                 INSERT INTO stock_lots (
                     account_id,
-                    source_transaction_id,
                     symbol,
                     opened_at,
                     closed_at,
                     quantity,
                     direction,
-                    option_type,
-                    strike_price,
-                    expiration,
-                    share_price_total,
-                    share_price_per_share,
-                    open_premium_total,
-                    open_premium_per_share,
+                    cost_basis_total,
+                    cost_basis_per_share,
                     open_fee_total,
-                    net_credit_total,
-                    net_credit_per_share,
-                    assignment_kind,
+                    assignment_premium_total,
+                    proceeds_total,
+                    proceeds_per_share,
+                    close_fee_total,
+                    realized_pnl_total,
+                    realized_pnl_per_share,
+                    open_source,
+                    open_source_id,
+                    close_source,
+                    close_source_id,
                     status,
                     created_at,
                     updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                rows,
+                payload,
             )
 
     def _get_account_id(
@@ -370,7 +485,9 @@ class SQLiteRepository:
         return int(row["id"])
 
     @staticmethod
-    def _decimal_to_text(value: Decimal) -> str:
+    def _decimal_to_text(value: Optional[Decimal]) -> Optional[str]:
+        if value is None:
+            return None
         return format(value, "f")
 
     def delete_import(self, import_id: int) -> bool:
@@ -419,5 +536,26 @@ def _row_to_stored_transaction(row) -> StoredTransaction:
         option_type=row["option_type"],
         expiration=row["expiration"],
         action=row["action"],
+        raw_json=row["raw_json"],
+    )
+
+
+def _row_to_stored_stock_transaction(row) -> StoredStockTransaction:
+    return StoredStockTransaction(
+        id=int(row["id"]),
+        import_id=int(row["import_id"]),
+        account_name=row["account_name"],
+        account_number=row["account_number"],
+        row_index=int(row["row_index"]),
+        activity_date=row["activity_date"],
+        process_date=row["process_date"],
+        settle_date=row["settle_date"],
+        instrument=row["instrument"],
+        description=row["description"],
+        trans_code=row["trans_code"],
+        action=row["action"],
+        quantity=int(row["quantity"]),
+        price=row["price"],
+        amount=row["amount"],
         raw_json=row["raw_json"],
     )

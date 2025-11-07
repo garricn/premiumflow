@@ -5,10 +5,15 @@ from __future__ import annotations
 import sqlite3
 from datetime import date
 from decimal import Decimal
+from typing import Optional
 
 import pytest
 
-from premiumflow.core.parser import NormalizedOptionTransaction, ParsedImportResult
+from premiumflow.core.parser import (
+    NormalizedOptionTransaction,
+    NormalizedStockTransaction,
+    ParsedImportResult,
+)
 from premiumflow.persistence import storage as storage_module
 
 
@@ -38,9 +43,32 @@ def _make_transaction(**overrides) -> NormalizedOptionTransaction:
     )
 
 
-def _make_parsed(transactions: list[NormalizedOptionTransaction]) -> ParsedImportResult:
+def _make_stock_transaction(**overrides) -> NormalizedStockTransaction:
+    return NormalizedStockTransaction(
+        activity_date=overrides.get("activity_date", date(2025, 9, 1)),
+        process_date=overrides.get("process_date", date(2025, 9, 1)),
+        settle_date=overrides.get("settle_date", date(2025, 9, 3)),
+        instrument=overrides.get("instrument", "HOOD"),
+        description=overrides.get("description", "Robinhood Markets"),
+        trans_code=overrides.get("trans_code", "Buy"),
+        quantity=overrides.get("quantity", 100),
+        price=overrides.get("price", Decimal("100.00")),
+        amount=overrides.get("amount", Decimal("-10000.00")),
+        action=overrides.get("action", "BUY"),
+        raw=overrides.get("raw", {"Activity Date": "09/01/2025"}),
+    )
+
+
+def _make_parsed(
+    transactions: list[NormalizedOptionTransaction],
+    *,
+    stock_transactions: Optional[list[NormalizedStockTransaction]] = None,
+) -> ParsedImportResult:
     return ParsedImportResult(
-        account_name="Primary Account", account_number="ACCT-1", transactions=transactions
+        account_name="Primary Account",
+        account_number="ACCT-1",
+        transactions=transactions,
+        stock_transactions=stock_transactions or [],
     )
 
 
@@ -61,7 +89,8 @@ def test_store_import_creates_records(tmp_path, monkeypatch):
                 amount=Decimal("-150"),
                 raw={"Activity Date": "09/15/2025"},
             ),
-        ]
+        ],
+        stock_transactions=[_make_stock_transaction()],
     )
 
     result = storage_module.store_import_result(
@@ -93,6 +122,12 @@ def test_store_import_creates_records(tmp_path, monkeypatch):
         ).fetchall()
         assert len(transactions) == 2
         assert [row[2] for row in transactions] == ["STO", "BTC"]
+
+        stock_rows = conn.execute(
+            "SELECT trans_code, action, instrument FROM stock_transactions"
+        ).fetchall()
+        assert len(stock_rows) == 1
+        assert stock_rows[0][0] == "Buy"
 
 
 def test_store_import_reuses_account(tmp_path, monkeypatch):

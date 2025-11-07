@@ -18,7 +18,7 @@ def _stub_store_import(monkeypatch):
 
     monkeypatch.setattr("premiumflow.cli.import_command.store_import_result", _fake_store)
     monkeypatch.setattr(
-        "premiumflow.cli.import_command.rebuild_assignment_stock_lots",
+        "premiumflow.cli.import_command.rebuild_stock_lots",
         lambda *args, **kwargs: None,
     )
 
@@ -295,7 +295,7 @@ def test_import_command_passes_account_metadata(monkeypatch, tmp_path):
 
     monkeypatch.setattr("premiumflow.cli.import_command.store_import_result", _fake_store)
     monkeypatch.setattr(
-        "premiumflow.cli.import_command.rebuild_assignment_stock_lots",
+        "premiumflow.cli.import_command.rebuild_stock_lots",
         lambda *args, **kwargs: None,
     )
 
@@ -366,7 +366,7 @@ def test_import_command_duplicate_error(monkeypatch, tmp_path):
 
     monkeypatch.setattr("premiumflow.cli.import_command.store_import_result", _fake_store)
     monkeypatch.setattr(
-        "premiumflow.cli.import_command.rebuild_assignment_stock_lots",
+        "premiumflow.cli.import_command.rebuild_stock_lots",
         lambda *args, **kwargs: None,
     )
 
@@ -397,7 +397,7 @@ def test_import_command_skip_existing(monkeypatch, tmp_path):
 
     monkeypatch.setattr("premiumflow.cli.import_command.store_import_result", _fake_store)
     monkeypatch.setattr(
-        "premiumflow.cli.import_command.rebuild_assignment_stock_lots",
+        "premiumflow.cli.import_command.rebuild_stock_lots",
         lambda *args, **kwargs: None,
     )
 
@@ -437,7 +437,7 @@ def test_import_command_replace_existing(monkeypatch, tmp_path):
 
     monkeypatch.setattr("premiumflow.cli.import_command.store_import_result", _fake_store)
     monkeypatch.setattr(
-        "premiumflow.cli.import_command.rebuild_assignment_stock_lots",
+        "premiumflow.cli.import_command.rebuild_stock_lots",
         lambda *args, **kwargs: None,
     )
 

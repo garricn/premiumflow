@@ -138,36 +138,59 @@ class SQLiteStorage:
                 CREATE INDEX IF NOT EXISTS idx_transactions_activity_date
                     ON option_transactions(activity_date);
 
+                CREATE TABLE IF NOT EXISTS stock_transactions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    import_id INTEGER NOT NULL REFERENCES imports(id) ON DELETE CASCADE,
+                    row_index INTEGER NOT NULL,
+                    activity_date TEXT NOT NULL,
+                    process_date TEXT,
+                    settle_date TEXT,
+                    instrument TEXT NOT NULL,
+                    description TEXT NOT NULL,
+                    trans_code TEXT NOT NULL,
+                    action TEXT NOT NULL,
+                    quantity INTEGER NOT NULL,
+                    price TEXT NOT NULL,
+                    amount TEXT NOT NULL,
+                    raw_json TEXT NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_stock_transactions_import
+                    ON stock_transactions(import_id);
+                CREATE INDEX IF NOT EXISTS idx_stock_transactions_symbol
+                    ON stock_transactions(instrument);
+                CREATE INDEX IF NOT EXISTS idx_stock_transactions_activity_date
+                    ON stock_transactions(activity_date);
+
+                DROP TABLE IF EXISTS stock_lots;
                 CREATE TABLE IF NOT EXISTS stock_lots (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
-                    source_transaction_id INTEGER NOT NULL REFERENCES option_transactions(id) ON DELETE CASCADE,
                     symbol TEXT NOT NULL,
                     opened_at TEXT NOT NULL,
                     closed_at TEXT,
                     quantity INTEGER NOT NULL,
                     direction TEXT NOT NULL,
-                    option_type TEXT NOT NULL,
-                    strike_price TEXT NOT NULL,
-                    expiration TEXT NOT NULL,
-                    share_price_total TEXT NOT NULL,
-                    share_price_per_share TEXT NOT NULL,
-                    open_premium_total TEXT NOT NULL,
-                    open_premium_per_share TEXT NOT NULL,
+                    cost_basis_total TEXT NOT NULL,
+                    cost_basis_per_share TEXT NOT NULL,
                     open_fee_total TEXT NOT NULL,
-                    net_credit_total TEXT NOT NULL,
-                    net_credit_per_share TEXT NOT NULL,
-                    assignment_kind TEXT,
-                    status TEXT NOT NULL DEFAULT 'open',
+                    assignment_premium_total TEXT,
+                    proceeds_total TEXT,
+                    proceeds_per_share TEXT,
+                    close_fee_total TEXT,
+                    realized_pnl_total TEXT,
+                    realized_pnl_per_share TEXT,
+                    open_source TEXT NOT NULL,
+                    open_source_id INTEGER,
+                    close_source TEXT,
+                    close_source_id INTEGER,
+                    status TEXT NOT NULL,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
 
-                DROP INDEX IF EXISTS idx_stock_lots_source_transaction;
-                CREATE INDEX IF NOT EXISTS idx_stock_lots_source_transaction
-                    ON stock_lots(source_transaction_id);
-                CREATE INDEX IF NOT EXISTS idx_stock_lots_account_status
-                    ON stock_lots(account_id, status);
+                CREATE INDEX IF NOT EXISTS idx_stock_lots_account_symbol
+                    ON stock_lots(account_id, symbol);
                 """
             )
             # Clean up any legacy duplicates that may exist from versions prior to
@@ -271,6 +294,36 @@ class SQLiteStorage:
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     rows_to_insert,
+                )
+            stock_rows_to_insert = [
+                (
+                    int(import_id),
+                    index,
+                    txn.activity_date.isoformat(),
+                    txn.process_date.isoformat() if txn.process_date else None,
+                    txn.settle_date.isoformat() if txn.settle_date else None,
+                    txn.instrument,
+                    txn.description,
+                    txn.trans_code,
+                    txn.action,
+                    txn.quantity,
+                    _decimal_to_text(txn.price),
+                    _decimal_to_text(txn.amount),
+                    json.dumps(txn.raw, sort_keys=True),
+                )
+                for index, txn in enumerate(parsed.stock_transactions, start=1)
+            ]
+            if stock_rows_to_insert:
+                conn.executemany(
+                    """
+                    INSERT INTO stock_transactions (
+                        import_id, row_index, activity_date, process_date, settle_date,
+                        instrument, description, trans_code, action, quantity, price,
+                        amount, raw_json
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    stock_rows_to_insert,
                 )
             status: StoreStatus = "replaced" if existing else "inserted"
         return StoreResult(import_id=int(import_id), status=status)

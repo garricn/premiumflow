@@ -6,12 +6,15 @@ This module handles parsing transaction data from CSV files.
 
 import csv
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Dict, List, Optional
 
 ALLOWED_OPTION_CODES = {"STO", "STC", "BTO", "BTC", "OASGN", "OEXP"}
+STOCK_BUY_CODES = {"BUY"}
+STOCK_SELL_CODES = {"SELL"}
+STOCK_TRANS_CODES = STOCK_BUY_CODES | STOCK_SELL_CODES
 CONTRACT_MULTIPLIER = Decimal("100")
 
 
@@ -44,12 +47,30 @@ class NormalizedOptionTransaction:
 
 
 @dataclass
+class NormalizedStockTransaction:
+    """Normalized representation of a stock (equity) transaction."""
+
+    activity_date: date
+    process_date: Optional[date]
+    settle_date: Optional[date]
+    instrument: str
+    description: str
+    trans_code: str
+    quantity: int
+    price: Decimal
+    amount: Decimal
+    action: str  # "BUY" or "SELL"
+    raw: Dict[str, str]
+
+
+@dataclass
 class ParsedImportResult:
     """Container for normalized import data and account metadata."""
 
     account_name: str
     account_number: Optional[str]
     transactions: List[NormalizedOptionTransaction]
+    stock_transactions: List[NormalizedStockTransaction] = field(default_factory=list)
 
 
 def parse_date(date_str: str) -> datetime:
@@ -140,6 +161,7 @@ def load_option_transactions(
     """
 
     normalized: List[NormalizedOptionTransaction] = []
+    normalized_stock: List[NormalizedStockTransaction] = []
     normalized_account_name, normalized_account_number = _validate_account_metadata(
         account_name, account_number
     )
@@ -153,23 +175,29 @@ def load_option_transactions(
                 continue  # skip blank lines
 
             try:
-                normalized_row = _normalize_row(row, index)
+                normalized_row = _normalize_option_row(row, index)
             except ImportValidationError as exc:
                 raise ImportValidationError(f"Row {index}: {exc}") from exc
 
             if normalized_row is not None:
                 normalized.append(normalized_row)
+                continue
+
+            stock_row = _normalize_stock_row(row, index)
+            if stock_row is not None:
+                normalized_stock.append(stock_row)
 
     return ParsedImportResult(
         account_name=normalized_account_name,
         account_number=normalized_account_number,
         transactions=normalized,
+        stock_transactions=normalized_stock,
     )
 
 
-def _normalize_row(row: Dict[str, str], row_number: int) -> Optional[NormalizedOptionTransaction]:
-    """Normalize a CSV row; returns None for non-option transactions."""
-
+def _normalize_option_row(
+    row: Dict[str, str], row_number: int
+) -> Optional[NormalizedOptionTransaction]:
     trans_code = _parse_trans_code(row, row_number)
     if not trans_code or trans_code not in ALLOWED_OPTION_CODES:
         return None
@@ -212,6 +240,49 @@ def _normalize_row(row: Dict[str, str], row_number: int) -> Optional[NormalizedO
         expiration=expiration,
         action=action,
         raw=dict(row),
+    )
+
+
+def _normalize_stock_row(
+    row: Dict[str, str], row_number: int
+) -> Optional[NormalizedStockTransaction]:
+    trans_code_raw = row.get("Trans Code")
+    if trans_code_raw is None:
+        raise ImportValidationError('Missing required column "Trans Code".')
+    trans_code = trans_code_raw.strip().title()
+    if trans_code not in STOCK_TRANS_CODES:
+        return None
+
+    activity_date = _parse_date_field(row, "Activity Date", row_number)
+    process_date = _parse_optional_date_field(row, "Process Date", row_number)
+    settle_date = _parse_optional_date_field(row, "Settle Date", row_number)
+    instrument = _require_field(row, "Instrument", row_number).strip().upper()
+    description = (row.get("Description") or "").strip()
+    quantity = _parse_quantity(row, "Quantity", row_number)
+    price = _parse_money(row, "Price", row_number, allow_negative=False, required=True)
+    if price is None:
+        raise ImportValidationError('Column "Price" cannot be blank.')
+    amount = _parse_money(row, "Amount", row_number, allow_negative=True, required=True)
+    if amount is None:
+        raise ImportValidationError('Column "Amount" cannot be blank.')
+
+    action = "BUY" if trans_code in STOCK_BUY_CODES else "SELL"
+
+    raw = dict(row)
+    raw["Trans Code"] = trans_code
+
+    return NormalizedStockTransaction(
+        activity_date=activity_date,
+        process_date=process_date,
+        settle_date=settle_date,
+        instrument=instrument,
+        description=description,
+        trans_code=trans_code,
+        quantity=abs(quantity),
+        price=price,
+        amount=amount if amount is not None else Decimal("0"),
+        action=action,
+        raw=raw,
     )
 
 
