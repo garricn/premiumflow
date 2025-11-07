@@ -11,6 +11,7 @@ from premiumflow.core.parser import NormalizedOptionTransaction, ParsedImportRes
 from premiumflow.persistence import repository as repository_module
 from premiumflow.persistence import storage as storage_module
 from premiumflow.services.cash_flow import (
+    _group_date_to_period_key,
     generate_cash_flow_pnl_report,
 )
 
@@ -656,6 +657,56 @@ def test_opening_fees_ignored_when_lot_outside_range(tmp_path, repository):
     assert report.totals.closing_fees == Decimal("0")
     assert report.totals.total_fees == Decimal("0")
     assert report.totals.realized_pnl_net == Decimal("0")
+
+
+def test_opening_fees_create_clamped_period_when_missing(tmp_path, repository):
+    """Clamping should create the first in-range period even if it only holds fees."""
+    _seed_import(
+        tmp_path,
+        csv_name="clamped_weekly.csv",
+        transactions=[
+            _make_transaction(
+                trans_code="STO",
+                action="SELL",
+                quantity=1,
+                price=Decimal("3.00"),
+                amount=Decimal("299.00"),  # $1 opening fee
+                activity_date=date(2025, 9, 25),
+            ),
+            _make_transaction(
+                trans_code="BTC",
+                action="BUY",
+                quantity=1,
+                price=Decimal("1.50"),
+                amount=Decimal("-151.50"),  # closes inside range with $1.50 fee
+                activity_date=date(2025, 10, 20),
+            ),
+        ],
+    )
+
+    report = generate_cash_flow_pnl_report(
+        repository,
+        account_name="Primary Account",
+        account_number="ACCT-1",
+        period_type="weekly",
+        since=date(2025, 10, 1),
+        until=date(2025, 10, 31),
+    )
+
+    first_period_key, _ = _group_date_to_period_key(date(2025, 10, 1), "weekly")
+    assert len(report.periods) == 2
+    first_period = next(p for p in report.periods if p.period_key == first_period_key)
+    closing_period = next(p for p in report.periods if p.period_key != first_period_key)
+
+    assert first_period.opening_fees == Decimal("1.00")
+    assert first_period.closing_fees == Decimal("0.00")
+    assert first_period.realized_pnl_net == Decimal("0")
+
+    assert closing_period.closing_fees == Decimal("1.50")
+    assert closing_period.realized_pnl_net == Decimal("147.50")
+
+    assert report.totals.opening_fees == Decimal("1.00")
+    assert report.totals.closing_fees == Decimal("1.50")
 
 
 def test_generate_report_multiple_accounts_isolation(tmp_path, repository):

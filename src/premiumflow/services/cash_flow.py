@@ -366,6 +366,9 @@ def _aggregate_opening_fees(
         for lot in leg.lots:
             if lot.opened_at is None:
                 continue
+            if since is not None and lot.closed_at and lot.closed_at < since:
+                # Lot lifetime ends before the requested window—skip entirely
+                continue
 
             period_key, _ = _group_date_to_period_key(lot.opened_at, period_type)
             if since is not None and lot.opened_at < since:
@@ -379,8 +382,9 @@ def _aggregate_opening_fees(
             if open_fees == ZERO:
                 continue
             if period_key not in period_data:
-                # Lot lifetime is fully outside the requested range (no period bucket)
-                continue
+                if not clamp_periods_to_range:
+                    continue
+                period_data[period_key] = _empty_period_entry()
             period_data[period_key]["opening_fees"] += open_fees
             period_data[period_key]["total_fees"] += open_fees
 
@@ -495,18 +499,7 @@ def _aggregate_pnl_by_period(
     # Initialize all periods upfront
     period_data: Dict[str, Dict[str, Decimal]] = {}
     for period_key in all_period_keys:
-        period_data[period_key] = {
-            "realized_profits_gross": ZERO,
-            "realized_losses_gross": ZERO,
-            "realized_pnl_gross": ZERO,
-            "realized_profits_net": ZERO,
-            "realized_losses_net": ZERO,
-            "realized_pnl_net": ZERO,
-            "unrealized_exposure": ZERO,
-            "opening_fees": ZERO,
-            "closing_fees": ZERO,
-            "total_fees": ZERO,
-        }
+        period_data[period_key] = _empty_period_entry()
 
     # Aggregate realized P&L from closed lots
     _aggregate_realized_pnl(matched_legs, period_type, period_data, since=since, until=until)
@@ -823,3 +816,19 @@ def generate_cash_flow_pnl_report(
         periods=periods,
         totals=totals,
     )
+
+
+def _empty_period_entry() -> Dict[str, Decimal]:
+    """Return a zeroed-out holder for per-period P&L components."""
+    return {
+        "realized_profits_gross": ZERO,
+        "realized_losses_gross": ZERO,
+        "realized_pnl_gross": ZERO,
+        "realized_profits_net": ZERO,
+        "realized_losses_net": ZERO,
+        "realized_pnl_net": ZERO,
+        "unrealized_exposure": ZERO,
+        "opening_fees": ZERO,
+        "closing_fees": ZERO,
+        "total_fees": ZERO,
+    }
