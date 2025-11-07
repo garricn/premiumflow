@@ -107,6 +107,7 @@ uv run premiumflow import delete 42 --yes
 uv run premiumflow lookup "TSLA 500C 2025-02-21"
 uv run premiumflow trace "TSLA $550 Call" all_transactions.csv
 uv run premiumflow legs --status open --lots
+uv run premiumflow cashflow --account-name "Robinhood" --account-number 1234 --assignment-handling exclude
 ```
 
 ### Matched Legs CLI
@@ -127,6 +128,14 @@ Table output includes opened/closed dates, a resolution summary ("Expiration", "
 matches trade confirmations. Totals rows summarize quantity, cash, and fees at both the leg and lot
 levels. JSON output mirrors the per-leg metadata and exposes the complete lot payload for
 downstream tooling.
+
+### Cashflow Assignment Handling
+
+Use `premiumflow cashflow` to summarize realized P&L, fees, and cashflow by day/week/month. Set
+`--assignment-handling include` (default) to keep assignment premium in the realized columns, or
+`--assignment-handling exclude` to defer those credits so the totals line up with broker “options
+only” reports. The table (CLI, JSON, and web UI) always shows an `Assignment Premium (After Fees)`
+column so you can reconcile the difference regardless of the selected mode.
 
 ### Cash-Flow Import Guide
 

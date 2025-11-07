@@ -114,6 +114,8 @@ def test_generate_report_empty_account(repository):
     assert report.totals.realized_profits_net == Decimal("0")
     assert report.totals.realized_losses_net == Decimal("0")
     assert report.totals.realized_pnl_net == Decimal("0")
+    assert report.totals.assignment_realized_gross == Decimal("0")
+    assert report.totals.assignment_realized_net == Decimal("0")
     assert report.totals.unrealized_exposure == Decimal("0")
     assert report.totals.opening_fees == Decimal("0")
     assert report.totals.closing_fees == Decimal("0")
@@ -1013,3 +1015,138 @@ def test_generate_report_includes_unrealized_exposure_for_positions_closed_after
     # Realized P&L should be 0 since no positions were closed during October
     assert report.totals.realized_pnl_gross == Decimal("0")
     assert report.totals.realized_pnl_net == Decimal("0")
+
+
+def test_assignment_toggle_excludes_assignment_premium(tmp_path, repository):
+    """Assignment premiums can be toggled out of realized totals while staying visible."""
+    _seed_import(
+        tmp_path,
+        csv_name="assignment_toggle.csv",
+        transactions=[
+            # HOOD short call assigned on Sep 5 (collects $108 credit)
+            _make_transaction(
+                instrument="HOOD",
+                description="HOOD 09/06/2025 Call $104.00",
+                trans_code="STO",
+                action="SELL",
+                price=Decimal("1.08"),
+                amount=Decimal("108.00"),
+                activity_date=date(2025, 8, 28),
+                expiration=date(2025, 9, 6),
+            ),
+            _make_transaction(
+                instrument="HOOD",
+                description="HOOD 09/06/2025 Call $104.00",
+                trans_code="OASGN",
+                action="SELL",
+                price=Decimal("0.00"),
+                amount=Decimal("0.00"),
+                activity_date=date(2025, 9, 5),
+                expiration=date(2025, 9, 6),
+            ),
+            # Same-day non-assignment P&L of $374
+            _make_transaction(
+                instrument="RDDT",
+                description="RDDT 09/20/2025 Call $40.00",
+                trans_code="STO",
+                action="SELL",
+                price=Decimal("4.00"),
+                amount=Decimal("400.00"),
+                activity_date=date(2025, 9, 1),
+                expiration=date(2025, 9, 20),
+            ),
+            _make_transaction(
+                instrument="RDDT",
+                description="RDDT 09/20/2025 Call $40.00",
+                trans_code="BTC",
+                action="BUY",
+                price=Decimal("0.26"),
+                amount=Decimal("-26.00"),
+                activity_date=date(2025, 9, 5),
+                expiration=date(2025, 9, 20),
+            ),
+            # ETHU short put assigned on Oct 31 (collects $175 credit)
+            _make_transaction(
+                instrument="ETHU",
+                description="ETHU 11/01/2025 Put $110.00",
+                trans_code="STO",
+                action="SELL",
+                price=Decimal("1.75"),
+                amount=Decimal("175.00"),
+                activity_date=date(2025, 10, 24),
+                expiration=date(2025, 11, 1),
+            ),
+            _make_transaction(
+                instrument="ETHU",
+                description="ETHU 11/01/2025 Put $110.00",
+                trans_code="OASGN",
+                action="SELL",
+                price=Decimal("0.00"),
+                amount=Decimal("0.00"),
+                activity_date=date(2025, 10, 31),
+                expiration=date(2025, 11, 1),
+            ),
+            # Same-day non-assignment P&L of $562
+            _make_transaction(
+                instrument="META",
+                description="META 11/15/2025 Put $300.00",
+                trans_code="STO",
+                action="SELL",
+                price=Decimal("7.00"),
+                amount=Decimal("700.00"),
+                activity_date=date(2025, 10, 20),
+                expiration=date(2025, 11, 15),
+            ),
+            _make_transaction(
+                instrument="META",
+                description="META 11/15/2025 Put $300.00",
+                trans_code="BTC",
+                action="BUY",
+                price=Decimal("1.38"),
+                amount=Decimal("-138.00"),
+                activity_date=date(2025, 10, 31),
+                expiration=date(2025, 11, 15),
+            ),
+        ],
+    )
+
+    report_include = generate_cash_flow_pnl_report(
+        repository,
+        account_name="Primary Account",
+        account_number="ACCT-1",
+        period_type="daily",
+        since=date(2025, 9, 1),
+        until=date(2025, 10, 31),
+        assignment_handling="include",
+    )
+
+    periods_by_day = {period.period_key: period for period in report_include.periods}
+    sept_period = periods_by_day["2025-09-05"]
+    oct_period = periods_by_day["2025-10-31"]
+
+    assert sept_period.assignment_realized_net == Decimal("108.00")
+    assert sept_period.realized_pnl_net == Decimal("482.00")
+    assert oct_period.assignment_realized_net == Decimal("175.00")
+    assert oct_period.realized_pnl_net == Decimal("737.00")
+
+    report_exclude = generate_cash_flow_pnl_report(
+        repository,
+        account_name="Primary Account",
+        account_number="ACCT-1",
+        period_type="daily",
+        since=date(2025, 9, 1),
+        until=date(2025, 10, 31),
+        assignment_handling="exclude",
+    )
+
+    periods_by_day_excluded = {period.period_key: period for period in report_exclude.periods}
+    sept_excluded = periods_by_day_excluded["2025-09-05"]
+    oct_excluded = periods_by_day_excluded["2025-10-31"]
+
+    assert sept_excluded.realized_pnl_net == Decimal("374.00")
+    assert sept_excluded.assignment_realized_net == Decimal("108.00")
+    assert oct_excluded.realized_pnl_net == Decimal("562.00")
+    assert oct_excluded.assignment_realized_net == Decimal("175.00")
+
+    assert report_exclude.totals.assignment_realized_net == Decimal("283.00")
+    assert report_exclude.totals.realized_pnl_net == Decimal("936.00")

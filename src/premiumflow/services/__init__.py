@@ -2,6 +2,7 @@
 
 from .analyzer import calculate_breakeven, calculate_pnl
 from .cash_flow import (
+    AssignmentHandling,
     CashFlowPnlReport,
     PeriodMetrics,
     PeriodType,
@@ -95,4 +96,5 @@ __all__ = [
     "CashFlowPnlReport",
     "PeriodMetrics",
     "PeriodType",
+    "AssignmentHandling",
 ]

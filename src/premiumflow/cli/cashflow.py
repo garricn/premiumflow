@@ -16,6 +16,7 @@ from rich.table import Table
 
 from ..persistence import SQLiteRepository
 from ..services.cash_flow import (
+    AssignmentHandling,
     CashFlowPnlReport,
     generate_cash_flow_pnl_report,
 )
@@ -25,6 +26,7 @@ from ..services.json_serializer import serialize_cash_flow_pnl_report
 
 DateInput = Optional[datetime]
 PeriodChoice = click.Choice(["daily", "weekly", "monthly", "total"])
+AssignmentHandlingChoice = click.Choice(["include", "exclude"])
 
 
 def _parse_date(value: DateInput) -> Optional[date]:
@@ -50,6 +52,7 @@ def _build_cashflow_table(report: CashFlowPnlReport) -> Table:
     table.add_column("Profits (After Fees)", justify="right")
     table.add_column("Losses (After Fees)", justify="right")
     table.add_column("Realized P&L (After Fees)", justify="right")
+    table.add_column("Assignment Premium (After Fees)", justify="right")
     table.add_column("Unrealized Exposure", justify="right")
     table.add_column("Opening Fees", justify="right")
     table.add_column("Closing Fees", justify="right")
@@ -68,6 +71,7 @@ def _build_cashflow_table(report: CashFlowPnlReport) -> Table:
             format_currency(period.realized_profits_net),
             format_currency(period.realized_losses_net),
             format_currency(period.realized_pnl_net),
+            format_currency(period.assignment_realized_net),
             format_currency(period.unrealized_exposure),
             format_currency(period.opening_fees),
             format_currency(period.closing_fees),
@@ -86,6 +90,7 @@ def _build_cashflow_table(report: CashFlowPnlReport) -> Table:
         format_currency(report.totals.realized_profits_net),
         format_currency(report.totals.realized_losses_net),
         format_currency(report.totals.realized_pnl_net),
+        format_currency(report.totals.assignment_realized_net),
         format_currency(report.totals.unrealized_exposure),
         format_currency(report.totals.opening_fees),
         format_currency(report.totals.closing_fees),
@@ -141,6 +146,16 @@ def _build_cashflow_table(report: CashFlowPnlReport) -> Table:
     default=False,
     help="Output JSON instead of table",
 )
+@click.option(
+    "--assignment-handling",
+    type=AssignmentHandlingChoice,
+    default="include",
+    show_default=True,
+    help=(
+        "Include assignment premium in realized totals (include) or track "
+        "them separately to match broker UIs (exclude)."
+    ),
+)
 def cashflow(
     account_name: str,
     account_number: str,
@@ -150,6 +165,7 @@ def cashflow(
     ticker: Optional[str],
     no_clamp_periods: bool,
     json_output: bool,
+    assignment_handling: AssignmentHandling,
 ) -> None:
     """Display account-level cash flow and P&L metrics with time-based grouping."""
     console = Console()
@@ -171,6 +187,7 @@ def cashflow(
             since=since_date,
             until=until_date,
             clamp_periods_to_range=not no_clamp_periods,
+            assignment_handling=assignment_handling,
         )
 
         # Handle empty state
