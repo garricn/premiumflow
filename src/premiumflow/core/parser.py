@@ -57,7 +57,7 @@ class NormalizedStockTransaction:
     instrument: str
     description: str
     trans_code: str
-    quantity: int
+    quantity: Decimal
     price: Decimal
     amount: Decimal
     action: str
@@ -271,7 +271,7 @@ def _normalize_stock_row(
     settle_date = _parse_optional_date_field(row, "Settle Date", row_number)
     instrument = _require_field(row, "Instrument", row_number).strip().upper()
     description = (row.get("Description") or "").strip()
-    quantity = _parse_quantity(row, "Quantity", row_number)
+    quantity = _parse_share_quantity(row, "Quantity", row_number)
     price = _parse_money(row, "Price", row_number, allow_negative=False, required=True)
     if price is None:
         raise ImportValidationError('Column "Price" cannot be blank.')
@@ -372,6 +372,28 @@ def _parse_quantity(row: Dict[str, str], field: str, row_number: int) -> int:
         raise ImportValidationError(f'Invalid integer in "{field}": {value}') from exc
 
     return -quantity if negative else quantity
+
+
+def _parse_share_quantity(row: Dict[str, str], field: str, row_number: int) -> Decimal:
+    value = _require_field(row, field, row_number)
+    cleaned = value.replace(",", "").strip()
+    negative = cleaned.startswith("(") and cleaned.endswith(")")
+    if negative:
+        cleaned = cleaned[1:-1]
+
+    sign = -1 if negative else 1
+    if cleaned.startswith("+"):
+        cleaned = cleaned[1:]
+    elif cleaned.startswith("-"):
+        cleaned = cleaned[1:]
+        sign *= -1
+
+    try:
+        quantity = Decimal(cleaned)
+    except InvalidOperation as exc:
+        raise ImportValidationError(f'Invalid decimal in "{field}": {value}') from exc
+
+    return quantity * sign
 
 
 def _parse_money(

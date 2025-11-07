@@ -70,7 +70,7 @@ class StoredStockTransaction:
     description: str
     trans_code: str
     action: str
-    quantity: int
+    quantity: Decimal
     price: str
     amount: str
     raw_json: str
@@ -534,7 +534,7 @@ def _row_to_stored_stock_transaction(row) -> StoredStockTransaction:
         description=row["description"],
         trans_code=row["trans_code"],
         action=row["action"],
-        quantity=int(row["quantity"]),
+        quantity=Decimal(row["quantity"]),
         price=row["price"],
         amount=row["amount"],
         raw_json=row["raw_json"],

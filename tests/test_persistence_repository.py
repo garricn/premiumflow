@@ -53,7 +53,7 @@ def _make_stock_transaction(**overrides) -> NormalizedStockTransaction:
         instrument=overrides.get("instrument", "HOOD"),
         description=overrides.get("description", "Robinhood Markets"),
         trans_code=overrides.get("trans_code", "BUY"),
-        quantity=overrides.get("quantity", 100),
+        quantity=overrides.get("quantity", Decimal("100")),
         price=overrides.get("price", Decimal("100.00")),
         amount=overrides.get("amount", Decimal("-10000.00")),
         action=overrides.get("action", "BUY"),
@@ -234,6 +234,7 @@ def test_fetch_stock_transactions_filters(tmp_path, repository):
                 trans_code="Buy",
                 action="BUY",
                 activity_date=date(2025, 9, 3),
+                quantity=Decimal("0.25"),
             ),
         ],
     )
@@ -241,10 +242,14 @@ def test_fetch_stock_transactions_filters(tmp_path, repository):
     hood_rows = repository.fetch_stock_transactions(ticker="HOOD")
     assert len(hood_rows) == 2
     assert {row.action for row in hood_rows} == {"BUY", "SELL"}
+    assert {row.quantity for row in hood_rows} == {Decimal("100"), Decimal("100")}
 
     filtered = repository.fetch_stock_transactions(ticker="HOOD", since=date(2025, 9, 2))
     assert len(filtered) == 1
     assert filtered[0].action == "SELL"
+    tsla_rows = repository.fetch_stock_transactions(ticker="TSLA")
+    assert len(tsla_rows) == 1
+    assert tsla_rows[0].quantity == Decimal("0.25")
 
 
 def test_fetch_import_activity_ranges(tmp_path, repository):

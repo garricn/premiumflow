@@ -52,7 +52,7 @@ def _make_stock_transaction(**overrides) -> NormalizedStockTransaction:
         instrument=overrides.get("instrument", "HOOD"),
         description=overrides.get("description", "Robinhood Markets"),
         trans_code=overrides.get("trans_code", "BUY"),
-        quantity=overrides.get("quantity", 100),
+        quantity=overrides.get("quantity", Decimal("100")),
         price=overrides.get("price", Decimal("100.00")),
         amount=overrides.get("amount", Decimal("-10000.00")),
         action=overrides.get("action", "BUY"),
@@ -165,6 +165,34 @@ def test_store_import_preserves_csv_row_numbers(tmp_path, monkeypatch):
 
     assert option_row_index == 7
     assert stock_row_index == 12
+
+
+def test_store_import_handles_fractional_shares(tmp_path, monkeypatch):
+    db_path = tmp_path / "premiumflow.db"
+    csv_path = tmp_path / "sample.csv"
+    csv_path.write_text("sample", encoding="utf-8")
+    monkeypatch.setenv(storage_module.DB_ENV_VAR, str(db_path))
+
+    parsed = _make_parsed(
+        [],
+        stock_transactions=[_make_stock_transaction(quantity=Decimal("0.5"))],
+    )
+
+    storage_module.store_import_result(
+        parsed,
+        source_path=str(csv_path),
+        options_only=False,
+        ticker=None,
+        strategy=None,
+        open_only=False,
+    )
+
+    with sqlite3.connect(db_path) as conn:
+        stored_quantity = conn.execute(
+            "SELECT quantity FROM stock_transactions LIMIT 1"
+        ).fetchone()[0]
+
+    assert stored_quantity == "0.5"
 
 
 def test_store_import_reuses_account(tmp_path, monkeypatch):
