@@ -97,6 +97,17 @@ def test_rebuild_assignment_stock_lots_records_put_and_call(repository, tmp_path
             _make_transaction(
                 instrument="HOOD",
                 description="HOOD 09/06/2025 Call $104.00",
+                trans_code="STO",
+                option_type="CALL",
+                strike=Decimal("104.00"),
+                expiration=date(2025, 9, 6),
+                price=Decimal("1.20"),
+                amount=Decimal("120.00"),
+                activity_date=date(2025, 8, 29),
+            ),
+            _make_transaction(
+                instrument="HOOD",
+                description="HOOD 09/06/2025 Call $104.00",
                 trans_code="OASGN",
                 option_type="CALL",
                 strike=Decimal("104.00"),
@@ -104,6 +115,7 @@ def test_rebuild_assignment_stock_lots_records_put_and_call(repository, tmp_path
                 price=Decimal("0.00"),
                 amount=None,
                 activity_date=date(2025, 9, 5),
+                quantity=2,
             ),
             # ETHU put sold then assigned
             _make_transaction(
@@ -140,20 +152,31 @@ def test_rebuild_assignment_stock_lots_records_put_and_call(repository, tmp_path
     with repository._storage._connect() as conn:  # type: ignore[attr-defined]
         rows = conn.execute("SELECT * FROM stock_lots").fetchall()
 
-    assert len(rows) == 2
-    rows_by_symbol = {row["symbol"]: row for row in rows}
+    assert len(rows) == 3
+    rows_by_symbol: dict[str, list] = {}
+    for row in rows:
+        rows_by_symbol.setdefault(row["symbol"], []).append(row)
 
-    hood_row = rows_by_symbol["HOOD"]
-    assert hood_row["symbol"] == "HOOD"
-    assert hood_row["assignment_kind"] == "call_assignment"
-    assert hood_row["direction"] == "short"
-    assert hood_row["quantity"] == -100
-    assert Decimal(hood_row["share_price_total"]) == Decimal("10400")
-    assert Decimal(hood_row["open_premium_total"]) == Decimal("108")
-    assert Decimal(hood_row["net_credit_total"]) == Decimal("108")
+    hood_rows = rows_by_symbol["HOOD"]
+    assert len(hood_rows) == 2
+    hood_assignment_ids = {row["source_transaction_id"] for row in hood_rows}
+    assert len(hood_assignment_ids) == 1  # both rows reference the same assignment transaction
+    first_hood_row, second_hood_row = hood_rows
+    assert first_hood_row["assignment_kind"] == "call_assignment"
+    assert first_hood_row["direction"] == "short"
+    assert {row["quantity"] for row in hood_rows} == {-100}
+    assert Decimal(first_hood_row["share_price_total"]) == Decimal("10400")
+    assert Decimal(second_hood_row["share_price_total"]) == Decimal("10400")
+    assert {
+        Decimal(first_hood_row["open_premium_total"]),
+        Decimal(second_hood_row["open_premium_total"]),
+    } == {Decimal("108"), Decimal("120")}
+    assert {
+        Decimal(first_hood_row["net_credit_total"]),
+        Decimal(second_hood_row["net_credit_total"]),
+    } == {Decimal("108"), Decimal("120")}
 
-    ethu_row = rows_by_symbol["ETHU"]
-    assert ethu_row["symbol"] == "ETHU"
+    ethu_row = rows_by_symbol["ETHU"][0]
     assert ethu_row["assignment_kind"] == "put_assignment"
     assert ethu_row["direction"] == "long"
     assert ethu_row["quantity"] == 100
@@ -172,7 +195,7 @@ def test_rebuild_assignment_stock_lots_records_put_and_call(repository, tmp_path
         ).fetchall()
     assert sorted(row["id"] for row in assignment_ids) == sorted(
         [
-            hood_row["source_transaction_id"],
+            next(iter(hood_assignment_ids)),
             ethu_row["source_transaction_id"],
         ]
     )

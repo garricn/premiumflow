@@ -163,7 +163,8 @@ class SQLiteStorage:
                     updated_at TEXT NOT NULL
                 );
 
-                CREATE UNIQUE INDEX IF NOT EXISTS idx_stock_lots_source_transaction
+                DROP INDEX IF EXISTS idx_stock_lots_source_transaction;
+                CREATE INDEX IF NOT EXISTS idx_stock_lots_source_transaction
                     ON stock_lots(source_transaction_id);
                 CREATE INDEX IF NOT EXISTS idx_stock_lots_account_status
                     ON stock_lots(account_id, status);
