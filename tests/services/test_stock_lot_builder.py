@@ -82,7 +82,7 @@ def test_rebuild_assignment_stock_lots_records_put_and_call(repository, tmp_path
         account_number="ACCT-1",
         csv_name="assignments.csv",
         transactions=[
-            # HOOD call sold then assigned
+            # HOOD call sold (2 contracts) then partially assigned twice
             _make_transaction(
                 instrument="HOOD",
                 description="HOOD 09/06/2025 Call $104.00",
@@ -91,19 +91,9 @@ def test_rebuild_assignment_stock_lots_records_put_and_call(repository, tmp_path
                 strike=Decimal("104.00"),
                 expiration=date(2025, 9, 6),
                 price=Decimal("1.08"),
-                amount=Decimal("108.00"),
+                amount=Decimal("216.00"),
+                quantity=2,
                 activity_date=date(2025, 8, 28),
-            ),
-            _make_transaction(
-                instrument="HOOD",
-                description="HOOD 09/06/2025 Call $104.00",
-                trans_code="STO",
-                option_type="CALL",
-                strike=Decimal("104.00"),
-                expiration=date(2025, 9, 6),
-                price=Decimal("1.20"),
-                amount=Decimal("120.00"),
-                activity_date=date(2025, 8, 29),
             ),
             _make_transaction(
                 instrument="HOOD",
@@ -115,7 +105,19 @@ def test_rebuild_assignment_stock_lots_records_put_and_call(repository, tmp_path
                 price=Decimal("0.00"),
                 amount=None,
                 activity_date=date(2025, 9, 5),
-                quantity=2,
+                quantity=1,
+            ),
+            _make_transaction(
+                instrument="HOOD",
+                description="HOOD 09/06/2025 Call $104.00",
+                trans_code="OASGN",
+                option_type="CALL",
+                strike=Decimal("104.00"),
+                expiration=date(2025, 9, 6),
+                price=Decimal("0.00"),
+                amount=None,
+                activity_date=date(2025, 9, 6),
+                quantity=1,
             ),
             # ETHU put sold then assigned
             _make_transaction(
@@ -159,22 +161,19 @@ def test_rebuild_assignment_stock_lots_records_put_and_call(repository, tmp_path
 
     hood_rows = rows_by_symbol["HOOD"]
     assert len(hood_rows) == 2
+    first_hood_row, second_hood_row = sorted(hood_rows, key=lambda r: r["opened_at"])
     hood_assignment_ids = {row["source_transaction_id"] for row in hood_rows}
-    assert len(hood_assignment_ids) == 1  # both rows reference the same assignment transaction
-    first_hood_row, second_hood_row = hood_rows
-    assert first_hood_row["assignment_kind"] == "call_assignment"
-    assert first_hood_row["direction"] == "short"
+    assert len(hood_assignment_ids) == 2
+    assert [first_hood_row["opened_at"], second_hood_row["opened_at"]] == [
+        "2025-09-05",
+        "2025-09-06",
+    ]
+    assert all(row["assignment_kind"] == "call_assignment" for row in hood_rows)
+    assert all(row["direction"] == "short" for row in hood_rows)
     assert {row["quantity"] for row in hood_rows} == {-100}
-    assert Decimal(first_hood_row["share_price_total"]) == Decimal("10400")
-    assert Decimal(second_hood_row["share_price_total"]) == Decimal("10400")
-    assert {
-        Decimal(first_hood_row["open_premium_total"]),
-        Decimal(second_hood_row["open_premium_total"]),
-    } == {Decimal("108"), Decimal("120")}
-    assert {
-        Decimal(first_hood_row["net_credit_total"]),
-        Decimal(second_hood_row["net_credit_total"]),
-    } == {Decimal("108"), Decimal("120")}
+    assert all(Decimal(row["share_price_total"]) == Decimal("10400") for row in hood_rows)
+    assert all(Decimal(row["open_premium_total"]) == Decimal("108") for row in hood_rows)
+    assert all(Decimal(row["net_credit_total"]) == Decimal("108") for row in hood_rows)
 
     ethu_row = rows_by_symbol["ETHU"][0]
     assert ethu_row["assignment_kind"] == "put_assignment"
@@ -188,14 +187,13 @@ def test_rebuild_assignment_stock_lots_records_put_and_call(repository, tmp_path
     with repository._storage._connect() as conn:  # type: ignore[attr-defined]
         assignment_ids = conn.execute(
             """
-            SELECT id FROM option_transactions
+            SELECT instrument, id FROM option_transactions
             WHERE trans_code = 'OASGN'
-            ORDER BY instrument ASC
+            ORDER BY instrument ASC, activity_date ASC
             """
         ).fetchall()
-    assert sorted(row["id"] for row in assignment_ids) == sorted(
-        [
-            next(iter(hood_assignment_ids)),
-            ethu_row["source_transaction_id"],
-        ]
+    hood_assignment_ids_db = [row["id"] for row in assignment_ids if row["instrument"] == "HOOD"]
+    assert sorted(hood_assignment_ids) == sorted(hood_assignment_ids_db)
+    assert ethu_row["source_transaction_id"] == next(
+        row["id"] for row in assignment_ids if row["instrument"] == "ETHU"
     )

@@ -41,42 +41,31 @@ def rebuild_assignment_stock_lots(
 def _build_assignment_records_from_leg(leg: MatchedLeg) -> List[AssignmentStockLotRecord]:
     records: List[AssignmentStockLotRecord] = []
     for lot in leg.lots:
-        if not _lot_closed_by_assignment(lot):
+        if not lot.close_portions:
             continue
-        maybe_record = _lot_to_assignment_record(lot)
-        if maybe_record:
-            records.append(maybe_record)
+        for close_portion in lot.close_portions:
+            if not close_portion.fill.is_assignment:
+                continue
+            maybe_record = _lot_to_assignment_record(lot, close_portion)
+            if maybe_record:
+                records.append(maybe_record)
     return records
 
 
-def _lot_closed_by_assignment(lot: MatchedLegLot) -> bool:
-    if not lot.is_closed or not lot.close_portions:
-        return False
-    return all(portion.fill.is_assignment for portion in lot.close_portions)
-
-
-def _lot_to_assignment_record(lot: MatchedLegLot) -> Optional[AssignmentStockLotRecord]:
-    if lot.closed_at is None:
-        return None
-
+def _lot_to_assignment_record(
+    lot: MatchedLegLot,
+    assignment_portion,
+) -> Optional[AssignmentStockLotRecord]:
     option_type = lot.contract.option_type.upper()
     if option_type not in {"CALL", "PUT"}:
         return None
 
     if lot.direction != "short":
-        # Only short option positions can generate assignments that deliver/receive shares.
         return None
 
-    contracts = Decimal(lot.quantity)
-    share_count = contracts * SHARES_PER_CONTRACT
+    portion_contracts = Decimal(assignment_portion.quantity)
+    share_count = portion_contracts * SHARES_PER_CONTRACT
     if share_count <= 0:
-        return None
-
-    assignment_portion = next(
-        (portion for portion in lot.close_portions if portion.fill.is_assignment),
-        None,
-    )
-    if assignment_portion is None:
         return None
 
     raw_txn = assignment_portion.fill.transaction.raw or {}
@@ -86,14 +75,20 @@ def _lot_to_assignment_record(lot: MatchedLegLot) -> Optional[AssignmentStockLot
 
     strike_price = lot.contract.strike
     share_price_total = strike_price * share_count
-    open_premium_total = lot.open_premium
-    open_fee_total = lot.open_fees
-    net_credit_total = lot.open_credit_net or Decimal("0")
 
-    per_share_divisor = share_count.copy_abs()
-    open_premium_per_share = _per_share(open_premium_total, per_share_divisor)
-    net_credit_per_share = _per_share(net_credit_total, per_share_divisor)
-    share_price_per_share = strike_price
+    lot_contracts = Decimal(lot.quantity) if lot.quantity else Decimal("1")
+    ratio = (portion_contracts / lot_contracts).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+
+    open_premium_total = (lot.open_premium * ratio).quantize(
+        Decimal("0.01"), rounding=ROUND_HALF_UP
+    )
+    open_fee_total = (lot.open_fees * ratio).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    net_credit_total = ((lot.open_credit_net or Decimal("0")) * ratio).quantize(
+        Decimal("0.01"), rounding=ROUND_HALF_UP
+    )
+
+    open_premium_per_share = _per_share(open_premium_total, share_count)
+    net_credit_per_share = _per_share(net_credit_total, share_count)
 
     if option_type == "PUT":
         share_quantity = int(share_count)
@@ -104,16 +99,18 @@ def _lot_to_assignment_record(lot: MatchedLegLot) -> Optional[AssignmentStockLot
         direction = "short"
         assignment_kind = "call_assignment"
 
+    opened_at = assignment_portion.activity_date
+
     return AssignmentStockLotRecord(
         symbol=lot.contract.symbol,
-        opened_at=lot.closed_at,
+        opened_at=opened_at,
         share_quantity=share_quantity,
         direction=direction,
         option_type=option_type,
         strike_price=strike_price,
         expiration=lot.contract.expiration,
         share_price_total=share_price_total,
-        share_price_per_share=share_price_per_share,
+        share_price_per_share=strike_price,
         open_premium_total=open_premium_total,
         open_premium_per_share=open_premium_per_share,
         open_fee_total=open_fee_total,
