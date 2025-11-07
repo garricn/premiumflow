@@ -12,6 +12,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Dict, List, Optional
 
 ALLOWED_OPTION_CODES = {"STO", "STC", "BTO", "BTC", "OASGN", "OEXP"}
+CSV_ROW_NUMBER_KEY = "__row_number"
 STOCK_BUY_CODES = {"BUY"}
 STOCK_SELL_CODES = {"SELL"}
 STOCK_TRANS_CODES = STOCK_BUY_CODES | STOCK_SELL_CODES
@@ -201,6 +202,7 @@ def _normalize_option_row(
     trans_code = _parse_trans_code(row, row_number)
     if not trans_code or trans_code not in ALLOWED_OPTION_CODES:
         return None
+    row[CSV_ROW_NUMBER_KEY] = str(row_number)
 
     activity_date = _parse_date_field(row, "Activity Date", row_number)
     process_date = _parse_optional_date_field(row, "Process Date", row_number)
@@ -254,6 +256,7 @@ def _normalize_stock_row(
         return None
     if trans_code not in STOCK_TRANS_CODES:
         return None
+    row[CSV_ROW_NUMBER_KEY] = str(row_number)
 
     required_fields = ("Activity Date", "Instrument", "Quantity", "Price", "Amount")
     for required in required_fields:

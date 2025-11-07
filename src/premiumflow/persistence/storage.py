@@ -13,7 +13,7 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Literal, Optional, Union
 
-from ..core.parser import ParsedImportResult
+from ..core.parser import CSV_ROW_NUMBER_KEY, ParsedImportResult
 
 DEFAULT_DB_PATH = Path.home() / ".premiumflow" / "premiumflow.db"
 DB_ENV_VAR = "PREMIUMFLOW_DB_PATH"
@@ -419,27 +419,34 @@ class SQLiteStorage:
             import_id = cur.lastrowid
             if import_id is None:  # pragma: no cover - sqlite should always return a value
                 raise RuntimeError("Failed to record import metadata")
-            rows_to_insert = [
-                (
-                    int(import_id),
-                    index,
-                    txn.activity_date.isoformat(),
-                    txn.process_date.isoformat() if txn.process_date else None,
-                    txn.settle_date.isoformat() if txn.settle_date else None,
-                    txn.instrument,
-                    txn.description,
-                    txn.trans_code,
-                    txn.quantity,
-                    _decimal_to_text(txn.price),
-                    _decimal_to_text(txn.amount),
-                    _decimal_to_text(txn.strike),
-                    txn.option_type,
-                    txn.expiration.isoformat(),
-                    txn.action,
-                    json.dumps(txn.raw, sort_keys=True),
+            rows_to_insert = []
+            for index, txn in enumerate(parsed.transactions, start=1):
+                raw_row = txn.raw or {}
+                row_number_value = raw_row.get(CSV_ROW_NUMBER_KEY, index)
+                try:
+                    row_number = int(row_number_value)
+                except (TypeError, ValueError):
+                    row_number = index
+                rows_to_insert.append(
+                    (
+                        int(import_id),
+                        row_number,
+                        txn.activity_date.isoformat(),
+                        txn.process_date.isoformat() if txn.process_date else None,
+                        txn.settle_date.isoformat() if txn.settle_date else None,
+                        txn.instrument,
+                        txn.description,
+                        txn.trans_code,
+                        txn.quantity,
+                        _decimal_to_text(txn.price),
+                        _decimal_to_text(txn.amount),
+                        _decimal_to_text(txn.strike),
+                        txn.option_type,
+                        txn.expiration.isoformat(),
+                        txn.action,
+                        json.dumps(raw_row, sort_keys=True),
+                    )
                 )
-                for index, txn in enumerate(parsed.transactions, start=1)
-            ]
             if rows_to_insert:
                 conn.executemany(
                     """
@@ -452,24 +459,31 @@ class SQLiteStorage:
                     """,
                     rows_to_insert,
                 )
-            stock_rows_to_insert = [
-                (
-                    int(import_id),
-                    index,
-                    txn.activity_date.isoformat(),
-                    txn.process_date.isoformat() if txn.process_date else None,
-                    txn.settle_date.isoformat() if txn.settle_date else None,
-                    txn.instrument,
-                    txn.description,
-                    txn.trans_code,
-                    txn.action,
-                    txn.quantity,
-                    _decimal_to_text(txn.price),
-                    _decimal_to_text(txn.amount),
-                    json.dumps(txn.raw, sort_keys=True),
+            stock_rows_to_insert = []
+            for index, stock_txn in enumerate(parsed.stock_transactions, start=1):
+                raw_row = stock_txn.raw or {}
+                row_number_value = raw_row.get(CSV_ROW_NUMBER_KEY, index)
+                try:
+                    row_number = int(row_number_value)
+                except (TypeError, ValueError):
+                    row_number = index
+                stock_rows_to_insert.append(
+                    (
+                        int(import_id),
+                        row_number,
+                        stock_txn.activity_date.isoformat(),
+                        stock_txn.process_date.isoformat() if stock_txn.process_date else None,
+                        stock_txn.settle_date.isoformat() if stock_txn.settle_date else None,
+                        stock_txn.instrument,
+                        stock_txn.description,
+                        stock_txn.trans_code,
+                        stock_txn.action,
+                        stock_txn.quantity,
+                        _decimal_to_text(stock_txn.price),
+                        _decimal_to_text(stock_txn.amount),
+                        json.dumps(raw_row, sort_keys=True),
+                    )
                 )
-                for index, txn in enumerate(parsed.stock_transactions, start=1)
-            ]
             if stock_rows_to_insert:
                 conn.executemany(
                     """

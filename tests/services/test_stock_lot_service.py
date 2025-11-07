@@ -8,6 +8,7 @@ from decimal import Decimal
 import pytest
 
 from premiumflow.core.parser import (
+    CSV_ROW_NUMBER_KEY,
     NormalizedOptionTransaction,
     NormalizedStockTransaction,
     ParsedImportResult,
@@ -369,3 +370,65 @@ def test_rebuild_stock_lots_prorates_assignment_premium(repository, tmp_path):
     first, second = rows
     assert Decimal(first["assignment_premium_total"]).quantize(Decimal("0.01")) == Decimal("87.50")
     assert Decimal(second["assignment_premium_total"]).quantize(Decimal("0.01")) == Decimal("87.50")
+
+
+def test_rebuild_stock_lots_respects_same_day_order(repository, tmp_path):
+    """Same-day stock buys should occur before call assignments when CSV order says so."""
+    option_raw_open = {"Activity Date": "09/01/2025", CSV_ROW_NUMBER_KEY: "20"}
+    option_raw_assign = {"Activity Date": "09/01/2025", CSV_ROW_NUMBER_KEY: "25"}
+    stock_raw = {"Activity Date": "09/01/2025", CSV_ROW_NUMBER_KEY: "21"}
+    _persist(
+        tmp_path,
+        account_name="Primary",
+        account_number="ACCT-1",
+        transactions=[
+            _make_option_transaction(
+                instrument="HOOD",
+                option_type="CALL",
+                trans_code="STO",
+                quantity=1,
+                price=Decimal("1.00"),
+                amount=Decimal("100.00"),
+                activity_date=date(2025, 9, 1),
+                raw=option_raw_open,
+                description="HOOD 10/01/2025 Call $100.00",
+                strike=Decimal("100.00"),
+            ),
+            _make_option_transaction(
+                instrument="HOOD",
+                option_type="CALL",
+                trans_code="OASGN",
+                quantity=1,
+                price=Decimal("0.00"),
+                amount=None,
+                activity_date=date(2025, 9, 1),
+                raw=option_raw_assign,
+                description="Assignment HOOD 10/01/2025 Call $100.00",
+                strike=Decimal("100.00"),
+            ),
+        ],
+        stock_transactions=[
+            _make_stock_transaction(
+                instrument="HOOD",
+                trans_code="Buy",
+                action="BUY",
+                price=Decimal("95.00"),
+                amount=Decimal("-9500.00"),
+                quantity=100,
+                activity_date=date(2025, 9, 1),
+                raw=stock_raw,
+            )
+        ],
+    )
+
+    rebuild_stock_lots(repository, account_name="Primary", account_number="ACCT-1")
+
+    with repository._storage._connect() as conn:  # type: ignore[attr-defined]
+        rows = conn.execute("SELECT * FROM stock_lots").fetchall()
+
+    assert len(rows) == 1
+    lot = rows[0]
+    assert lot["direction"] == "long"
+    assert lot["status"] == "closed"
+    assert lot["open_source"] == "stock_buy"
+    assert lot["close_source"] == "assignment_call"

@@ -8,6 +8,7 @@ from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 from typing import List, Optional
 
+from ..core.parser import CSV_ROW_NUMBER_KEY
 from ..persistence import PersistedStockLot, SQLiteRepository, StoredStockTransaction
 from .leg_matching import MatchedLeg, MatchedLegLot
 from .transaction_loader import fetch_normalized_transactions, match_legs_from_transactions
@@ -26,6 +27,9 @@ class ShareEvent:
     premium_total: Decimal
     source: str
     source_id: Optional[int]
+    import_id: Optional[int]
+    row_index: Optional[int]
+    source_rank: int
 
 
 @dataclass
@@ -77,13 +81,7 @@ def rebuild_stock_lots(
     stock_events = [_build_stock_event(txn) for txn in stored_stock_txns]
 
     all_events = assignment_events + stock_events
-    all_events.sort(
-        key=lambda ev: (
-            ev.activity_date,
-            ev.symbol,
-            0 if ev.source.startswith("assignment") else 1,
-        )
-    )
+    all_events.sort(key=_event_sort_key)
 
     lot_rows = _match_stock_lots(all_events)
     repository.replace_stock_lots(
@@ -112,6 +110,9 @@ def _build_stock_event(txn: StoredStockTransaction) -> ShareEvent:
         premium_total=Decimal("0"),
         source=f"stock_{txn.action.lower()}",
         source_id=txn.id,
+        import_id=txn.import_id,
+        row_index=txn.row_index,
+        source_rank=0,
     )
 
 
@@ -145,6 +146,16 @@ def _assignment_portion_to_event(
 
     raw_txn = portion.fill.transaction.raw or {}
     source_id = raw_txn.get("__transaction_id")
+    import_id_value = raw_txn.get("__import_id")
+    row_index_value = raw_txn.get(CSV_ROW_NUMBER_KEY)
+    try:
+        import_id = int(import_id_value) if import_id_value is not None else None
+    except (TypeError, ValueError):
+        import_id = None
+    try:
+        row_index = int(row_index_value) if row_index_value is not None else None
+    except (TypeError, ValueError):
+        row_index = None
 
     strike_price = lot.contract.strike
     premium_ratio = portion_contracts / Decimal(lot.quantity)
@@ -174,6 +185,9 @@ def _assignment_portion_to_event(
         premium_total=premium_total if option_type == "PUT" else Decimal("0"),
         source=source,
         source_id=int(source_id) if source_id is not None else None,
+        import_id=import_id,
+        row_index=row_index,
+        source_rank=1,
     )
 
 
@@ -425,3 +439,15 @@ def _close_short_lots(
         if lot.quantity_remaining == 0:
             short_lots.popleft()
     return remaining_buy, remaining_cost, remaining_premium
+
+
+def _event_sort_key(event: ShareEvent) -> tuple:
+    import_id = event.import_id if event.import_id is not None else -1
+    row_index = event.row_index if event.row_index is not None else 0
+    return (
+        event.activity_date,
+        import_id,
+        row_index,
+        event.source_rank,
+        event.symbol,
+    )
