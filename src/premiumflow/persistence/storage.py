@@ -13,7 +13,7 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Literal, Optional, Union
 
-from ..core.parser import ParsedImportResult
+from ..core.parser import CSV_ROW_NUMBER_KEY, ParsedImportResult
 
 DEFAULT_DB_PATH = Path.home() / ".premiumflow" / "premiumflow.db"
 DB_ENV_VAR = "PREMIUMFLOW_DB_PATH"
@@ -138,6 +138,30 @@ class SQLiteStorage:
                 CREATE INDEX IF NOT EXISTS idx_transactions_activity_date
                     ON option_transactions(activity_date);
 
+                CREATE TABLE IF NOT EXISTS stock_transactions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    import_id INTEGER NOT NULL REFERENCES imports(id) ON DELETE CASCADE,
+                    row_index INTEGER NOT NULL,
+                    activity_date TEXT NOT NULL,
+                    process_date TEXT,
+                    settle_date TEXT,
+                    instrument TEXT NOT NULL,
+                    description TEXT NOT NULL,
+                    trans_code TEXT NOT NULL,
+                    action TEXT NOT NULL,
+                    quantity INTEGER NOT NULL,
+                    price TEXT NOT NULL,
+                    amount TEXT NOT NULL,
+                    raw_json TEXT NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_stock_transactions_import
+                    ON stock_transactions(import_id);
+                CREATE INDEX IF NOT EXISTS idx_stock_transactions_symbol
+                    ON stock_transactions(instrument);
+                CREATE INDEX IF NOT EXISTS idx_stock_transactions_activity_date
+                    ON stock_transactions(activity_date);
+
                 CREATE TABLE IF NOT EXISTS stock_lots (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
@@ -239,28 +263,35 @@ class SQLiteStorage:
             import_id = cur.lastrowid
             if import_id is None:  # pragma: no cover - sqlite should always return a value
                 raise RuntimeError("Failed to record import metadata")
-            rows_to_insert = [
-                (
-                    int(import_id),
-                    index,
-                    txn.activity_date.isoformat(),
-                    txn.process_date.isoformat() if txn.process_date else None,
-                    txn.settle_date.isoformat() if txn.settle_date else None,
-                    txn.instrument,
-                    txn.description,
-                    txn.trans_code,
-                    txn.quantity,
-                    _decimal_to_text(txn.price),
-                    _decimal_to_text(txn.amount),
-                    _decimal_to_text(txn.strike),
-                    txn.option_type,
-                    txn.expiration.isoformat(),
-                    txn.action,
-                    json.dumps(txn.raw, sort_keys=True),
+            option_rows_to_insert = []
+            for index, txn in enumerate(parsed.transactions, start=1):
+                raw_row = dict(txn.raw) if txn.raw else {}
+                row_number_value = raw_row.get(CSV_ROW_NUMBER_KEY, index)
+                try:
+                    row_number = int(row_number_value)
+                except (TypeError, ValueError):
+                    row_number = index
+                option_rows_to_insert.append(
+                    (
+                        int(import_id),
+                        row_number,
+                        txn.activity_date.isoformat(),
+                        txn.process_date.isoformat() if txn.process_date else None,
+                        txn.settle_date.isoformat() if txn.settle_date else None,
+                        txn.instrument,
+                        txn.description,
+                        txn.trans_code,
+                        txn.quantity,
+                        _decimal_to_text(txn.price),
+                        _decimal_to_text(txn.amount),
+                        _decimal_to_text(txn.strike),
+                        txn.option_type,
+                        txn.expiration.isoformat(),
+                        txn.action,
+                        json.dumps(raw_row, sort_keys=True),
+                    )
                 )
-                for index, txn in enumerate(parsed.transactions, start=1)
-            ]
-            if rows_to_insert:
+            if option_rows_to_insert:
                 conn.executemany(
                     """
                     INSERT INTO option_transactions (
@@ -270,7 +301,45 @@ class SQLiteStorage:
                     )
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    rows_to_insert,
+                    option_rows_to_insert,
+                )
+            stock_rows_to_insert = []
+            stock_transactions = getattr(parsed, "stock_transactions", []) or []
+            for index, stock_txn in enumerate(stock_transactions, start=1):
+                raw_row = dict(stock_txn.raw) if stock_txn.raw else {}
+                row_number_value = raw_row.get(CSV_ROW_NUMBER_KEY, index)
+                try:
+                    row_number = int(row_number_value)
+                except (TypeError, ValueError):
+                    row_number = index
+                stock_rows_to_insert.append(
+                    (
+                        int(import_id),
+                        row_number,
+                        stock_txn.activity_date.isoformat(),
+                        stock_txn.process_date.isoformat() if stock_txn.process_date else None,
+                        stock_txn.settle_date.isoformat() if stock_txn.settle_date else None,
+                        stock_txn.instrument,
+                        stock_txn.description,
+                        stock_txn.trans_code,
+                        stock_txn.action,
+                        stock_txn.quantity,
+                        _decimal_to_text(stock_txn.price),
+                        _decimal_to_text(stock_txn.amount),
+                        json.dumps(raw_row, sort_keys=True),
+                    )
+                )
+            if stock_rows_to_insert:
+                conn.executemany(
+                    """
+                    INSERT INTO stock_transactions (
+                        import_id, row_index, activity_date, process_date, settle_date,
+                        instrument, description, trans_code, action, quantity, price,
+                        amount, raw_json
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    stock_rows_to_insert,
                 )
             status: StoreStatus = "replaced" if existing else "inserted"
         return StoreResult(import_id=int(import_id), status=status)
