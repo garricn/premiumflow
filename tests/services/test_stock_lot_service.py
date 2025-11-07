@@ -198,3 +198,49 @@ def test_rebuild_stock_lots_includes_put_assignment(repository, tmp_path):
     assert Decimal(row["proceeds_per_share"]) == Decimal("120.0000")
     assert Decimal(row["assignment_premium_total"]) == Decimal("175.00")
     assert Decimal(row["realized_pnl_total"]).quantize(Decimal("0.01")) == Decimal("1175.00")
+
+
+def test_rebuild_stock_lots_buy_covers_short_and_opens_long(repository, tmp_path):
+    """Buys that cover shorts and leave leftover shares keep correct basis."""
+    _persist(
+        tmp_path,
+        account_name="Primary",
+        account_number="ACCT-1",
+        transactions=[],
+        stock_transactions=[
+            _make_stock_transaction(
+                instrument="HOOD",
+                trans_code="Sell",
+                action="SELL",
+                price=Decimal("9.00"),
+                amount=Decimal("900.00"),
+                quantity=100,
+                activity_date=date(2025, 8, 28),
+            ),
+            _make_stock_transaction(
+                instrument="HOOD",
+                trans_code="Buy",
+                action="BUY",
+                price=Decimal("10.00"),
+                amount=Decimal("-1500.00"),
+                quantity=150,
+                activity_date=date(2025, 9, 2),
+            ),
+        ],
+    )
+
+    rebuild_stock_lots(repository, account_name="Primary", account_number="ACCT-1")
+
+    with repository._storage._connect() as conn:  # type: ignore[attr-defined]
+        rows = conn.execute("SELECT * FROM stock_lots ORDER BY opened_at").fetchall()
+
+    assert len(rows) == 2
+    closed = next(row for row in rows if row["status"] == "closed")
+    assert closed["direction"] == "short"
+    assert closed["quantity"] == -100
+    assert Decimal(closed["cost_basis_per_share"]) == Decimal("10.0000")
+    open_row = next(row for row in rows if row["status"] == "open")
+    assert open_row["direction"] == "long"
+    assert open_row["quantity"] == 50
+    assert Decimal(open_row["cost_basis_per_share"]) == Decimal("10.0000")
+    assert Decimal(open_row["assignment_premium_total"]) == Decimal("0")

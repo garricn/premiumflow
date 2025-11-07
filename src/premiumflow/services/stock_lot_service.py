@@ -188,12 +188,13 @@ def _match_stock_lots(events: List[ShareEvent]) -> List[PersistedStockLot]:
             remaining_premium = event.premium_total
 
             # cover existing short positions first
-            remaining = _close_short_lots(
+            remaining, remaining_cost, remaining_premium = _close_short_lots(
                 results,
                 short_lots,
                 event,
                 remaining,
                 remaining_cost,
+                remaining_premium,
             )
             if remaining == 0:
                 continue
@@ -360,15 +361,24 @@ def _close_short_lots(
     event: ShareEvent,
     buy_qty: int,
     buy_cost_total: Decimal,
-) -> int:
+    buy_premium_total: Decimal,
+) -> tuple[int, Decimal, Decimal]:
     remaining_buy = buy_qty
+    remaining_cost = buy_cost_total
+    remaining_premium = buy_premium_total
     price_per_share = (buy_cost_total / Decimal(buy_qty)).quantize(
         Decimal("0.0001"), rounding=ROUND_HALF_UP
+    )
+    premium_per_share = (
+        (buy_premium_total / Decimal(buy_qty)).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+        if buy_premium_total
+        else Decimal("0")
     )
     while remaining_buy > 0 and short_lots:
         lot = short_lots[0]
         cover_qty = min(remaining_buy, lot.quantity_remaining)
         cover_cost = price_per_share * Decimal(cover_qty)
+        cover_premium = premium_per_share * Decimal(cover_qty)
         proceeds_total = lot.proceeds_per_share * Decimal(cover_qty)
         realized = proceeds_total - cover_cost
 
@@ -401,6 +411,9 @@ def _close_short_lots(
         lot.quantity_remaining -= cover_qty
         lot.proceeds_remaining -= proceeds_total
         remaining_buy -= cover_qty
+        remaining_cost -= cover_cost
+        if buy_premium_total:
+            remaining_premium -= cover_premium
         if lot.quantity_remaining == 0:
             short_lots.popleft()
-    return remaining_buy
+    return remaining_buy, remaining_cost, remaining_premium
