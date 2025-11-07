@@ -602,6 +602,10 @@ def test_cashflow_view_renders_template(client_with_storage, tmp_path):
     assert "Cash Flow" in response.text and "P&L" in response.text
     assert "Total Cash Flow" in response.text
     assert "Period" in response.text
+    assert "Profits (Before Fees)" in response.text
+    assert "Realized P&L (After Fees)" in response.text
+    assert "Opening Fees" in response.text
+    assert "Gross P&L" not in response.text
 
 
 def test_cashflow_view_filters_by_account(client_with_storage, tmp_path):
@@ -747,6 +751,11 @@ def test_cashflow_api_returns_json(client_with_storage, tmp_path):
     assert "credits" in data["totals"]
     assert "debits" in data["totals"]
     assert "net_cash_flow" in data["totals"]
+    assert "realized_profits_gross" in data["totals"]
+    assert "realized_losses_gross" in data["totals"]
+    assert "realized_pnl_net" in data["totals"]
+    assert "opening_fees" in data["totals"]
+    assert "closing_fees" in data["totals"]
 
 
 def test_cashflow_api_filters_work(client_with_storage, tmp_path):

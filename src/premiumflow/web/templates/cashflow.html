@@ -78,8 +78,8 @@
           <div class="summary-card-value">{{ format_currency(report.totals.net_cash_flow) }}</div>
         </div>
         <div class="summary-card">
-          <div class="summary-card-label">Total Realized P&L</div>
-          <div class="summary-card-value">{{ format_currency(report.totals.net_realized_pnl) }}</div>
+          <div class="summary-card-label">Realized P&L (After Fees)</div>
+          <div class="summary-card-value">{{ format_currency(report.totals.realized_pnl_net) }}</div>
         </div>
         <div class="summary-card">
           <div class="summary-card-label">Total Unrealized Exposure</div>
@@ -87,7 +87,7 @@
         </div>
         <div class="summary-card">
           <div class="summary-card-label">Net P&L</div>
-          <div class="summary-card-value">{{ format_currency(report.totals.net_pnl) }}</div>
+          <div class="summary-card-value">{{ format_currency(report.totals.realized_pnl_net + report.totals.unrealized_exposure) }}</div>
         </div>
       </section>
       <section>
@@ -98,11 +98,16 @@
               <th scope="col" class="text-right">Credits</th>
               <th scope="col" class="text-right">Debits</th>
               <th scope="col" class="text-right">Net Cash Flow</th>
-              <th scope="col" class="text-right">Gross Realized P&L</th>
-              <th scope="col" class="text-right">Net Realized P&L</th>
+              <th scope="col" class="text-right">Profits (Before Fees)</th>
+              <th scope="col" class="text-right">Losses (Before Fees)</th>
+              <th scope="col" class="text-right">Realized P&L (Before Fees)</th>
+              <th scope="col" class="text-right">Profits (After Fees)</th>
+              <th scope="col" class="text-right">Losses (After Fees)</th>
+              <th scope="col" class="text-right">Realized P&L (After Fees)</th>
               <th scope="col" class="text-right">Unrealized Exposure</th>
-              <th scope="col" class="text-right">Gross P&L</th>
-              <th scope="col" class="text-right">Net P&L</th>
+              <th scope="col" class="text-right">Opening Fees</th>
+              <th scope="col" class="text-right">Closing Fees</th>
+              <th scope="col" class="text-right">Total Fees</th>
             </tr>
           </thead>
           <tbody>
@@ -112,11 +117,16 @@
               <td class="text-right">{{ format_currency(period.credits) }}</td>
               <td class="text-right">{{ format_currency(period.debits) }}</td>
               <td class="text-right">{{ format_currency(period.net_cash_flow) }}</td>
-              <td class="text-right">{{ format_currency(period.gross_realized_pnl) }}</td>
-              <td class="text-right">{{ format_currency(period.net_realized_pnl) }}</td>
+              <td class="text-right">{{ format_currency(period.realized_profits_gross) }}</td>
+              <td class="text-right">{{ format_currency(period.realized_losses_gross) }}</td>
+              <td class="text-right">{{ format_currency(period.realized_pnl_gross) }}</td>
+              <td class="text-right">{{ format_currency(period.realized_profits_net) }}</td>
+              <td class="text-right">{{ format_currency(period.realized_losses_net) }}</td>
+              <td class="text-right">{{ format_currency(period.realized_pnl_net) }}</td>
               <td class="text-right">{{ format_currency(period.unrealized_exposure) }}</td>
-              <td class="text-right">{{ format_currency(period.gross_pnl) }}</td>
-              <td class="text-right">{{ format_currency(period.net_pnl) }}</td>
+              <td class="text-right">{{ format_currency(period.opening_fees) }}</td>
+              <td class="text-right">{{ format_currency(period.closing_fees) }}</td>
+              <td class="text-right">{{ format_currency(period.total_fees) }}</td>
             </tr>
             {% endfor %}
             <tr class="totals-row">
@@ -124,11 +134,16 @@
               <td class="text-right"><strong>{{ format_currency(report.totals.credits) }}</strong></td>
               <td class="text-right"><strong>{{ format_currency(report.totals.debits) }}</strong></td>
               <td class="text-right"><strong>{{ format_currency(report.totals.net_cash_flow) }}</strong></td>
-              <td class="text-right"><strong>{{ format_currency(report.totals.gross_realized_pnl) }}</strong></td>
-              <td class="text-right"><strong>{{ format_currency(report.totals.net_realized_pnl) }}</strong></td>
+              <td class="text-right"><strong>{{ format_currency(report.totals.realized_profits_gross) }}</strong></td>
+              <td class="text-right"><strong>{{ format_currency(report.totals.realized_losses_gross) }}</strong></td>
+              <td class="text-right"><strong>{{ format_currency(report.totals.realized_pnl_gross) }}</strong></td>
+              <td class="text-right"><strong>{{ format_currency(report.totals.realized_profits_net) }}</strong></td>
+              <td class="text-right"><strong>{{ format_currency(report.totals.realized_losses_net) }}</strong></td>
+              <td class="text-right"><strong>{{ format_currency(report.totals.realized_pnl_net) }}</strong></td>
               <td class="text-right"><strong>{{ format_currency(report.totals.unrealized_exposure) }}</strong></td>
-              <td class="text-right"><strong>{{ format_currency(report.totals.gross_pnl) }}</strong></td>
-              <td class="text-right"><strong>{{ format_currency(report.totals.net_pnl) }}</strong></td>
+              <td class="text-right"><strong>{{ format_currency(report.totals.opening_fees) }}</strong></td>
+              <td class="text-right"><strong>{{ format_currency(report.totals.closing_fees) }}</strong></td>
+              <td class="text-right"><strong>{{ format_currency(report.totals.total_fees) }}</strong></td>
             </tr>
           </tbody>
         </table>
@@ -156,4 +171,3 @@
     </script>
   </body>
 </html>
-

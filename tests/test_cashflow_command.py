@@ -216,11 +216,9 @@ def test_cashflow_table_output(tmp_path, monkeypatch):
     assert result.exit_code == 0
     assert "Cash Flow & P&L Report" in result.output
     assert "Period" in result.output
-    # Rich tables may truncate column names, so check for partial matches
-    assert "Credi" in result.output or "Credit" in result.output
-    assert "Debit" in result.output
-    assert "Cash Flow" in result.output or "Flow" in result.output
-    assert "P&L" in result.output
+    # Ensure deprecated columns are gone
+    assert "Gross P&L" not in result.output
+    assert "Net P&L" not in result.output
     assert "Total" in result.output
 
 
@@ -264,6 +262,12 @@ def test_cashflow_json_output(tmp_path, monkeypatch):
     assert "totals" in data
     assert data["account_name"] == "Primary Account"
     assert data["account_number"] == "ACCT-1"
+    totals = data["totals"]
+    assert "realized_profits_gross" in totals
+    assert "realized_losses_gross" in totals
+    assert "realized_pnl_net" in totals
+    assert "opening_fees" in totals
+    assert "closing_fees" in totals
 
 
 def test_cashflow_date_filtering(tmp_path, monkeypatch):
