@@ -11,6 +11,7 @@ from premiumflow.core.parser import NormalizedOptionTransaction, ParsedImportRes
 from premiumflow.persistence import repository as repository_module
 from premiumflow.persistence import storage as storage_module
 from premiumflow.services.cash_flow import (
+    _group_date_to_period_key,
     generate_cash_flow_pnl_report,
 )
 
@@ -107,9 +108,16 @@ def test_generate_report_empty_account(repository):
     assert len(report.periods) == 0
     assert report.totals.credits == Decimal("0")
     assert report.totals.debits == Decimal("0")
-    assert report.totals.gross_realized_pnl == Decimal("0")
-    assert report.totals.net_realized_pnl == Decimal("0")
+    assert report.totals.realized_profits_gross == Decimal("0")
+    assert report.totals.realized_losses_gross == Decimal("0")
+    assert report.totals.realized_pnl_gross == Decimal("0")
+    assert report.totals.realized_profits_net == Decimal("0")
+    assert report.totals.realized_losses_net == Decimal("0")
+    assert report.totals.realized_pnl_net == Decimal("0")
     assert report.totals.unrealized_exposure == Decimal("0")
+    assert report.totals.opening_fees == Decimal("0")
+    assert report.totals.closing_fees == Decimal("0")
+    assert report.totals.total_fees == Decimal("0")
 
 
 def test_generate_report_total_period_simple_flow(tmp_path, repository):
@@ -153,9 +161,12 @@ def test_generate_report_total_period_simple_flow(tmp_path, repository):
     assert report.periods[0].debits == Decimal("150.00")
     assert report.periods[0].net_cash_flow == Decimal("450.00")
     # Realized P&L should be calculated from matched legs
-    # One lot closed: opened with 600, closed with 150, gross_realized_pnl should be positive
-    assert report.periods[0].gross_realized_pnl > Decimal("0")
-    assert report.periods[0].net_realized_pnl > Decimal("0")
+    assert report.periods[0].realized_profits_gross > Decimal("0")
+    assert report.periods[0].realized_losses_gross == Decimal("0")
+    assert report.periods[0].realized_pnl_gross > Decimal("0")
+    assert report.periods[0].realized_profits_net > Decimal("0")
+    assert report.periods[0].realized_losses_net == Decimal("0")
+    assert report.periods[0].realized_pnl_net > Decimal("0")
     # One lot still open (1 contract remaining)
     assert report.periods[0].unrealized_exposure > Decimal("0")
 
@@ -412,10 +423,72 @@ def test_generate_report_realized_pnl_from_closed_lots(tmp_path, repository):
     )
 
     # Realized P&L should be positive (sold for 600, bought back for 200)
-    assert report.totals.gross_realized_pnl > Decimal("0")
-    assert report.totals.net_realized_pnl > Decimal("0")
+    assert report.totals.realized_pnl_gross > Decimal("0")
+    assert report.totals.realized_pnl_net > Decimal("0")
+    assert report.totals.realized_losses_gross == Decimal("0")
+    assert report.totals.realized_losses_net == Decimal("0")
     # Unrealized should be 0 since all lots are closed
     assert report.totals.unrealized_exposure == Decimal("0")
+
+
+def test_generate_report_separates_realized_profits_and_losses(tmp_path, repository):
+    """Realized P&L aggregation should track profits and losses independently."""
+    _seed_import(
+        tmp_path,
+        csv_name="profit_loss.csv",
+        transactions=[
+            # Winning trade (+200 gross)
+            _make_transaction(
+                trans_code="STO",
+                action="SELL",
+                quantity=1,
+                price=Decimal("4.00"),
+                amount=Decimal("400.00"),
+                activity_date=date(2025, 10, 1),
+            ),
+            _make_transaction(
+                trans_code="BTC",
+                action="BUY",
+                quantity=1,
+                price=Decimal("2.00"),
+                amount=Decimal("-200.00"),
+                activity_date=date(2025, 10, 10),
+            ),
+            # Losing trade (-200 gross)
+            _make_transaction(
+                trans_code="STO",
+                action="SELL",
+                quantity=1,
+                price=Decimal("2.00"),
+                amount=Decimal("200.00"),
+                activity_date=date(2025, 10, 5),
+            ),
+            _make_transaction(
+                trans_code="BTC",
+                action="BUY",
+                quantity=1,
+                price=Decimal("4.00"),
+                amount=Decimal("-400.00"),
+                activity_date=date(2025, 10, 20),
+            ),
+        ],
+    )
+
+    report = generate_cash_flow_pnl_report(
+        repository,
+        account_name="Primary Account",
+        account_number="ACCT-1",
+        period_type="total",
+    )
+
+    totals = report.totals
+    assert totals.realized_profits_gross == Decimal("200.00")
+    assert totals.realized_losses_gross == Decimal("200.00")
+    assert totals.realized_pnl_gross == Decimal("0.00")
+    # No fees in test data, so net values should match gross values
+    assert totals.realized_profits_net == totals.realized_profits_gross
+    assert totals.realized_losses_net == totals.realized_losses_gross
+    assert totals.realized_pnl_net == Decimal("0.00")
 
 
 def test_generate_report_unrealized_exposure_from_open_lots(tmp_path, repository):
@@ -446,8 +519,194 @@ def test_generate_report_unrealized_exposure_from_open_lots(tmp_path, repository
     # Unrealized P&L should be positive (credit remaining on open positions)
     assert report.totals.unrealized_exposure > Decimal("0")
     # Realized P&L should be 0 since no lots are closed
-    assert report.totals.gross_realized_pnl == Decimal("0")
-    assert report.totals.net_realized_pnl == Decimal("0")
+    assert report.totals.realized_profits_gross == Decimal("0")
+    assert report.totals.realized_losses_gross == Decimal("0")
+    assert report.totals.realized_pnl_gross == Decimal("0")
+    assert report.totals.realized_profits_net == Decimal("0")
+    assert report.totals.realized_losses_net == Decimal("0")
+    assert report.totals.realized_pnl_net == Decimal("0")
+
+
+def test_generate_report_aggregates_opening_and_closing_fees_by_period(tmp_path, repository):
+    """Opening fees should stay in the opening period and closing fees in the closing period."""
+    _seed_import(
+        tmp_path,
+        csv_name="fees.csv",
+        transactions=[
+            _make_transaction(
+                trans_code="STO",
+                action="SELL",
+                quantity=1,
+                price=Decimal("3.00"),
+                amount=Decimal("299.00"),  # $1.00 opening fee
+                activity_date=date(2025, 10, 7),
+            ),
+            _make_transaction(
+                trans_code="BTC",
+                action="BUY",
+                quantity=1,
+                price=Decimal("1.50"),
+                amount=Decimal("-151.50"),  # $1.50 closing fee
+                activity_date=date(2025, 11, 5),
+            ),
+        ],
+    )
+
+    report = generate_cash_flow_pnl_report(
+        repository,
+        account_name="Primary Account",
+        account_number="ACCT-1",
+        period_type="monthly",
+    )
+
+    october = next(period for period in report.periods if period.period_key == "2025-10")
+    november = next(period for period in report.periods if period.period_key == "2025-11")
+
+    assert october.opening_fees == Decimal("1.00")
+    assert october.closing_fees == Decimal("0.00")
+    assert october.total_fees == Decimal("1.00")
+
+    assert november.opening_fees == Decimal("0.00")
+    assert november.closing_fees == Decimal("1.50")
+    assert november.total_fees == Decimal("1.50")
+
+    assert report.totals.opening_fees == Decimal("1.00")
+    assert report.totals.closing_fees == Decimal("1.50")
+    assert report.totals.total_fees == Decimal("2.50")
+
+
+def test_opening_fees_clamped_into_filtered_range(tmp_path, repository):
+    """Opening fees from lots opened before the date range should still reconcile with net P&L."""
+    _seed_import(
+        tmp_path,
+        csv_name="clamped_fees.csv",
+        transactions=[
+            _make_transaction(
+                trans_code="STO",
+                action="SELL",
+                quantity=1,
+                price=Decimal("3.00"),
+                amount=Decimal("299.00"),  # $1 opening fee
+                activity_date=date(2025, 9, 25),
+            ),
+            _make_transaction(
+                trans_code="BTC",
+                action="BUY",
+                quantity=1,
+                price=Decimal("1.00"),
+                amount=Decimal("-101.00"),  # $1 closing fee
+                activity_date=date(2025, 10, 5),
+            ),
+        ],
+    )
+
+    report = generate_cash_flow_pnl_report(
+        repository,
+        account_name="Primary Account",
+        account_number="ACCT-1",
+        period_type="monthly",
+        since=date(2025, 10, 1),
+        until=date(2025, 10, 31),
+    )
+
+    assert len(report.periods) == 1
+    period = report.periods[0]
+    assert period.opening_fees == Decimal("1.00")
+    assert period.closing_fees == Decimal("1.00")
+    assert period.total_fees == Decimal("2.00")
+    assert period.realized_pnl_gross == Decimal("200.00")
+    assert period.realized_pnl_net == Decimal("198.00")
+
+
+def test_opening_fees_ignored_when_lot_outside_range(tmp_path, repository):
+    """Lots that open and close before the range should not create fee buckets."""
+    _seed_import(
+        tmp_path,
+        csv_name="out_of_range.csv",
+        transactions=[
+            _make_transaction(
+                trans_code="STO",
+                action="SELL",
+                quantity=1,
+                price=Decimal("2.00"),
+                amount=Decimal("199.00"),  # $1 opening fee
+                activity_date=date(2025, 9, 1),
+            ),
+            _make_transaction(
+                trans_code="BTC",
+                action="BUY",
+                quantity=1,
+                price=Decimal("1.00"),
+                amount=Decimal("-101.00"),  # $1 closing fee
+                activity_date=date(2025, 9, 10),
+            ),
+        ],
+    )
+
+    report = generate_cash_flow_pnl_report(
+        repository,
+        account_name="Primary Account",
+        account_number="ACCT-1",
+        period_type="monthly",
+        since=date(2025, 10, 1),
+        until=date(2025, 10, 31),
+    )
+
+    assert len(report.periods) == 0
+    assert report.totals.opening_fees == Decimal("0")
+    assert report.totals.closing_fees == Decimal("0")
+    assert report.totals.total_fees == Decimal("0")
+    assert report.totals.realized_pnl_net == Decimal("0")
+
+
+def test_opening_fees_create_clamped_period_when_missing(tmp_path, repository):
+    """Clamping should create the first in-range period even if it only holds fees."""
+    _seed_import(
+        tmp_path,
+        csv_name="clamped_weekly.csv",
+        transactions=[
+            _make_transaction(
+                trans_code="STO",
+                action="SELL",
+                quantity=1,
+                price=Decimal("3.00"),
+                amount=Decimal("299.00"),  # $1 opening fee
+                activity_date=date(2025, 9, 25),
+            ),
+            _make_transaction(
+                trans_code="BTC",
+                action="BUY",
+                quantity=1,
+                price=Decimal("1.50"),
+                amount=Decimal("-151.50"),  # closes inside range with $1.50 fee
+                activity_date=date(2025, 10, 20),
+            ),
+        ],
+    )
+
+    report = generate_cash_flow_pnl_report(
+        repository,
+        account_name="Primary Account",
+        account_number="ACCT-1",
+        period_type="weekly",
+        since=date(2025, 10, 1),
+        until=date(2025, 10, 31),
+    )
+
+    first_period_key, _ = _group_date_to_period_key(date(2025, 10, 1), "weekly")
+    assert len(report.periods) == 2
+    first_period = next(p for p in report.periods if p.period_key == first_period_key)
+    closing_period = next(p for p in report.periods if p.period_key != first_period_key)
+
+    assert first_period.opening_fees == Decimal("1.00")
+    assert first_period.closing_fees == Decimal("0.00")
+    assert first_period.realized_pnl_net == Decimal("0")
+
+    assert closing_period.closing_fees == Decimal("1.50")
+    assert closing_period.realized_pnl_net == Decimal("147.50")
+
+    assert report.totals.opening_fees == Decimal("1.00")
+    assert report.totals.closing_fees == Decimal("1.50")
 
 
 def test_generate_report_multiple_accounts_isolation(tmp_path, repository):
@@ -579,13 +838,12 @@ def test_generate_report_pnl_includes_legs_opened_before_range(tmp_path, reposit
     assert report.totals.debits == Decimal("200.00")
 
     # Realized P&L should be calculated correctly (opened for 600, closed for 200)
-    # Even though opening was before the date range
-    assert report.totals.gross_realized_pnl > Decimal("0")
+    assert report.totals.realized_pnl_gross > Decimal("0")
     # Gross should be approximately 400 (600 - 200)
-    assert report.totals.gross_realized_pnl < Decimal("500")
-    # Net should be less than or equal to gross (after fees, but fees may be zero in test data)
-    assert report.totals.net_realized_pnl > Decimal("0")
-    assert report.totals.net_realized_pnl <= report.totals.gross_realized_pnl
+    assert report.totals.realized_pnl_gross < Decimal("500")
+    # Net (after fees) should be less than or equal to gross
+    assert report.totals.realized_pnl_net > Decimal("0")
+    assert report.totals.realized_pnl_net <= report.totals.realized_pnl_gross
 
 
 def test_generate_report_unrealized_exposure_includes_positions_opened_before_range(
@@ -628,8 +886,8 @@ def test_generate_report_unrealized_exposure_includes_positions_opened_before_ra
     assert report.totals.unrealized_exposure < Decimal("700")
 
     # Realized P&L should be 0 since no positions were closed
-    assert report.totals.gross_realized_pnl == Decimal("0")
-    assert report.totals.net_realized_pnl == Decimal("0")
+    assert report.totals.realized_pnl_gross == Decimal("0")
+    assert report.totals.realized_pnl_net == Decimal("0")
 
 
 def test_generate_report_clamps_periods_to_range(tmp_path, repository):
@@ -753,5 +1011,5 @@ def test_generate_report_includes_unrealized_exposure_for_positions_closed_after
     assert october_period.unrealized_exposure < Decimal("700")
 
     # Realized P&L should be 0 since no positions were closed during October
-    assert report.totals.gross_realized_pnl == Decimal("0")
-    assert report.totals.net_realized_pnl == Decimal("0")
+    assert report.totals.realized_pnl_gross == Decimal("0")
+    assert report.totals.realized_pnl_net == Decimal("0")

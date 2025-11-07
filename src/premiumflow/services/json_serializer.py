@@ -239,11 +239,16 @@ def serialize_period_metrics(metrics: PeriodMetrics) -> Dict[str, Any]:
         "credits": _decimal_to_string(metrics.credits),
         "debits": _decimal_to_string(metrics.debits),
         "net_cash_flow": _decimal_to_string(metrics.net_cash_flow),
-        "gross_realized_pnl": _decimal_to_string(metrics.gross_realized_pnl),
-        "net_realized_pnl": _decimal_to_string(metrics.net_realized_pnl),
+        "realized_profits_gross": _decimal_to_string(metrics.realized_profits_gross),
+        "realized_losses_gross": _decimal_to_string(metrics.realized_losses_gross),
+        "realized_pnl_gross": _decimal_to_string(metrics.realized_pnl_gross),
+        "realized_profits_net": _decimal_to_string(metrics.realized_profits_net),
+        "realized_losses_net": _decimal_to_string(metrics.realized_losses_net),
+        "realized_pnl_net": _decimal_to_string(metrics.realized_pnl_net),
         "unrealized_exposure": _decimal_to_string(metrics.unrealized_exposure),
-        "gross_pnl": _decimal_to_string(metrics.gross_pnl),
-        "net_pnl": _decimal_to_string(metrics.net_pnl),
+        "opening_fees": _decimal_to_string(metrics.opening_fees),
+        "closing_fees": _decimal_to_string(metrics.closing_fees),
+        "total_fees": _decimal_to_string(metrics.total_fees),
     }
 
 

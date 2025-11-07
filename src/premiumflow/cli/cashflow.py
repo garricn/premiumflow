@@ -44,11 +44,16 @@ def _build_cashflow_table(report: CashFlowPnlReport) -> Table:
     table.add_column("Credits", justify="right")
     table.add_column("Debits", justify="right")
     table.add_column("Net Cash Flow", justify="right")
-    table.add_column("Gross Realized P&L", justify="right")
-    table.add_column("Net Realized P&L", justify="right")
+    table.add_column("Profits (Before Fees)", justify="right")
+    table.add_column("Losses (Before Fees)", justify="right")
+    table.add_column("Realized P&L (Before Fees)", justify="right")
+    table.add_column("Profits (After Fees)", justify="right")
+    table.add_column("Losses (After Fees)", justify="right")
+    table.add_column("Realized P&L (After Fees)", justify="right")
     table.add_column("Unrealized Exposure", justify="right")
-    table.add_column("Gross P&L", justify="right")
-    table.add_column("Net P&L", justify="right")
+    table.add_column("Opening Fees", justify="right")
+    table.add_column("Closing Fees", justify="right")
+    table.add_column("Total Fees", justify="right")
 
     # Add period rows
     for period in report.periods:
@@ -57,11 +62,16 @@ def _build_cashflow_table(report: CashFlowPnlReport) -> Table:
             format_currency(period.credits),
             format_currency(period.debits),
             format_currency(period.net_cash_flow),
-            format_currency(period.gross_realized_pnl),
-            format_currency(period.net_realized_pnl),
+            format_currency(period.realized_profits_gross),
+            format_currency(period.realized_losses_gross),
+            format_currency(period.realized_pnl_gross),
+            format_currency(period.realized_profits_net),
+            format_currency(period.realized_losses_net),
+            format_currency(period.realized_pnl_net),
             format_currency(period.unrealized_exposure),
-            format_currency(period.gross_pnl),
-            format_currency(period.net_pnl),
+            format_currency(period.opening_fees),
+            format_currency(period.closing_fees),
+            format_currency(period.total_fees),
         )
 
     # Add totals row
@@ -70,11 +80,16 @@ def _build_cashflow_table(report: CashFlowPnlReport) -> Table:
         format_currency(report.totals.credits),
         format_currency(report.totals.debits),
         format_currency(report.totals.net_cash_flow),
-        format_currency(report.totals.gross_realized_pnl),
-        format_currency(report.totals.net_realized_pnl),
+        format_currency(report.totals.realized_profits_gross),
+        format_currency(report.totals.realized_losses_gross),
+        format_currency(report.totals.realized_pnl_gross),
+        format_currency(report.totals.realized_profits_net),
+        format_currency(report.totals.realized_losses_net),
+        format_currency(report.totals.realized_pnl_net),
         format_currency(report.totals.unrealized_exposure),
-        format_currency(report.totals.gross_pnl),
-        format_currency(report.totals.net_pnl),
+        format_currency(report.totals.opening_fees),
+        format_currency(report.totals.closing_fees),
+        format_currency(report.totals.total_fees),
         style="bold",
     )
 

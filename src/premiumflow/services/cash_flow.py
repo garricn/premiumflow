@@ -53,11 +53,16 @@ class PeriodMetrics:
     credits: Decimal
     debits: Decimal
     net_cash_flow: Decimal
-    gross_realized_pnl: Decimal  # Gross realized P&L (before fees) - matches Robinhood
-    net_realized_pnl: Decimal  # Realized P&L after fees (actual cash outcome)
-    unrealized_exposure: Decimal  # Credit at risk on open positions (premium collected that could be retained if expired worthless)
-    gross_pnl: Decimal  # gross_realized_pnl + unrealized_exposure
-    net_pnl: Decimal  # net_realized_pnl + unrealized_exposure
+    realized_profits_gross: Decimal  # Sum of positive realized P&L before fees
+    realized_losses_gross: Decimal  # Sum of negative realized P&L before fees (absolute value)
+    realized_pnl_gross: Decimal  # realized_profits_gross - realized_losses_gross
+    realized_profits_net: Decimal  # Sum of positive realized P&L after fees
+    realized_losses_net: Decimal  # Sum of negative realized P&L after fees (absolute value)
+    realized_pnl_net: Decimal  # realized_profits_net - realized_losses_net
+    unrealized_exposure: Decimal  # Credit at risk on open positions
+    opening_fees: Decimal
+    closing_fees: Decimal
+    total_fees: Decimal
 
 
 @dataclass(frozen=True)
@@ -316,21 +321,94 @@ def _aggregate_realized_pnl(
     until: Optional[date] = None,
 ) -> None:
     """
-    Aggregate gross and net realized P&L from closed lots into period_data.
+    Aggregate realized P&L (gross and net) from closed lots into period_data.
 
     Realized P&L is attributed to the period when the lot was closed.
     Only includes lots closed within the date range (if filtering).
     """
     for leg in matched_legs:
         for lot in leg.lots:
-            if lot.is_closed and lot.realized_pnl is not None:
-                if lot.closed_at and _date_in_range(lot.closed_at, since, until):
-                    period_key, _ = _group_date_to_period_key(lot.closed_at, period_type)
-                    # Aggregate gross realized P&L (before fees)
-                    period_data[period_key]["gross_realized_pnl"] += lot.realized_pnl
-                    # Aggregate net realized P&L (after fees)
-                    if lot.net_pnl is not None:
-                        period_data[period_key]["net_realized_pnl"] += lot.net_pnl
+            if lot.is_closed and lot.realized_pnl is not None and lot.closed_at:
+                if not _date_in_range(lot.closed_at, since, until):
+                    continue
+
+                period_key, _ = _group_date_to_period_key(lot.closed_at, period_type)
+
+                gross_realized = Decimal(lot.realized_pnl)
+                if gross_realized >= ZERO:
+                    period_data[period_key]["realized_profits_gross"] += gross_realized
+                else:
+                    period_data[period_key]["realized_losses_gross"] += -gross_realized
+                period_data[period_key]["realized_pnl_gross"] += gross_realized
+
+                if lot.net_pnl is None:
+                    continue
+
+                net_realized = Decimal(lot.net_pnl)
+                if net_realized >= ZERO:
+                    period_data[period_key]["realized_profits_net"] += net_realized
+                else:
+                    period_data[period_key]["realized_losses_net"] += -net_realized
+                period_data[period_key]["realized_pnl_net"] += net_realized
+
+
+def _aggregate_opening_fees(
+    matched_legs: List[MatchedLeg],
+    period_type: PeriodType,
+    period_data: Dict[str, Dict[str, Decimal]],
+    *,
+    since: Optional[date] = None,
+    until: Optional[date] = None,
+    clamp_periods_to_range: bool = True,
+) -> None:
+    """Aggregate opening fees by the period in which each lot was opened."""
+    for leg in matched_legs:
+        for lot in leg.lots:
+            if lot.opened_at is None:
+                continue
+            if since is not None and lot.closed_at and lot.closed_at < since:
+                # Lot lifetime ends before the requested window—skip entirely
+                continue
+
+            period_key, _ = _group_date_to_period_key(lot.opened_at, period_type)
+            if since is not None and lot.opened_at < since:
+                if not clamp_periods_to_range:
+                    continue
+                period_key = _clamp_period_to_range(period_key, period_type, since)
+            elif not _date_in_range(lot.opened_at, since, until):
+                continue
+
+            open_fees = Decimal(lot.open_fees)
+            if open_fees == ZERO:
+                continue
+            if period_key not in period_data:
+                if not clamp_periods_to_range:
+                    continue
+                period_data[period_key] = _empty_period_entry()
+            period_data[period_key]["opening_fees"] += open_fees
+            period_data[period_key]["total_fees"] += open_fees
+
+
+def _aggregate_closing_fees(
+    matched_legs: List[MatchedLeg],
+    period_type: PeriodType,
+    period_data: Dict[str, Dict[str, Decimal]],
+    *,
+    since: Optional[date] = None,
+    until: Optional[date] = None,
+) -> None:
+    """Aggregate closing fees by the period in which each lot was closed."""
+    for leg in matched_legs:
+        for lot in leg.lots:
+            if not lot.is_closed or lot.closed_at is None:
+                continue
+            if not _date_in_range(lot.closed_at, since, until):
+                continue
+
+            period_key, _ = _group_date_to_period_key(lot.closed_at, period_type)
+            close_fees = Decimal(lot.close_fees)
+            period_data[period_key]["closing_fees"] += close_fees
+            period_data[period_key]["total_fees"] += close_fees
 
 
 def _aggregate_unrealized_exposure(
@@ -405,8 +483,7 @@ def _aggregate_pnl_by_period(
     Returns
     -------
     Dict[str, Dict[str, Decimal]]
-        Dictionary mapping period_key to a dict with 'gross_realized_pnl',
-        'net_realized_pnl', and 'unrealized_exposure' keys.
+        Dictionary mapping period_key to realized profit/loss, exposure, and fee data.
     """
     # Pre-populate period_data with all relevant period keys from both
     # transactions and matched_legs to ensure all periods are initialized upfront
@@ -422,14 +499,21 @@ def _aggregate_pnl_by_period(
     # Initialize all periods upfront
     period_data: Dict[str, Dict[str, Decimal]] = {}
     for period_key in all_period_keys:
-        period_data[period_key] = {
-            "gross_realized_pnl": ZERO,
-            "net_realized_pnl": ZERO,
-            "unrealized_exposure": ZERO,
-        }
+        period_data[period_key] = _empty_period_entry()
 
     # Aggregate realized P&L from closed lots
     _aggregate_realized_pnl(matched_legs, period_type, period_data, since=since, until=until)
+
+    # Aggregate fees
+    _aggregate_opening_fees(
+        matched_legs,
+        period_type,
+        period_data,
+        since=since,
+        until=until,
+        clamp_periods_to_range=clamp_periods_to_range,
+    )
+    _aggregate_closing_fees(matched_legs, period_type, period_data, since=since, until=until)
 
     # Aggregate unrealized exposure from lots that were open during the period
     _aggregate_unrealized_exposure(
@@ -461,11 +545,16 @@ def _create_empty_report(
             credits=ZERO,
             debits=ZERO,
             net_cash_flow=ZERO,
-            gross_realized_pnl=ZERO,
-            net_realized_pnl=ZERO,
+            realized_profits_gross=ZERO,
+            realized_losses_gross=ZERO,
+            realized_pnl_gross=ZERO,
+            realized_profits_net=ZERO,
+            realized_losses_net=ZERO,
+            realized_pnl_net=ZERO,
             unrealized_exposure=ZERO,
-            gross_pnl=ZERO,
-            net_pnl=ZERO,
+            opening_fees=ZERO,
+            closing_fees=ZERO,
+            total_fees=ZERO,
         ),
     )
 
@@ -561,17 +650,33 @@ def _build_period_metrics(
         cash_flow = cash_flow_by_period.get(period_key, {"credits": ZERO, "debits": ZERO})
         pnl = pnl_by_period.get(
             period_key,
-            {"gross_realized_pnl": ZERO, "net_realized_pnl": ZERO, "unrealized_exposure": ZERO},
+            {
+                "realized_profits_gross": ZERO,
+                "realized_losses_gross": ZERO,
+                "realized_pnl_gross": ZERO,
+                "realized_profits_net": ZERO,
+                "realized_losses_net": ZERO,
+                "realized_pnl_net": ZERO,
+                "unrealized_exposure": ZERO,
+                "opening_fees": ZERO,
+                "closing_fees": ZERO,
+                "total_fees": ZERO,
+            },
         )
 
         credits = Decimal(cash_flow["credits"])
         debits = Decimal(cash_flow["debits"])
         net_cash_flow = credits - debits
-        gross_realized_pnl = Decimal(pnl["gross_realized_pnl"])
-        net_realized_pnl = Decimal(pnl["net_realized_pnl"])
+        realized_profits_gross = Decimal(pnl["realized_profits_gross"])
+        realized_losses_gross = Decimal(pnl["realized_losses_gross"])
+        realized_pnl_gross = Decimal(pnl["realized_pnl_gross"])
+        realized_profits_net = Decimal(pnl["realized_profits_net"])
+        realized_losses_net = Decimal(pnl["realized_losses_net"])
+        realized_pnl_net = Decimal(pnl["realized_pnl_net"])
         unrealized_exposure = Decimal(pnl["unrealized_exposure"])
-        gross_pnl = gross_realized_pnl + unrealized_exposure
-        net_pnl = net_realized_pnl + unrealized_exposure
+        opening_fees = Decimal(pnl["opening_fees"])
+        closing_fees = Decimal(pnl["closing_fees"])
+        total_fees = Decimal(pnl["total_fees"])
 
         periods.append(
             PeriodMetrics(
@@ -580,11 +685,16 @@ def _build_period_metrics(
                 credits=credits,
                 debits=debits,
                 net_cash_flow=net_cash_flow,
-                gross_realized_pnl=gross_realized_pnl,
-                net_realized_pnl=net_realized_pnl,
+                realized_profits_gross=realized_profits_gross,
+                realized_losses_gross=realized_losses_gross,
+                realized_pnl_gross=realized_pnl_gross,
+                realized_profits_net=realized_profits_net,
+                realized_losses_net=realized_losses_net,
+                realized_pnl_net=realized_pnl_net,
                 unrealized_exposure=unrealized_exposure,
-                gross_pnl=gross_pnl,
-                net_pnl=net_pnl,
+                opening_fees=opening_fees,
+                closing_fees=closing_fees,
+                total_fees=total_fees,
             )
         )
 
@@ -595,11 +705,16 @@ def _calculate_totals(periods: List[PeriodMetrics]) -> PeriodMetrics:
     """Calculate grand totals across all periods."""
     total_credits = Decimal(sum(p.credits for p in periods))
     total_debits = Decimal(sum(p.debits for p in periods))
-    total_gross_realized_pnl = Decimal(sum(p.gross_realized_pnl for p in periods))
-    total_net_realized_pnl = Decimal(sum(p.net_realized_pnl for p in periods))
+    total_realized_profits_gross = Decimal(sum(p.realized_profits_gross for p in periods))
+    total_realized_losses_gross = Decimal(sum(p.realized_losses_gross for p in periods))
+    total_realized_pnl_gross = Decimal(sum(p.realized_pnl_gross for p in periods))
+    total_realized_profits_net = Decimal(sum(p.realized_profits_net for p in periods))
+    total_realized_losses_net = Decimal(sum(p.realized_losses_net for p in periods))
+    total_realized_pnl_net = Decimal(sum(p.realized_pnl_net for p in periods))
     total_unrealized_exposure = Decimal(sum(p.unrealized_exposure for p in periods))
-    total_gross_pnl = total_gross_realized_pnl + total_unrealized_exposure
-    total_net_pnl = total_net_realized_pnl + total_unrealized_exposure
+    total_opening_fees = Decimal(sum(p.opening_fees for p in periods))
+    total_closing_fees = Decimal(sum(p.closing_fees for p in periods))
+    total_fees = total_opening_fees + total_closing_fees
 
     return PeriodMetrics(
         period_key="total",
@@ -607,11 +722,16 @@ def _calculate_totals(periods: List[PeriodMetrics]) -> PeriodMetrics:
         credits=total_credits,
         debits=total_debits,
         net_cash_flow=total_credits - total_debits,
-        gross_realized_pnl=total_gross_realized_pnl,
-        net_realized_pnl=total_net_realized_pnl,
+        realized_profits_gross=total_realized_profits_gross,
+        realized_losses_gross=total_realized_losses_gross,
+        realized_pnl_gross=total_realized_pnl_gross,
+        realized_profits_net=total_realized_profits_net,
+        realized_losses_net=total_realized_losses_net,
+        realized_pnl_net=total_realized_pnl_net,
         unrealized_exposure=total_unrealized_exposure,
-        gross_pnl=total_gross_pnl,
-        net_pnl=total_net_pnl,
+        opening_fees=total_opening_fees,
+        closing_fees=total_closing_fees,
+        total_fees=total_fees,
     )
 
 
@@ -696,3 +816,19 @@ def generate_cash_flow_pnl_report(
         periods=periods,
         totals=totals,
     )
+
+
+def _empty_period_entry() -> Dict[str, Decimal]:
+    """Return a zeroed-out holder for per-period P&L components."""
+    return {
+        "realized_profits_gross": ZERO,
+        "realized_losses_gross": ZERO,
+        "realized_pnl_gross": ZERO,
+        "realized_profits_net": ZERO,
+        "realized_losses_net": ZERO,
+        "realized_pnl_net": ZERO,
+        "unrealized_exposure": ZERO,
+        "opening_fees": ZERO,
+        "closing_fees": ZERO,
+        "total_fees": ZERO,
+    }
