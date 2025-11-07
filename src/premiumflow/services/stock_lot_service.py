@@ -36,7 +36,8 @@ class LotState:
     cost_per_share: Decimal
     cost_basis_remaining: Decimal
     open_fee_total: Decimal
-    premium_total: Decimal
+    premium_per_share: Decimal
+    premium_remaining: Decimal
     source: str
     source_id: Optional[int]
 
@@ -218,7 +219,8 @@ def _match_stock_lots(events: List[ShareEvent]) -> List[PersistedStockLot]:
                 cost_per_share=per_share_cost,
                 cost_basis_remaining=Decimal(remaining) * per_share_cost,
                 open_fee_total=Decimal("0"),
-                premium_total=per_share_premium * Decimal(remaining),
+                premium_per_share=per_share_premium,
+                premium_remaining=per_share_premium * Decimal(remaining),
                 source=event.source,
                 source_id=event.source_id,
             )
@@ -265,7 +267,7 @@ def _match_stock_lots(events: List[ShareEvent]) -> List[PersistedStockLot]:
                     cost_basis_total=lot_state.cost_basis_remaining,
                     cost_basis_per_share=lot_state.cost_per_share,
                     open_fee_total=lot_state.open_fee_total,
-                    assignment_premium_total=lot_state.premium_total,
+                    assignment_premium_total=lot_state.premium_remaining,
                     proceeds_total=None,
                     proceeds_per_share=None,
                     close_fee_total=Decimal("0"),
@@ -325,6 +327,7 @@ def _close_long_lots(
         proceeds_total = sell_price_per_share * Decimal(close_qty)
         realized = proceeds_total - cost_total
 
+        premium_allocation = lot.premium_per_share * Decimal(close_qty)
         results.append(
             PersistedStockLot(
                 symbol=lot.symbol,
@@ -335,7 +338,7 @@ def _close_long_lots(
                 cost_basis_total=cost_total,
                 cost_basis_per_share=lot.cost_per_share,
                 open_fee_total=lot.open_fee_total,
-                assignment_premium_total=lot.premium_total,
+                assignment_premium_total=premium_allocation,
                 proceeds_total=proceeds_total,
                 proceeds_per_share=sell_price_per_share,
                 close_fee_total=Decimal("0"),
@@ -353,6 +356,7 @@ def _close_long_lots(
 
         lot.quantity_remaining -= close_qty
         lot.cost_basis_remaining -= cost_total
+        lot.premium_remaining -= premium_allocation
         remaining_sale -= close_qty
         if lot.quantity_remaining == 0:
             long_lots.popleft()

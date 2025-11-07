@@ -309,3 +309,63 @@ def test_rebuild_stock_lots_isolates_symbols(repository, tmp_path):
     assert Decimal(tsla["cost_basis_per_share"]) == Decimal("200.0000")
     assert Decimal(tsla["proceeds_per_share"]) == Decimal("210.0000")
     assert Decimal(tsla["realized_pnl_total"]).quantize(Decimal("0.01")) == Decimal("1000.00")
+
+
+def test_rebuild_stock_lots_prorates_assignment_premium(repository, tmp_path):
+    """Assignment premiums are prorated when closing a lot via multiple sells."""
+    _persist(
+        tmp_path,
+        account_name="Primary",
+        account_number="ACCT-1",
+        transactions=[
+            _make_option_transaction(
+                instrument="ETHU",
+                trans_code="STO",
+                quantity=1,
+                price=Decimal("1.75"),
+                amount=Decimal("175.00"),
+                activity_date=date(2025, 8, 20),
+            ),
+            _make_option_transaction(
+                instrument="ETHU",
+                trans_code="OASGN",
+                quantity=1,
+                price=Decimal("0.00"),
+                amount=None,
+                activity_date=date(2025, 8, 25),
+            ),
+        ],
+        stock_transactions=[
+            _make_stock_transaction(
+                instrument="ETHU",
+                trans_code="Sell",
+                action="SELL",
+                price=Decimal("118.00"),
+                amount=Decimal("5900.00"),
+                quantity=50,
+                activity_date=date(2025, 9, 1),
+            ),
+            _make_stock_transaction(
+                instrument="ETHU",
+                trans_code="Sell",
+                action="SELL",
+                price=Decimal("122.00"),
+                amount=Decimal("6100.00"),
+                quantity=50,
+                activity_date=date(2025, 9, 3),
+            ),
+        ],
+    )
+
+    rebuild_stock_lots(repository, account_name="Primary", account_number="ACCT-1")
+
+    with repository._storage._connect() as conn:  # type: ignore[attr-defined]
+        rows = conn.execute(
+            "SELECT * FROM stock_lots WHERE symbol='ETHU' ORDER BY closed_at"
+        ).fetchall()
+
+    assert len(rows) == 2
+    assert all(row["status"] == "closed" for row in rows)
+    first, second = rows
+    assert Decimal(first["assignment_premium_total"]).quantize(Decimal("0.01")) == Decimal("87.50")
+    assert Decimal(second["assignment_premium_total"]).quantize(Decimal("0.01")) == Decimal("87.50")
