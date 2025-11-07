@@ -162,7 +162,6 @@ class SQLiteStorage:
                 CREATE INDEX IF NOT EXISTS idx_stock_transactions_activity_date
                     ON stock_transactions(activity_date);
 
-                DROP TABLE IF EXISTS stock_lots;
                 CREATE TABLE IF NOT EXISTS stock_lots (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,

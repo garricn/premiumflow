@@ -246,3 +246,74 @@ def test_store_import_replace_existing(tmp_path, monkeypatch):
 
     assert initial.status == "inserted"
     assert replaced.status == "replaced"
+
+
+def test_initialization_preserves_existing_stock_lots(tmp_path):
+    db_path = tmp_path / "premiumflow.db"
+    storage = storage_module.SQLiteStorage(db_path)
+    storage._ensure_initialized()
+
+    with storage._connect() as conn:  # type: ignore[attr-defined]
+        conn.execute("INSERT INTO accounts (name, number) VALUES (?, ?)", ("Acct", "123"))
+        account_id = conn.execute("SELECT id FROM accounts").fetchone()[0]
+        conn.execute(
+            """
+            INSERT INTO stock_lots (
+                account_id,
+                symbol,
+                opened_at,
+                closed_at,
+                quantity,
+                direction,
+                cost_basis_total,
+                cost_basis_per_share,
+                open_fee_total,
+                assignment_premium_total,
+                proceeds_total,
+                proceeds_per_share,
+                close_fee_total,
+                realized_pnl_total,
+                realized_pnl_per_share,
+                open_source,
+                open_source_id,
+                close_source,
+                close_source_id,
+                status,
+                created_at,
+                updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                account_id,
+                "HOOD",
+                "2025-09-01",
+                None,
+                100,
+                "long",
+                "1000.00",
+                "10.00",
+                "0.00",
+                "0.00",
+                None,
+                None,
+                "0.00",
+                None,
+                None,
+                "manual",
+                None,
+                None,
+                None,
+                "open",
+                "2025-09-02T00:00:00Z",
+                "2025-09-02T00:00:00Z",
+            ),
+        )
+
+    # Simulate a new process startup pointing at the same DB.
+    storage = storage_module.SQLiteStorage(db_path)
+    storage._ensure_initialized()
+
+    with storage._connect() as conn:  # type: ignore[attr-defined]
+        rows = conn.execute("SELECT symbol, quantity FROM stock_lots").fetchall()
+
+    assert [tuple(row) for row in rows] == [("HOOD", 100)]
