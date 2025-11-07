@@ -15,12 +15,10 @@ from typing import Dict, List, Literal, Optional
 
 from ..core.parser import NormalizedOptionTransaction
 from ..persistence import SQLiteRepository
-from .leg_matching import (
-    MatchedLeg,
-    MatchedLegLot,
-    _stored_to_normalized,
-    group_fills_by_account,
-    match_legs_with_errors,
+from .leg_matching import MatchedLeg, MatchedLegLot
+from .transaction_loader import (
+    fetch_normalized_transactions,
+    match_legs_from_transactions,
 )
 
 CONTRACT_MULTIPLIER = Decimal("100")
@@ -592,39 +590,6 @@ def _create_empty_report(
     )
 
 
-def _fetch_and_normalize_transactions(
-    repository: SQLiteRepository,
-    *,
-    account_name: str,
-    account_number: Optional[str] = None,
-    ticker: Optional[str] = None,
-) -> List[NormalizedOptionTransaction]:
-    """
-    Fetch all transactions and convert them to normalized format.
-
-    Fetches ALL transactions (no date filter) to ensure proper leg matching
-    even when opening and closing transactions span date range boundaries.
-    """
-    all_stored_txns = repository.fetch_transactions(
-        account_name=account_name,
-        account_number=account_number,
-        ticker=ticker,
-        since=None,  # No date filter for matching
-        until=None,
-        status="all",
-    )
-    return [_stored_to_normalized(stored) for stored in all_stored_txns]
-
-
-def _match_legs_from_transactions(
-    transactions: List[NormalizedOptionTransaction],
-) -> List[MatchedLeg]:
-    """Match legs from normalized transactions."""
-    all_fills = group_fills_by_account(transactions)
-    matched_map, _errors = match_legs_with_errors(all_fills)
-    return list(matched_map.values())
-
-
 def _filter_transactions_by_date(
     transactions: List[NormalizedOptionTransaction],
     *,
@@ -810,7 +775,7 @@ def generate_cash_flow_pnl_report(
         Complete report with period-based metrics and totals
     """
     # Fetch and normalize all transactions (no date filter for proper leg matching)
-    all_normalized_txns = _fetch_and_normalize_transactions(
+    all_normalized_txns = fetch_normalized_transactions(
         repository,
         account_name=account_name,
         account_number=account_number,
@@ -821,7 +786,7 @@ def generate_cash_flow_pnl_report(
         return _create_empty_report(account_name, account_number, period_type)
 
     # Match legs from all transactions (for proper matching across date boundaries)
-    matched_legs = _match_legs_from_transactions(all_normalized_txns)
+    matched_legs = match_legs_from_transactions(all_normalized_txns)
 
     # Filter transactions by date range for cash flow aggregation
     filtered_txns = _filter_transactions_by_date(all_normalized_txns, since=since, until=until)

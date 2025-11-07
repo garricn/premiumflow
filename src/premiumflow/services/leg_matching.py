@@ -553,6 +553,7 @@ def _stored_to_normalized(stored: StoredTransaction) -> NormalizedOptionTransact
     raw_dict["Account Name"] = stored.account_name
     if stored.account_number:
         raw_dict["Account Number"] = stored.account_number
+    raw_dict["__transaction_id"] = stored.id
 
     # Normalize empty strings to None for amount (OEXP/OASGN rows may have amount="")
     # Empty strings are truthy but Decimal("") raises InvalidOperation

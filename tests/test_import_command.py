@@ -17,6 +17,10 @@ def _stub_store_import(monkeypatch):
         return StoreResult(import_id=1, status="inserted")
 
     monkeypatch.setattr("premiumflow.cli.import_command.store_import_result", _fake_store)
+    monkeypatch.setattr(
+        "premiumflow.cli.import_command.rebuild_assignment_stock_lots",
+        lambda *args, **kwargs: None,
+    )
 
 
 def _write_sample_csv(tmp_path: Path) -> Path:
@@ -290,6 +294,10 @@ def test_import_command_passes_account_metadata(monkeypatch, tmp_path):
         return StoreResult(import_id=42, status="inserted")
 
     monkeypatch.setattr("premiumflow.cli.import_command.store_import_result", _fake_store)
+    monkeypatch.setattr(
+        "premiumflow.cli.import_command.rebuild_assignment_stock_lots",
+        lambda *args, **kwargs: None,
+    )
 
     result = runner.invoke(
         import_group,
@@ -357,6 +365,10 @@ def test_import_command_duplicate_error(monkeypatch, tmp_path):
         raise DuplicateImportError("Primary", "ACCT-123")
 
     monkeypatch.setattr("premiumflow.cli.import_command.store_import_result", _fake_store)
+    monkeypatch.setattr(
+        "premiumflow.cli.import_command.rebuild_assignment_stock_lots",
+        lambda *args, **kwargs: None,
+    )
 
     result = runner.invoke(
         import_group,
@@ -384,6 +396,10 @@ def test_import_command_skip_existing(monkeypatch, tmp_path):
         return StoreResult(import_id=99, status="skipped")
 
     monkeypatch.setattr("premiumflow.cli.import_command.store_import_result", _fake_store)
+    monkeypatch.setattr(
+        "premiumflow.cli.import_command.rebuild_assignment_stock_lots",
+        lambda *args, **kwargs: None,
+    )
 
     result = runner.invoke(
         import_group,
@@ -420,6 +436,10 @@ def test_import_command_replace_existing(monkeypatch, tmp_path):
         return StoreResult(import_id=100, status="replaced")
 
     monkeypatch.setattr("premiumflow.cli.import_command.store_import_result", _fake_store)
+    monkeypatch.setattr(
+        "premiumflow.cli.import_command.rebuild_assignment_stock_lots",
+        lambda *args, **kwargs: None,
+    )
 
     result = runner.invoke(
         import_group,

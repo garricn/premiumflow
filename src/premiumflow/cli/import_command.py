@@ -30,6 +30,7 @@ from ..services.chain_builder import detect_roll_chains
 from ..services.cli_helpers import format_account_label
 from ..services.display import format_currency
 from ..services.json_serializer import build_ingest_payload
+from ..services.stock_lot_builder import rebuild_assignment_stock_lots
 from ..services.transactions import normalized_to_csv_dicts
 
 
@@ -270,6 +271,14 @@ def _run_import(
         console.print("[yellow]Import already persisted; skipping new storage.[/yellow]")
     elif emit_text and store_result.status == "replaced":
         console.print("[cyan]Existing persisted import replaced with new data.[/cyan]")
+
+    if store_result.status != "skipped":
+        repository = SQLiteRepository()
+        rebuild_assignment_stock_lots(
+            repository,
+            account_name=parsed.account_name,
+            account_number=parsed.account_number,
+        )
 
     transactions = list(parsed.transactions)
     filtered_transactions = _filter_by_ticker(transactions, ticker_symbol)

@@ -137,6 +137,37 @@ class SQLiteStorage:
                     ON option_transactions(expiration);
                 CREATE INDEX IF NOT EXISTS idx_transactions_activity_date
                     ON option_transactions(activity_date);
+
+                CREATE TABLE IF NOT EXISTS stock_lots (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+                    source_transaction_id INTEGER NOT NULL REFERENCES option_transactions(id) ON DELETE CASCADE,
+                    symbol TEXT NOT NULL,
+                    opened_at TEXT NOT NULL,
+                    closed_at TEXT,
+                    quantity INTEGER NOT NULL,
+                    direction TEXT NOT NULL,
+                    option_type TEXT NOT NULL,
+                    strike_price TEXT NOT NULL,
+                    expiration TEXT NOT NULL,
+                    share_price_total TEXT NOT NULL,
+                    share_price_per_share TEXT NOT NULL,
+                    open_premium_total TEXT NOT NULL,
+                    open_premium_per_share TEXT NOT NULL,
+                    open_fee_total TEXT NOT NULL,
+                    net_credit_total TEXT NOT NULL,
+                    net_credit_per_share TEXT NOT NULL,
+                    assignment_kind TEXT,
+                    status TEXT NOT NULL DEFAULT 'open',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                DROP INDEX IF EXISTS idx_stock_lots_source_transaction;
+                CREATE INDEX IF NOT EXISTS idx_stock_lots_source_transaction
+                    ON stock_lots(source_transaction_id);
+                CREATE INDEX IF NOT EXISTS idx_stock_lots_account_status
+                    ON stock_lots(account_id, status);
                 """
             )
             # Clean up any legacy duplicates that may exist from versions prior to
