@@ -138,7 +138,33 @@ class SQLiteStorage:
                 CREATE INDEX IF NOT EXISTS idx_transactions_activity_date
                     ON option_transactions(activity_date);
 
-                CREATE TABLE IF NOT EXISTS stock_lots (
+                DROP TABLE IF EXISTS stock_transactions;
+                CREATE TABLE stock_transactions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    import_id INTEGER NOT NULL REFERENCES imports(id) ON DELETE CASCADE,
+                    row_index INTEGER NOT NULL,
+                    activity_date TEXT NOT NULL,
+                    process_date TEXT,
+                    settle_date TEXT,
+                    instrument TEXT NOT NULL,
+                    description TEXT NOT NULL,
+                    trans_code TEXT NOT NULL,
+                    action TEXT NOT NULL,
+                    quantity TEXT NOT NULL,
+                    price TEXT NOT NULL,
+                    amount TEXT NOT NULL,
+                    raw_json TEXT NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_stock_transactions_import
+                    ON stock_transactions(import_id);
+                CREATE INDEX IF NOT EXISTS idx_stock_transactions_symbol
+                    ON stock_transactions(instrument);
+                CREATE INDEX IF NOT EXISTS idx_stock_transactions_activity_date
+                    ON stock_transactions(activity_date);
+
+                DROP TABLE IF EXISTS stock_lots;
+                CREATE TABLE stock_lots (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
                     source_transaction_id INTEGER REFERENCES option_transactions(id) ON DELETE SET NULL,
@@ -163,12 +189,13 @@ class SQLiteStorage:
                     updated_at TEXT NOT NULL
                 );
 
+                CREATE INDEX IF NOT EXISTS idx_stock_lots_source_transaction
+                    ON stock_lots(source_transaction_id);
+                CREATE INDEX IF NOT EXISTS idx_stock_lots_account_status
+                    ON stock_lots(account_id, status);
+
                 """
             )
-            self._ensure_stock_lots_source_column(conn)
-            self._ensure_stock_lot_indexes(conn)
-            self._create_stock_transactions_table(conn, if_not_exists=True)
-            self._ensure_stock_transactions_schema(conn)
             # Clean up any legacy duplicates that may exist from versions prior to
             # the unique constraint so schema migrations succeed without manual
             # intervention.
@@ -187,108 +214,6 @@ class SQLiteStorage:
                 """
             )
         self._initialized = True
-
-    def _ensure_stock_lots_source_column(self, conn: sqlite3.Connection) -> None:
-        columns = self._get_table_info(conn, "stock_lots")
-        if not columns:
-            return
-        column_names = {row["name"] for row in columns}
-        if "source_transaction_id" in column_names:
-            return
-        conn.execute("ALTER TABLE stock_lots ADD COLUMN source_transaction_id INTEGER")
-
-    def _ensure_stock_lot_indexes(self, conn: sqlite3.Connection) -> None:
-        conn.execute(
-            """
-            CREATE INDEX IF NOT EXISTS idx_stock_lots_source_transaction
-                ON stock_lots(source_transaction_id);
-            """
-        )
-        conn.execute(
-            """
-            CREATE INDEX IF NOT EXISTS idx_stock_lots_account_status
-                ON stock_lots(account_id, status);
-            """
-        )
-
-    def _create_stock_transactions_table(
-        self, conn: sqlite3.Connection, *, if_not_exists: bool
-    ) -> None:
-        clause = "IF NOT EXISTS " if if_not_exists else ""
-        conn.execute(
-            f"""
-            CREATE TABLE {clause}stock_transactions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                import_id INTEGER NOT NULL REFERENCES imports(id) ON DELETE CASCADE,
-                row_index INTEGER NOT NULL,
-                activity_date TEXT NOT NULL,
-                process_date TEXT,
-                settle_date TEXT,
-                instrument TEXT NOT NULL,
-                description TEXT NOT NULL,
-                trans_code TEXT NOT NULL,
-                action TEXT NOT NULL,
-                quantity TEXT NOT NULL,
-                price TEXT NOT NULL,
-                amount TEXT NOT NULL,
-                raw_json TEXT NOT NULL
-            );
-            """
-        )
-        conn.execute(
-            """
-            CREATE INDEX IF NOT EXISTS idx_stock_transactions_import
-                ON stock_transactions(import_id);
-            """
-        )
-        conn.execute(
-            """
-            CREATE INDEX IF NOT EXISTS idx_stock_transactions_symbol
-                ON stock_transactions(instrument);
-            """
-        )
-        conn.execute(
-            """
-            CREATE INDEX IF NOT EXISTS idx_stock_transactions_activity_date
-                ON stock_transactions(activity_date);
-            """
-        )
-
-    def _ensure_stock_transactions_schema(self, conn: sqlite3.Connection) -> None:
-        info = self._get_table_info(conn, "stock_transactions")
-        if not info:
-            return
-        quantity_column = next((row for row in info if row["name"] == "quantity"), None)
-        if quantity_column and (quantity_column["type"] or "").upper() == "TEXT":
-            return
-
-        conn.execute("DROP INDEX IF EXISTS idx_stock_transactions_import")
-        conn.execute("DROP INDEX IF EXISTS idx_stock_transactions_symbol")
-        conn.execute("DROP INDEX IF EXISTS idx_stock_transactions_activity_date")
-        conn.execute("ALTER TABLE stock_transactions RENAME TO stock_transactions_legacy")
-        self._create_stock_transactions_table(conn, if_not_exists=False)
-        conn.execute(
-            """
-            INSERT INTO stock_transactions (
-                import_id, row_index, activity_date, process_date, settle_date,
-                instrument, description, trans_code, action, quantity, price,
-                amount, raw_json
-            )
-            SELECT
-                import_id, row_index, activity_date, process_date, settle_date,
-                instrument, description, trans_code, action, quantity, price,
-                amount, raw_json
-            FROM stock_transactions_legacy
-            """
-        )
-        conn.execute("DROP TABLE stock_transactions_legacy")
-
-    @staticmethod
-    def _get_table_info(conn: sqlite3.Connection, table: str) -> list[sqlite3.Row]:
-        try:
-            return conn.execute(f"PRAGMA table_info({table})").fetchall()
-        except sqlite3.OperationalError:
-            return []
 
     def store_import(
         self,
