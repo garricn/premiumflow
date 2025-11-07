@@ -85,7 +85,8 @@ def test_load_option_transactions_skips_non_option_rows(tmp_path):
     csv_content = (
         "Activity Date,Process Date,Settle Date,Instrument,Description,Trans Code,Quantity,Price,Amount\n"
         '10/7/2025,10/7/2025,10/8/2025,AMZN,"Amazon\n'
-        'CUSIP: 023135106",Buy,10,$220.70,\n'
+        'CUSIP: 023135106",Buy,10,$220.70,-$2207.00\n'
+        '10/9/2025,10/9/2025,10/10/2025,AMZN,"Amazon Common",sell,5,$230.00,$1150.00\n'
     )
     csv_path = tmp_path / "equity.csv"
     csv_path.write_text(csv_content, encoding="utf-8")
@@ -97,6 +98,15 @@ def test_load_option_transactions_skips_non_option_rows(tmp_path):
     )
 
     assert result.transactions == []
+    assert len(result.stock_transactions) == 2
+    buy, sell = result.stock_transactions
+    assert buy.trans_code == "BUY"
+    assert buy.action == "BUY"
+    assert buy.instrument == "AMZN"
+    assert buy.quantity == 10
+    assert sell.trans_code == "SELL"
+    assert sell.action == "SELL"
+    assert sell.quantity == 5
 
 
 def test_load_option_transactions_skips_incomplete_non_option_rows(tmp_path):

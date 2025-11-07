@@ -249,9 +249,17 @@ def _normalize_stock_row(
     trans_code_raw = row.get("Trans Code")
     if trans_code_raw is None:
         raise ImportValidationError('Missing required column "Trans Code".')
-    trans_code = trans_code_raw.strip().title()
+    trans_code = trans_code_raw.strip().upper()
+    if not trans_code:
+        return None
     if trans_code not in STOCK_TRANS_CODES:
         return None
+
+    required_fields = ("Activity Date", "Instrument", "Quantity", "Price", "Amount")
+    for required in required_fields:
+        value = row.get(required)
+        if value is None or not value.strip():
+            return None
 
     activity_date = _parse_date_field(row, "Activity Date", row_number)
     process_date = _parse_optional_date_field(row, "Process Date", row_number)
