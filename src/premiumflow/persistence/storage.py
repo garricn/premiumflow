@@ -13,10 +13,55 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Literal, Optional, Union
 
-from ..core.parser import ParsedImportResult
+from ..core.parser import CSV_ROW_NUMBER_KEY, ParsedImportResult
 
 DEFAULT_DB_PATH = Path.home() / ".premiumflow" / "premiumflow.db"
 DB_ENV_VAR = "PREMIUMFLOW_DB_PATH"
+
+STOCK_LOTS_EXPECTED_COLUMNS = {
+    "id",
+    "account_id",
+    "symbol",
+    "opened_at",
+    "closed_at",
+    "quantity",
+    "direction",
+    "cost_basis_total",
+    "cost_basis_per_share",
+    "open_fee_total",
+    "assignment_premium_total",
+    "proceeds_total",
+    "proceeds_per_share",
+    "close_fee_total",
+    "realized_pnl_total",
+    "realized_pnl_per_share",
+    "open_source",
+    "open_source_id",
+    "close_source",
+    "close_source_id",
+    "status",
+    "created_at",
+    "updated_at",
+}
+
+LEGACY_STOCK_LOTS_COLUMNS = {
+    "account_id",
+    "source_transaction_id",
+    "symbol",
+    "opened_at",
+    "closed_at",
+    "quantity",
+    "direction",
+    "share_price_total",
+    "share_price_per_share",
+    "open_fee_total",
+    "open_premium_total",
+    "net_credit_total",
+    "net_credit_per_share",
+    "status",
+    "created_at",
+    "updated_at",
+}
 
 
 def _determine_db_path() -> Path:
@@ -138,38 +183,34 @@ class SQLiteStorage:
                 CREATE INDEX IF NOT EXISTS idx_transactions_activity_date
                     ON option_transactions(activity_date);
 
-                CREATE TABLE IF NOT EXISTS stock_lots (
+                CREATE TABLE IF NOT EXISTS stock_transactions (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
-                    source_transaction_id INTEGER NOT NULL REFERENCES option_transactions(id) ON DELETE CASCADE,
-                    symbol TEXT NOT NULL,
-                    opened_at TEXT NOT NULL,
-                    closed_at TEXT,
+                    import_id INTEGER NOT NULL REFERENCES imports(id) ON DELETE CASCADE,
+                    row_index INTEGER NOT NULL,
+                    activity_date TEXT NOT NULL,
+                    process_date TEXT,
+                    settle_date TEXT,
+                    instrument TEXT NOT NULL,
+                    description TEXT NOT NULL,
+                    trans_code TEXT NOT NULL,
+                    action TEXT NOT NULL,
                     quantity INTEGER NOT NULL,
-                    direction TEXT NOT NULL,
-                    option_type TEXT NOT NULL,
-                    strike_price TEXT NOT NULL,
-                    expiration TEXT NOT NULL,
-                    share_price_total TEXT NOT NULL,
-                    share_price_per_share TEXT NOT NULL,
-                    open_premium_total TEXT NOT NULL,
-                    open_premium_per_share TEXT NOT NULL,
-                    open_fee_total TEXT NOT NULL,
-                    net_credit_total TEXT NOT NULL,
-                    net_credit_per_share TEXT NOT NULL,
-                    assignment_kind TEXT,
-                    status TEXT NOT NULL DEFAULT 'open',
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
+                    price TEXT NOT NULL,
+                    amount TEXT NOT NULL,
+                    raw_json TEXT NOT NULL
                 );
 
-                DROP INDEX IF EXISTS idx_stock_lots_source_transaction;
-                CREATE INDEX IF NOT EXISTS idx_stock_lots_source_transaction
-                    ON stock_lots(source_transaction_id);
-                CREATE INDEX IF NOT EXISTS idx_stock_lots_account_status
-                    ON stock_lots(account_id, status);
+                CREATE INDEX IF NOT EXISTS idx_stock_transactions_import
+                    ON stock_transactions(import_id);
+                CREATE INDEX IF NOT EXISTS idx_stock_transactions_symbol
+                    ON stock_transactions(instrument);
+                CREATE INDEX IF NOT EXISTS idx_stock_transactions_activity_date
+                    ON stock_transactions(activity_date);
+
                 """
             )
+            self._create_stock_lots_table(conn, if_not_exists=True)
+            self._migrate_stock_lots_if_needed(conn)
             # Clean up any legacy duplicates that may exist from versions prior to
             # the unique constraint so schema migrations succeed without manual
             # intervention.
@@ -188,6 +229,145 @@ class SQLiteStorage:
                 """
             )
         self._initialized = True
+
+    def _create_stock_lots_table(self, conn: sqlite3.Connection, *, if_not_exists: bool) -> None:
+        clause = "IF NOT EXISTS " if if_not_exists else ""
+        conn.execute(
+            f"""
+            CREATE TABLE {clause}stock_lots (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+                symbol TEXT NOT NULL,
+                opened_at TEXT NOT NULL,
+                closed_at TEXT,
+                quantity INTEGER NOT NULL,
+                direction TEXT NOT NULL,
+                cost_basis_total TEXT NOT NULL,
+                cost_basis_per_share TEXT NOT NULL,
+                open_fee_total TEXT NOT NULL,
+                assignment_premium_total TEXT,
+                proceeds_total TEXT,
+                proceeds_per_share TEXT,
+                close_fee_total TEXT,
+                realized_pnl_total TEXT,
+                realized_pnl_per_share TEXT,
+                open_source TEXT NOT NULL,
+                open_source_id INTEGER,
+                close_source TEXT,
+                close_source_id INTEGER,
+                status TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_stock_lots_account_symbol
+                ON stock_lots(account_id, symbol);
+            """
+        )
+
+    def _get_table_columns(self, conn: sqlite3.Connection, table: str) -> set[str]:
+        try:
+            rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+        except sqlite3.OperationalError:
+            return set()
+        return {row["name"] for row in rows}
+
+    def _migrate_stock_lots_if_needed(self, conn: sqlite3.Connection) -> None:
+        columns = self._get_table_columns(conn, "stock_lots")
+        if not columns:
+            return
+        if STOCK_LOTS_EXPECTED_COLUMNS.issubset(columns):
+            return
+
+        conn.execute("DROP INDEX IF EXISTS idx_stock_lots_account_symbol")
+        conn.execute("ALTER TABLE stock_lots RENAME TO stock_lots_legacy")
+        self._create_stock_lots_table(conn, if_not_exists=False)
+
+        if LEGACY_STOCK_LOTS_COLUMNS.issubset(columns):
+            legacy_rows = conn.execute(
+                """
+                SELECT
+                    account_id,
+                    source_transaction_id,
+                    symbol,
+                    opened_at,
+                    closed_at,
+                    quantity,
+                    direction,
+                    share_price_total,
+                    share_price_per_share,
+                    open_fee_total,
+                    open_premium_total,
+                    net_credit_total,
+                    net_credit_per_share,
+                    status,
+                    created_at,
+                    updated_at
+                FROM stock_lots_legacy
+                """
+            ).fetchall()
+            if legacy_rows:
+                payload = [
+                    (
+                        row["account_id"],
+                        row["symbol"],
+                        row["opened_at"],
+                        row["closed_at"],
+                        row["quantity"],
+                        row["direction"],
+                        row["share_price_total"] or "0",
+                        row["share_price_per_share"] or "0",
+                        row["open_fee_total"] or "0",
+                        row["open_premium_total"],
+                        row["net_credit_total"],
+                        row["net_credit_per_share"],
+                        None,
+                        None,
+                        None,
+                        "legacy_migration",
+                        row["source_transaction_id"],
+                        None,
+                        None,
+                        row["status"],
+                        row["created_at"],
+                        row["updated_at"],
+                    )
+                    for row in legacy_rows
+                ]
+                conn.executemany(
+                    """
+                    INSERT INTO stock_lots (
+                        account_id,
+                        symbol,
+                        opened_at,
+                        closed_at,
+                        quantity,
+                        direction,
+                        cost_basis_total,
+                        cost_basis_per_share,
+                        open_fee_total,
+                        assignment_premium_total,
+                        proceeds_total,
+                        proceeds_per_share,
+                        close_fee_total,
+                        realized_pnl_total,
+                        realized_pnl_per_share,
+                        open_source,
+                        open_source_id,
+                        close_source,
+                        close_source_id,
+                        status,
+                        created_at,
+                        updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    payload,
+                )
+
+        conn.execute("DROP TABLE IF EXISTS stock_lots_legacy")
 
     def store_import(
         self,
@@ -239,27 +419,34 @@ class SQLiteStorage:
             import_id = cur.lastrowid
             if import_id is None:  # pragma: no cover - sqlite should always return a value
                 raise RuntimeError("Failed to record import metadata")
-            rows_to_insert = [
-                (
-                    int(import_id),
-                    index,
-                    txn.activity_date.isoformat(),
-                    txn.process_date.isoformat() if txn.process_date else None,
-                    txn.settle_date.isoformat() if txn.settle_date else None,
-                    txn.instrument,
-                    txn.description,
-                    txn.trans_code,
-                    txn.quantity,
-                    _decimal_to_text(txn.price),
-                    _decimal_to_text(txn.amount),
-                    _decimal_to_text(txn.strike),
-                    txn.option_type,
-                    txn.expiration.isoformat(),
-                    txn.action,
-                    json.dumps(txn.raw, sort_keys=True),
+            rows_to_insert = []
+            for index, txn in enumerate(parsed.transactions, start=1):
+                raw_row = txn.raw or {}
+                row_number_value = raw_row.get(CSV_ROW_NUMBER_KEY, index)
+                try:
+                    row_number = int(row_number_value)
+                except (TypeError, ValueError):
+                    row_number = index
+                rows_to_insert.append(
+                    (
+                        int(import_id),
+                        row_number,
+                        txn.activity_date.isoformat(),
+                        txn.process_date.isoformat() if txn.process_date else None,
+                        txn.settle_date.isoformat() if txn.settle_date else None,
+                        txn.instrument,
+                        txn.description,
+                        txn.trans_code,
+                        txn.quantity,
+                        _decimal_to_text(txn.price),
+                        _decimal_to_text(txn.amount),
+                        _decimal_to_text(txn.strike),
+                        txn.option_type,
+                        txn.expiration.isoformat(),
+                        txn.action,
+                        json.dumps(raw_row, sort_keys=True),
+                    )
                 )
-                for index, txn in enumerate(parsed.transactions, start=1)
-            ]
             if rows_to_insert:
                 conn.executemany(
                     """
@@ -271,6 +458,43 @@ class SQLiteStorage:
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     rows_to_insert,
+                )
+            stock_rows_to_insert = []
+            for index, stock_txn in enumerate(parsed.stock_transactions, start=1):
+                raw_row = stock_txn.raw or {}
+                row_number_value = raw_row.get(CSV_ROW_NUMBER_KEY, index)
+                try:
+                    row_number = int(row_number_value)
+                except (TypeError, ValueError):
+                    row_number = index
+                stock_rows_to_insert.append(
+                    (
+                        int(import_id),
+                        row_number,
+                        stock_txn.activity_date.isoformat(),
+                        stock_txn.process_date.isoformat() if stock_txn.process_date else None,
+                        stock_txn.settle_date.isoformat() if stock_txn.settle_date else None,
+                        stock_txn.instrument,
+                        stock_txn.description,
+                        stock_txn.trans_code,
+                        stock_txn.action,
+                        stock_txn.quantity,
+                        _decimal_to_text(stock_txn.price),
+                        _decimal_to_text(stock_txn.amount),
+                        json.dumps(raw_row, sort_keys=True),
+                    )
+                )
+            if stock_rows_to_insert:
+                conn.executemany(
+                    """
+                    INSERT INTO stock_transactions (
+                        import_id, row_index, activity_date, process_date, settle_date,
+                        instrument, description, trans_code, action, quantity, price,
+                        amount, raw_json
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    stock_rows_to_insert,
                 )
             status: StoreStatus = "replaced" if existing else "inserted"
         return StoreResult(import_id=int(import_id), status=status)

@@ -14,7 +14,7 @@ from decimal import Decimal
 from typing import Deque, Dict, Iterable, Iterator, List, Optional, Sequence, Tuple
 
 from ..core.legs import LegContract, LegFill, build_leg_fills
-from ..core.parser import NormalizedOptionTransaction
+from ..core.parser import CSV_ROW_NUMBER_KEY, NormalizedOptionTransaction
 from ..persistence import StoredTransaction
 
 Money = Decimal
@@ -554,6 +554,8 @@ def _stored_to_normalized(stored: StoredTransaction) -> NormalizedOptionTransact
     if stored.account_number:
         raw_dict["Account Number"] = stored.account_number
     raw_dict["__transaction_id"] = stored.id
+    raw_dict["__import_id"] = stored.import_id
+    raw_dict.setdefault(CSV_ROW_NUMBER_KEY, stored.row_index)
 
     # Normalize empty strings to None for amount (OEXP/OASGN rows may have amount="")
     # Empty strings are truthy but Decimal("") raises InvalidOperation
