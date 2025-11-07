@@ -76,8 +76,13 @@ def _lot_to_assignment_record(
     strike_price = lot.contract.strike
     share_price_total = strike_price * share_count
 
-    lot_contracts = Decimal(lot.quantity) if lot.quantity else Decimal("1")
-    ratio = (portion_contracts / lot_contracts).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+    lot_contracts = Decimal(lot.quantity)
+    if lot_contracts <= 0:
+        return None
+    lot_total_shares = lot_contracts * SHARES_PER_CONTRACT
+    if lot_total_shares == 0:
+        return None
+    ratio = portion_contracts / lot_contracts
 
     open_premium_total = (lot.open_premium * ratio).quantize(
         Decimal("0.01"), rounding=ROUND_HALF_UP
