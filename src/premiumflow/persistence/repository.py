@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
+from decimal import Decimal
 from typing import Dict, List, Literal, Optional, Sequence, Tuple
 
 from .storage import SQLiteStorage, get_storage
@@ -51,6 +52,28 @@ class StoredTransaction:
     expiration: str
     action: str
     raw_json: str
+
+
+@dataclass(frozen=True)
+class AssignmentStockLotRecord:
+    """Stock lot opened by an assignment event."""
+
+    symbol: str
+    opened_at: date
+    share_quantity: int
+    direction: str
+    option_type: str
+    strike_price: Decimal
+    expiration: date
+    share_price_total: Decimal
+    share_price_per_share: Decimal
+    open_premium_total: Decimal
+    open_premium_per_share: Decimal
+    open_fee_total: Decimal
+    net_credit_total: Decimal
+    net_credit_per_share: Decimal
+    assignment_kind: str
+    source_transaction_id: int
 
 
 class SQLiteRepository:
@@ -251,6 +274,104 @@ class SQLiteRepository:
         with self._storage._connect() as conn:  # type: ignore[attr-defined]
             rows = conn.execute(sql, params).fetchall()
         return [_row_to_stored_transaction(row) for row in rows]
+
+    def replace_assignment_stock_lots(
+        self,
+        *,
+        account_name: str,
+        account_number: Optional[str],
+        records: Sequence[AssignmentStockLotRecord],
+    ) -> None:
+        """Replace assignment-sourced stock lots for the specified account."""
+
+        self._storage._ensure_initialized()  # type: ignore[attr-defined]
+        with self._storage._connect() as conn:  # type: ignore[attr-defined]
+            account_id = self._get_account_id(conn, account_name, account_number)
+            conn.execute(
+                "DELETE FROM stock_lots WHERE account_id = ? AND assignment_kind IS NOT NULL",
+                (account_id,),
+            )
+            if not records:
+                return
+
+            timestamp = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+            rows = [
+                (
+                    account_id,
+                    record.source_transaction_id,
+                    record.symbol,
+                    record.opened_at.isoformat(),
+                    None,  # closed_at
+                    record.share_quantity,
+                    record.direction,
+                    record.option_type,
+                    self._decimal_to_text(record.strike_price),
+                    record.expiration.isoformat(),
+                    self._decimal_to_text(record.share_price_total),
+                    self._decimal_to_text(record.share_price_per_share),
+                    self._decimal_to_text(record.open_premium_total),
+                    self._decimal_to_text(record.open_premium_per_share),
+                    self._decimal_to_text(record.open_fee_total),
+                    self._decimal_to_text(record.net_credit_total),
+                    self._decimal_to_text(record.net_credit_per_share),
+                    record.assignment_kind,
+                    "open",
+                    timestamp,
+                    timestamp,
+                )
+                for record in records
+            ]
+            conn.executemany(
+                """
+                INSERT INTO stock_lots (
+                    account_id,
+                    source_transaction_id,
+                    symbol,
+                    opened_at,
+                    closed_at,
+                    quantity,
+                    direction,
+                    option_type,
+                    strike_price,
+                    expiration,
+                    share_price_total,
+                    share_price_per_share,
+                    open_premium_total,
+                    open_premium_per_share,
+                    open_fee_total,
+                    net_credit_total,
+                    net_credit_per_share,
+                    assignment_kind,
+                    status,
+                    created_at,
+                    updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                rows,
+            )
+
+    def _get_account_id(
+        self,
+        conn,  # type: ignore[no-untyped-def]
+        account_name: str,
+        account_number: Optional[str],
+    ) -> int:
+        row = conn.execute(
+            "SELECT id FROM accounts WHERE name = ? AND IFNULL(number, '') = IFNULL(?, '')",
+            (account_name, account_number),
+        ).fetchone()
+        if row is None:
+            raise ValueError(
+                f"Account {account_name}"
+                + (f" ({account_number})" if account_number else "")
+                + " not found in persistence layer."
+            )
+        return int(row["id"])
+
+    @staticmethod
+    def _decimal_to_text(value: Decimal) -> str:
+        return format(value, "f")
 
     def delete_import(self, import_id: int) -> bool:
         """Delete an import and associated transactions. Returns True when a row was removed."""
