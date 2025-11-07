@@ -59,9 +59,20 @@
             <span>Ticker</span>
             <input type="text" name="ticker" value="{{ filters.ticker }}" />
           </label>
+          <label class="field">
+            <span>Assignment premium</span>
+            <select name="assignment_handling">
+              <option value="include" {% if filters.assignment_handling == "include" %}selected{% endif %}>
+                Include in realized totals
+              </option>
+              <option value="exclude" {% if filters.assignment_handling == "exclude" %}selected{% endif %}>
+                Exclude (match broker)
+              </option>
+            </select>
+          </label>
           <div class="filter-actions">
             <button type="submit" id="submit-button">Apply filters</button>
-            {% if filters.account or filters.ticker or filters.period != "total" or filters.since or filters.until %}
+            {% if filters.account or filters.ticker or filters.period != "total" or filters.since or filters.until or filters.assignment_handling != "include" %}
             <a class="link-button" href="{{ url_for('cashflow_view') }}">Reset</a>
             {% endif %}
           </div>
@@ -80,6 +91,10 @@
         <div class="summary-card">
           <div class="summary-card-label">Realized P&L (After Fees)</div>
           <div class="summary-card-value">{{ format_currency(report.totals.realized_pnl_net) }}</div>
+        </div>
+        <div class="summary-card">
+          <div class="summary-card-label">Assignment Premium (After Fees)</div>
+          <div class="summary-card-value">{{ format_currency(report.totals.assignment_realized_net) }}</div>
         </div>
         <div class="summary-card">
           <div class="summary-card-label">Total Unrealized Exposure</div>
@@ -104,6 +119,7 @@
               <th scope="col" class="text-right">Profits (After Fees)</th>
               <th scope="col" class="text-right">Losses (After Fees)</th>
               <th scope="col" class="text-right">Realized P&L (After Fees)</th>
+              <th scope="col" class="text-right">Assignment Premium (After Fees)</th>
               <th scope="col" class="text-right">Unrealized Exposure</th>
               <th scope="col" class="text-right">Opening Fees</th>
               <th scope="col" class="text-right">Closing Fees</th>
@@ -123,6 +139,7 @@
               <td class="text-right">{{ format_currency(period.realized_profits_net) }}</td>
               <td class="text-right">{{ format_currency(period.realized_losses_net) }}</td>
               <td class="text-right">{{ format_currency(period.realized_pnl_net) }}</td>
+              <td class="text-right">{{ format_currency(period.assignment_realized_net) }}</td>
               <td class="text-right">{{ format_currency(period.unrealized_exposure) }}</td>
               <td class="text-right">{{ format_currency(period.opening_fees) }}</td>
               <td class="text-right">{{ format_currency(period.closing_fees) }}</td>
@@ -140,6 +157,7 @@
               <td class="text-right"><strong>{{ format_currency(report.totals.realized_profits_net) }}</strong></td>
               <td class="text-right"><strong>{{ format_currency(report.totals.realized_losses_net) }}</strong></td>
               <td class="text-right"><strong>{{ format_currency(report.totals.realized_pnl_net) }}</strong></td>
+              <td class="text-right"><strong>{{ format_currency(report.totals.assignment_realized_net) }}</strong></td>
               <td class="text-right"><strong>{{ format_currency(report.totals.unrealized_exposure) }}</strong></td>
               <td class="text-right"><strong>{{ format_currency(report.totals.opening_fees) }}</strong></td>
               <td class="text-right"><strong>{{ format_currency(report.totals.closing_fees) }}</strong></td>

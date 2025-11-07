@@ -606,6 +606,8 @@ def test_cashflow_view_renders_template(client_with_storage, tmp_path):
     assert "Realized P&L (After Fees)" in response.text
     assert "Opening Fees" in response.text
     assert "Gross P&L" not in response.text
+    assert "Assignment Premium (After Fees)" in response.text
+    assert "Assignment premium" in response.text
 
 
 def test_cashflow_view_filters_by_account(client_with_storage, tmp_path):
@@ -756,6 +758,73 @@ def test_cashflow_api_returns_json(client_with_storage, tmp_path):
     assert "realized_pnl_net" in data["totals"]
     assert "opening_fees" in data["totals"]
     assert "closing_fees" in data["totals"]
+    assert "assignment_realized_net" in data["totals"]
+
+
+def test_cashflow_api_assignment_handling_toggle(client_with_storage, tmp_path):
+    """API should drop assignment premium from totals when asked."""
+    _persist_import(
+        tmp_path,
+        account_name="Toggle Account",
+        account_number="TOGGLE-1",
+        csv_name="toggle.csv",
+        transactions=[
+            _make_transaction(
+                instrument="HOOD",
+                description="HOOD 09/06/2025 Call $104.00",
+                trans_code="STO",
+                activity_date=date(2025, 9, 1),
+                price=Decimal("1.00"),
+                amount=Decimal("100.00"),
+                expiration=date(2025, 9, 6),
+            ),
+            _make_transaction(
+                instrument="HOOD",
+                description="HOOD 09/06/2025 Call $104.00",
+                trans_code="OASGN",
+                activity_date=date(2025, 9, 5),
+                price=Decimal("0.00"),
+                amount=Decimal("0.00"),
+                expiration=date(2025, 9, 6),
+            ),
+            _make_transaction(
+                instrument="META",
+                description="META 11/15/2025 Put $300.00",
+                trans_code="STO",
+                activity_date=date(2025, 9, 1),
+                price=Decimal("2.00"),
+                amount=Decimal("200.00"),
+                expiration=date(2025, 11, 15),
+            ),
+            _make_transaction(
+                instrument="META",
+                description="META 11/15/2025 Put $300.00",
+                trans_code="BTC",
+                activity_date=date(2025, 9, 5),
+                price=Decimal("1.00"),
+                amount=Decimal("-100.00"),
+                expiration=date(2025, 11, 15),
+            ),
+        ],
+    )
+
+    include_resp = client_with_storage.get(
+        "/api/cashflow",
+        params={"account": "Toggle Account|TOGGLE-1"},
+    )
+    exclude_resp = client_with_storage.get(
+        "/api/cashflow",
+        params={"account": "Toggle Account|TOGGLE-1", "assignment_handling": "exclude"},
+    )
+
+    assert include_resp.status_code == 200
+    assert exclude_resp.status_code == 200
+
+    include_totals = include_resp.json()["totals"]
+    exclude_totals = exclude_resp.json()["totals"]
+    assert include_totals["assignment_realized_net"] == "100.00"
+    assert include_totals["realized_pnl_net"] != exclude_totals["realized_pnl_net"]
+    assert exclude_totals["realized_pnl_net"] == "100.00"
 
 
 def test_cashflow_api_filters_work(client_with_storage, tmp_path):

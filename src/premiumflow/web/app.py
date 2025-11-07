@@ -684,6 +684,7 @@ def create_app() -> FastAPI:
         ticker: str | None = Query(default=None),
         since: str | None = Query(default=None),
         until: str | None = Query(default=None),
+        assignment_handling: str = Query(default="include"),
         repository: SQLiteRepository = Depends(get_repository),
     ) -> HTMLResponse:
         """Display cash flow and P&L dashboard view."""
@@ -693,6 +694,9 @@ def create_app() -> FastAPI:
         period_type = period.strip().lower() if period else "total"
         if period_type not in ("daily", "weekly", "monthly", "total"):
             period_type = "total"
+        assignment_mode = assignment_handling.strip().lower() if assignment_handling else "include"
+        if assignment_mode not in ("include", "exclude"):
+            assignment_mode = "include"
 
         # Get unique accounts for dropdown
         accounts = _get_unique_accounts(repository)
@@ -717,6 +721,7 @@ def create_app() -> FastAPI:
             "ticker": ticker_filter or "",
             "since": since or "",
             "until": until or "",
+            "assignment_handling": assignment_mode,
         }
 
         # Generate report if account is available
@@ -740,6 +745,7 @@ def create_app() -> FastAPI:
                     ticker=ticker_filter,
                     since=since_date,
                     until=until_date,
+                    assignment_handling=assignment_mode,  # type: ignore[arg-type]
                 )
 
         return templates.TemplateResponse(
@@ -762,6 +768,7 @@ def create_app() -> FastAPI:
         ticker: str | None = Query(default=None),
         since: str | None = Query(default=None),
         until: str | None = Query(default=None),
+        assignment_handling: str = Query(default="include"),
         repository: SQLiteRepository = Depends(get_repository),
     ) -> dict[str, object]:
         """API endpoint returning cash flow and P&L report as JSON."""
@@ -771,6 +778,9 @@ def create_app() -> FastAPI:
         period_type = period.strip().lower() if period else "total"
         if period_type not in ("daily", "weekly", "monthly", "total"):
             period_type = "total"
+        assignment_mode = assignment_handling.strip().lower() if assignment_handling else "include"
+        if assignment_mode not in ("include", "exclude"):
+            assignment_mode = "include"
 
         # Validate required fields
         if not account_name_filter:
@@ -795,6 +805,7 @@ def create_app() -> FastAPI:
             ticker=ticker_filter,
             since=since_date,
             until=until_date,
+            assignment_handling=assignment_mode,  # type: ignore[arg-type]
         )
 
         return serialize_cash_flow_pnl_report(report)

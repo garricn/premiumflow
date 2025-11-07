@@ -245,6 +245,8 @@ def serialize_period_metrics(metrics: PeriodMetrics) -> Dict[str, Any]:
         "realized_profits_net": _decimal_to_string(metrics.realized_profits_net),
         "realized_losses_net": _decimal_to_string(metrics.realized_losses_net),
         "realized_pnl_net": _decimal_to_string(metrics.realized_pnl_net),
+        "assignment_realized_gross": _decimal_to_string(metrics.assignment_realized_gross),
+        "assignment_realized_net": _decimal_to_string(metrics.assignment_realized_net),
         "unrealized_exposure": _decimal_to_string(metrics.unrealized_exposure),
         "opening_fees": _decimal_to_string(metrics.opening_fees),
         "closing_fees": _decimal_to_string(metrics.closing_fees),

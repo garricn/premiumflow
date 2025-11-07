@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
+from premiumflow.cli.cashflow import _build_cashflow_table
 from premiumflow.cli.commands import main as premiumflow_cli
 from premiumflow.core.parser import (
     NormalizedOptionTransaction,
@@ -15,6 +16,7 @@ from premiumflow.core.parser import (
 )
 from premiumflow.persistence import storage as storage_module
 from premiumflow.persistence.storage import store_import_result
+from premiumflow.services.cash_flow import CashFlowPnlReport, PeriodMetrics
 
 
 @pytest.fixture(autouse=True)
@@ -210,7 +212,10 @@ def test_cashflow_table_output(tmp_path, monkeypatch):
             "--period",
             "total",
         ],
-        env={storage_module.DB_ENV_VAR: str(db_path)},
+        env={
+            storage_module.DB_ENV_VAR: str(db_path),
+            "COLUMNS": "200",
+        },
     )
 
     assert result.exit_code == 0
@@ -268,6 +273,114 @@ def test_cashflow_json_output(tmp_path, monkeypatch):
     assert "realized_pnl_net" in totals
     assert "opening_fees" in totals
     assert "closing_fees" in totals
+    assert "assignment_realized_net" in totals
+
+
+def test_build_cashflow_table_includes_assignment_column():
+    """The rich table includes a dedicated assignment premium column."""
+    period = PeriodMetrics(
+        period_key="total",
+        period_label="Total",
+        credits=Decimal("100.00"),
+        debits=Decimal("0.00"),
+        net_cash_flow=Decimal("100.00"),
+        realized_profits_gross=Decimal("100.00"),
+        realized_losses_gross=Decimal("0.00"),
+        realized_pnl_gross=Decimal("100.00"),
+        realized_profits_net=Decimal("90.00"),
+        realized_losses_net=Decimal("0.00"),
+        realized_pnl_net=Decimal("90.00"),
+        assignment_realized_gross=Decimal("10.00"),
+        assignment_realized_net=Decimal("10.00"),
+        unrealized_exposure=Decimal("0.00"),
+        opening_fees=Decimal("5.00"),
+        closing_fees=Decimal("5.00"),
+        total_fees=Decimal("10.00"),
+    )
+    report = CashFlowPnlReport(
+        account_name="Primary Account",
+        account_number="ACCT-1",
+        period_type="total",
+        periods=[period],
+        totals=period,
+    )
+
+    table = _build_cashflow_table(report)
+    headers = [column.header for column in table.columns]
+    assert "Assignment Premium (After Fees)" in headers
+
+
+def test_cashflow_assignment_handling_exclude_json(tmp_path, monkeypatch):
+    """--assignment-handling=exclude omits assignment premium from realized totals."""
+    db_path = tmp_path / "premiumflow.db"
+    monkeypatch.setenv(storage_module.DB_ENV_VAR, str(db_path))
+    storage_module.get_storage.cache_clear()
+
+    txns = [
+        _make_normalized_transaction(
+            instrument="HOOD",
+            description="HOOD 09/06/2025 Call $104.00",
+            trans_code="STO",
+            action="SELL",
+            activity_date=date(2025, 9, 1),
+            price=Decimal("1.00"),
+            amount=Decimal("100.00"),
+            expiration=date(2025, 9, 6),
+        ),
+        _make_normalized_transaction(
+            instrument="HOOD",
+            description="HOOD 09/06/2025 Call $104.00",
+            trans_code="OASGN",
+            action="SELL",
+            activity_date=date(2025, 9, 5),
+            price=Decimal("0.00"),
+            amount=Decimal("0.00"),
+            expiration=date(2025, 9, 6),
+        ),
+        _make_normalized_transaction(
+            instrument="META",
+            description="META 11/15/2025 Put $300.00",
+            trans_code="STO",
+            action="SELL",
+            activity_date=date(2025, 9, 1),
+            price=Decimal("2.00"),
+            amount=Decimal("200.00"),
+            expiration=date(2025, 11, 15),
+        ),
+        _make_normalized_transaction(
+            instrument="META",
+            description="META 11/15/2025 Put $300.00",
+            trans_code="BTC",
+            action="BUY",
+            activity_date=date(2025, 9, 5),
+            price=Decimal("1.00"),
+            amount=Decimal("-100.00"),
+            expiration=date(2025, 11, 15),
+        ),
+    ]
+    _seed_import_for_cashflow(tmp_path, monkeypatch, csv_name="assignments.csv", transactions=txns)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        premiumflow_cli,
+        [
+            "cashflow",
+            "--account-name",
+            "Primary Account",
+            "--account-number",
+            "ACCT-1",
+            "--assignment-handling",
+            "exclude",
+            "--json-output",
+        ],
+        env={storage_module.DB_ENV_VAR: str(db_path)},
+    )
+
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    totals = data["totals"]
+    assert totals["assignment_realized_net"] == "100.00"
+    assert totals["realized_pnl_net"] == "100.00"  # Only the META roll remains
 
 
 def test_cashflow_date_filtering(tmp_path, monkeypatch):
