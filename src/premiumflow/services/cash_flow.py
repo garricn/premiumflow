@@ -378,6 +378,9 @@ def _aggregate_opening_fees(
             open_fees = Decimal(lot.open_fees)
             if open_fees == ZERO:
                 continue
+            if period_key not in period_data:
+                # Lot lifetime is fully outside the requested range (no period bucket)
+                continue
             period_data[period_key]["opening_fees"] += open_fees
             period_data[period_key]["total_fees"] += open_fees
 

@@ -617,6 +617,47 @@ def test_opening_fees_clamped_into_filtered_range(tmp_path, repository):
     assert period.realized_pnl_net == Decimal("198.00")
 
 
+def test_opening_fees_ignored_when_lot_outside_range(tmp_path, repository):
+    """Lots that open and close before the range should not create fee buckets."""
+    _seed_import(
+        tmp_path,
+        csv_name="out_of_range.csv",
+        transactions=[
+            _make_transaction(
+                trans_code="STO",
+                action="SELL",
+                quantity=1,
+                price=Decimal("2.00"),
+                amount=Decimal("199.00"),  # $1 opening fee
+                activity_date=date(2025, 9, 1),
+            ),
+            _make_transaction(
+                trans_code="BTC",
+                action="BUY",
+                quantity=1,
+                price=Decimal("1.00"),
+                amount=Decimal("-101.00"),  # $1 closing fee
+                activity_date=date(2025, 9, 10),
+            ),
+        ],
+    )
+
+    report = generate_cash_flow_pnl_report(
+        repository,
+        account_name="Primary Account",
+        account_number="ACCT-1",
+        period_type="monthly",
+        since=date(2025, 10, 1),
+        until=date(2025, 10, 31),
+    )
+
+    assert len(report.periods) == 0
+    assert report.totals.opening_fees == Decimal("0")
+    assert report.totals.closing_fees == Decimal("0")
+    assert report.totals.total_fees == Decimal("0")
+    assert report.totals.realized_pnl_net == Decimal("0")
+
+
 def test_generate_report_multiple_accounts_isolation(tmp_path, repository):
     """Test that reports are correctly isolated by account."""
     _seed_import(
