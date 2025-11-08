@@ -128,6 +128,30 @@ class AssignmentStockLotRecord:
     source_transaction_id: int
 
 
+@dataclass(frozen=True)
+class StockLotRecord:
+    """Normalized representation of a stock lot ready for persistence."""
+
+    symbol: str
+    opened_at: date
+    closed_at: Optional[date]
+    share_quantity: int
+    direction: str
+    option_type: str
+    strike_price: Decimal
+    expiration: date
+    share_price_total: Decimal
+    share_price_per_share: Decimal
+    open_premium_total: Decimal
+    open_premium_per_share: Decimal
+    open_fee_total: Decimal
+    net_credit_total: Decimal
+    net_credit_per_share: Decimal
+    assignment_kind: Optional[str]
+    source_transaction_id: Optional[int]
+    status: str
+
+
 class SQLiteRepository:
     """High-level read accessors for the SQLite persistence layer."""
 
@@ -523,6 +547,79 @@ class SQLiteRepository:
                     self._decimal_to_text(record.net_credit_per_share),
                     record.assignment_kind,
                     "open",
+                    timestamp,
+                    timestamp,
+                )
+                for record in records
+            ]
+            conn.executemany(
+                """
+                INSERT INTO stock_lots (
+                    account_id,
+                    source_transaction_id,
+                    symbol,
+                    opened_at,
+                    closed_at,
+                    quantity,
+                    direction,
+                    option_type,
+                    strike_price,
+                    expiration,
+                    share_price_total,
+                    share_price_per_share,
+                    open_premium_total,
+                    open_premium_per_share,
+                    open_fee_total,
+                    net_credit_total,
+                    net_credit_per_share,
+                    assignment_kind,
+                    status,
+                    created_at,
+                    updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                rows,
+            )
+
+    def replace_stock_lots(
+        self,
+        *,
+        account_name: str,
+        account_number: Optional[str],
+        records: Sequence[StockLotRecord],
+    ) -> None:
+        """Replace all stock lots for the specified account."""
+
+        self._storage._ensure_initialized()  # type: ignore[attr-defined]
+        with self._storage._connect() as conn:  # type: ignore[attr-defined]
+            account_id = self._get_account_id(conn, account_name, account_number)
+            conn.execute("DELETE FROM stock_lots WHERE account_id = ?", (account_id,))
+            if not records:
+                return
+
+            timestamp = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+            rows = [
+                (
+                    account_id,
+                    record.source_transaction_id,
+                    record.symbol,
+                    record.opened_at.isoformat(),
+                    record.closed_at.isoformat() if record.closed_at else None,
+                    record.share_quantity,
+                    record.direction,
+                    record.option_type,
+                    self._decimal_to_text(record.strike_price),
+                    record.expiration.isoformat(),
+                    self._decimal_to_text(record.share_price_total),
+                    self._decimal_to_text(record.share_price_per_share),
+                    self._decimal_to_text(record.open_premium_total),
+                    self._decimal_to_text(record.open_premium_per_share),
+                    self._decimal_to_text(record.open_fee_total),
+                    self._decimal_to_text(record.net_credit_total),
+                    self._decimal_to_text(record.net_credit_per_share),
+                    record.assignment_kind,
+                    record.status,
                     timestamp,
                     timestamp,
                 )
