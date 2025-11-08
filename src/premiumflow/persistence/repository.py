@@ -10,6 +10,7 @@ from typing import Dict, List, Literal, Optional, Sequence, Tuple
 from .storage import SQLiteStorage, get_storage
 
 StoredStatusFilter = Literal["all", "open", "closed"]
+StockLotStatusFilter = Literal["all", "open", "closed"]
 
 
 @dataclass(frozen=True)
@@ -74,6 +75,35 @@ class StoredStockTransaction:
     price: str
     amount: str
     raw_json: str
+
+
+@dataclass(frozen=True)
+class StoredStockLot:
+    """Representation of a persisted stock lot with account metadata."""
+
+    id: int
+    account_name: str
+    account_number: Optional[str]
+    symbol: str
+    status: str
+    direction: str
+    quantity: int
+    opened_at: str
+    closed_at: Optional[str]
+    share_price_total: Decimal
+    share_price_per_share: Decimal
+    open_premium_total: Decimal
+    open_premium_per_share: Decimal
+    open_fee_total: Decimal
+    net_credit_total: Decimal
+    net_credit_per_share: Decimal
+    strike_price: Decimal
+    option_type: Optional[str]
+    expiration: Optional[str]
+    assignment_kind: Optional[str]
+    source_transaction_id: Optional[int]
+    created_at: str
+    updated_at: str
 
 
 @dataclass(frozen=True)
@@ -372,6 +402,86 @@ class SQLiteRepository:
             rows = conn.execute(sql, params).fetchall()
         return [_row_to_stored_stock_transaction(row) for row in rows]
 
+    def fetch_stock_lots(
+        self,
+        *,
+        account_name: Optional[str] = None,
+        account_number: Optional[str] = None,
+        ticker: Optional[str] = None,
+        status: StockLotStatusFilter = "all",
+        limit: Optional[int] = None,
+        offset: int = 0,
+    ) -> List[StoredStockLot]:
+        """Return persisted stock lots applying the requested filters."""
+
+        self._storage._ensure_initialized()  # type: ignore[attr-defined]
+        query = [
+            "SELECT",
+            "  l.id,",
+            "  a.name AS account_name,",
+            "  a.number AS account_number,",
+            "  l.symbol,",
+            "  l.status,",
+            "  l.direction,",
+            "  l.quantity,",
+            "  l.opened_at,",
+            "  l.closed_at,",
+            "  l.share_price_total,",
+            "  l.share_price_per_share,",
+            "  l.open_premium_total,",
+            "  l.open_premium_per_share,",
+            "  l.open_fee_total,",
+            "  l.net_credit_total,",
+            "  l.net_credit_per_share,",
+            "  l.strike_price,",
+            "  l.option_type,",
+            "  l.expiration,",
+            "  l.assignment_kind,",
+            "  l.source_transaction_id,",
+            "  l.created_at,",
+            "  l.updated_at",
+            "FROM stock_lots AS l",
+            "JOIN accounts AS a ON l.account_id = a.id",
+        ]
+        clauses: list[str] = []
+        params: list[object] = []
+
+        if account_name is not None:
+            clauses.append("a.name = ?")
+            params.append(account_name)
+        if account_number is not None:
+            clauses.append("IFNULL(a.number, '') = IFNULL(?, '')")
+            params.append(account_number)
+        if ticker is not None:
+            clauses.append("UPPER(l.symbol) = ?")
+            params.append(ticker.strip().upper())
+        normalized_status = status.lower()
+        if normalized_status not in {"all", "open", "closed"}:
+            raise ValueError(f"Unsupported stock lot status filter: {status}")
+        if normalized_status != "all":
+            clauses.append("LOWER(l.status) = ?")
+            params.append(normalized_status)
+
+        if clauses:
+            query.append("WHERE " + " AND ".join(clauses))
+
+        query.append("ORDER BY l.opened_at ASC, l.id ASC")
+
+        if limit is not None:
+            query.append("LIMIT ?")
+            params.append(limit)
+            if offset:
+                query.append("OFFSET ?")
+                params.append(offset)
+        elif offset:
+            query.append("LIMIT -1 OFFSET ?")
+            params.append(offset)
+
+        sql = "\n".join(query)
+        with self._storage._connect() as conn:  # type: ignore[attr-defined]
+            rows = conn.execute(sql, params).fetchall()
+        return [_row_to_stored_stock_lot(row) for row in rows]
+
     def replace_assignment_stock_lots(
         self,
         *,
@@ -538,4 +648,36 @@ def _row_to_stored_stock_transaction(row) -> StoredStockTransaction:
         price=row["price"],
         amount=row["amount"],
         raw_json=row["raw_json"],
+    )
+
+
+def _row_to_stored_stock_lot(row) -> StoredStockLot:
+    source_id = row["source_transaction_id"]
+    account_number = row["account_number"]
+    option_type = row["option_type"]
+    expiration = row["expiration"]
+    return StoredStockLot(
+        id=int(row["id"]),
+        account_name=row["account_name"],
+        account_number=account_number if account_number is not None else None,
+        symbol=row["symbol"],
+        status=row["status"],
+        direction=row["direction"],
+        quantity=int(row["quantity"]),
+        opened_at=row["opened_at"],
+        closed_at=row["closed_at"],
+        share_price_total=Decimal(row["share_price_total"]),
+        share_price_per_share=Decimal(row["share_price_per_share"]),
+        open_premium_total=Decimal(row["open_premium_total"]),
+        open_premium_per_share=Decimal(row["open_premium_per_share"]),
+        open_fee_total=Decimal(row["open_fee_total"]),
+        net_credit_total=Decimal(row["net_credit_total"]),
+        net_credit_per_share=Decimal(row["net_credit_per_share"]),
+        strike_price=Decimal(row["strike_price"]),
+        option_type=option_type if option_type is not None else None,
+        expiration=expiration if expiration is not None else None,
+        assignment_kind=row["assignment_kind"],
+        source_transaction_id=int(source_id) if source_id is not None else None,
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
     )

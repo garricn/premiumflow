@@ -13,6 +13,7 @@ from .cashflow import cashflow
 from .import_command import import_group
 from .legs import legs
 from .lookup import lookup
+from .shares import shares
 from .trace import trace
 
 
@@ -30,6 +31,7 @@ main.add_command(import_group)
 main.add_command(legs)
 main.add_command(lookup)
 main.add_command(trace)
+main.add_command(shares)
 
 
 if __name__ == "__main__":

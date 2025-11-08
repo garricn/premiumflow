@@ -32,6 +32,7 @@ from ..services.leg_matching import (
     match_legs_with_errors,
 )
 from ..services.stock_lot_builder import rebuild_assignment_stock_lots
+from ..services.stock_lots import fetch_stock_lot_summaries, serialize_stock_lot_summary
 from .dependencies import get_repository
 
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
@@ -682,6 +683,30 @@ def create_app() -> FastAPI:
             status=status,
         )
         return {"legs": legs_data, "warnings": warnings}
+
+    @app.get("/api/stock-lots", tags=["api"])
+    async def stock_lots_api(
+        account_name: str | None = Query(default=None),
+        account_number: str | None = Query(default=None),
+        ticker: str | None = Query(default=None),
+        status: str = Query(default="all"),
+        repository: SQLiteRepository = Depends(get_repository),
+    ) -> dict[str, object]:
+        """API endpoint returning persisted stock lots as JSON."""
+
+        status_filter = (status or "all").strip().lower()
+        if status_filter not in {"all", "open", "closed"}:
+            raise HTTPException(status_code=400, detail="Unsupported status filter")
+
+        summaries = fetch_stock_lot_summaries(
+            repository,
+            account_name=(account_name or "").strip() or None,
+            account_number=(account_number or "").strip() or None,
+            ticker=(ticker or "").strip() or None,
+            status=status_filter,  # type: ignore[arg-type]
+        )
+        lots = [serialize_stock_lot_summary(summary) for summary in summaries]
+        return {"lots": lots}
 
     @app.get("/cashflow", response_class=HTMLResponse, tags=["ui"])
     async def cashflow_view(
