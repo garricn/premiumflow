@@ -311,3 +311,59 @@ def test_store_import_replace_existing(tmp_path, monkeypatch):
 
     assert initial.status == "inserted"
     assert replaced.status == "replaced"
+
+
+def test_store_import_initializes_legacy_stock_lots_schema(tmp_path, monkeypatch):
+    db_path = tmp_path / "premiumflow.db"
+    monkeypatch.setenv(storage_module.DB_ENV_VAR, str(db_path))
+
+    storage = storage_module.SQLiteStorage(db_path)
+    storage._ensure_initialized()
+    with storage._connect() as conn:  # type: ignore[attr-defined]
+        conn.execute("DROP TABLE stock_lots")
+        conn.execute(
+            """
+            CREATE TABLE stock_lots (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                account_id INTEGER NOT NULL,
+                symbol TEXT NOT NULL,
+                opened_at TEXT NOT NULL,
+                closed_at TEXT,
+                quantity INTEGER NOT NULL,
+                direction TEXT NOT NULL,
+                option_type TEXT NOT NULL,
+                strike_price TEXT NOT NULL,
+                expiration TEXT NOT NULL,
+                share_price_total TEXT NOT NULL,
+                share_price_per_share TEXT NOT NULL,
+                open_premium_total TEXT NOT NULL,
+                open_premium_per_share TEXT NOT NULL,
+                open_fee_total TEXT NOT NULL,
+                net_credit_total TEXT NOT NULL,
+                net_credit_per_share TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'open',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+
+    csv_path = tmp_path / "legacy.csv"
+    csv_path.write_text("legacy", encoding="utf-8")
+    parsed = _make_parsed([_make_transaction()])
+
+    result = storage_module.store_import_result(
+        parsed,
+        source_path=str(csv_path),
+        options_only=True,
+        ticker=None,
+        strategy=None,
+        open_only=False,
+    )
+
+    assert result.status == "inserted"
+    with sqlite3.connect(db_path) as conn:
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(stock_lots)")}
+
+    assert "assignment_kind" in columns
+    assert "source_transaction_id" in columns
