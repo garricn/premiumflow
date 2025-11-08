@@ -685,6 +685,55 @@ def test_stock_lots_api_validates_status(client_with_storage):
     assert response.json()["detail"] == "Unsupported status filter"
 
 
+def test_stock_lots_view_lists_lots(client_with_storage, tmp_path):
+    """Stock lots page renders persisted lots with summary metrics."""
+    _seed_assignment_stock_lots(tmp_path)
+
+    response = client_with_storage.get(
+        "/stock-lots",
+        params={"account_name": "Lot Account", "account_number": "LOTS-1"},
+    )
+
+    assert response.status_code == 200
+    body = response.text
+    assert "Stock Lots" in body
+    assert "HOOD" in body and "ETHU" in body
+    assert "$10,508.00" in body
+    assert "Total lots" in body
+
+
+def test_stock_lots_view_filters_by_ticker(client_with_storage, tmp_path):
+    """Ticker filter narrows stock lots table."""
+    _seed_assignment_stock_lots(tmp_path)
+
+    response = client_with_storage.get("/stock-lots", params={"ticker": "ETHU"})
+
+    assert response.status_code == 200
+    body = response.text
+    assert "ETHU" in body
+    assert "HOOD" not in body
+
+
+def test_stock_lots_view_filters_by_opened_date(client_with_storage, tmp_path):
+    """Opened date range filter trims lots outside range."""
+    _seed_assignment_stock_lots(tmp_path)
+
+    response = client_with_storage.get("/stock-lots", params={"opened_from": "2025-10-01"})
+
+    assert response.status_code == 200
+    body = response.text
+    assert "ETHU" in body
+    assert "HOOD" not in body
+
+
+def test_stock_lots_view_empty_state(client_with_storage):
+    """Stock lots page shows empty-state message when nothing matches."""
+    response = client_with_storage.get("/stock-lots", params={"ticker": "XYZ"})
+
+    assert response.status_code == 200
+    assert "No stock lots found for the selected filters." in response.text
+
+
 def test_legs_view_empty_state(client_with_storage):
     """Legs view shows empty state when no legs exist."""
     response = client_with_storage.get("/legs")

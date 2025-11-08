@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import sqlite3
 from datetime import date, datetime, timezone
+from decimal import Decimal
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Literal
@@ -32,7 +33,11 @@ from ..services.leg_matching import (
     match_legs_with_errors,
 )
 from ..services.stock_lot_builder import rebuild_assignment_stock_lots
-from ..services.stock_lots import fetch_stock_lot_summaries, serialize_stock_lot_summary
+from ..services.stock_lots import (
+    StockLotSummary,
+    fetch_stock_lot_summaries,
+    serialize_stock_lot_summary,
+)
 from .dependencies import get_repository
 
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
@@ -186,6 +191,18 @@ def _parse_date_param(value: str | None) -> date | None:
         return datetime.strptime(value, "%Y-%m-%d").date()
     except ValueError:
         return None
+
+
+def _parse_lot_date(value: str | None) -> date | None:
+    """Parse ISO datetime string from lot metadata into a date."""
+    if not value:
+        return None
+    normalized = value[:-1] + "+00:00" if value.endswith("Z") else value
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    return parsed.date()
 
 
 def create_app() -> FastAPI:
@@ -707,6 +724,152 @@ def create_app() -> FastAPI:
         )
         lots = [serialize_stock_lot_summary(summary) for summary in summaries]
         return {"lots": lots}
+
+    @app.get("/stock-lots", response_class=HTMLResponse, tags=["ui"])
+    async def stock_lots_view(
+        request: Request,
+        account_name: str | None = Query(default=None),
+        account_number: str | None = Query(default=None),
+        ticker: str | None = Query(default=None),
+        status: str = Query(default="all"),
+        opened_from: str | None = Query(default=None),
+        opened_until: str | None = Query(default=None),
+        closed_from: str | None = Query(default=None),
+        closed_until: str | None = Query(default=None),
+        repository: SQLiteRepository = Depends(get_repository),
+    ) -> HTMLResponse:
+        """Render stock lot summaries in the web UI."""
+
+        status_filter = (status or "all").strip().lower()
+        if status_filter not in {"all", "open", "closed"}:
+            status_filter = "all"
+
+        opened_from_date = _parse_date_param(opened_from)
+        opened_until_date = _parse_date_param(opened_until)
+        closed_from_date = _parse_date_param(closed_from)
+        closed_until_date = _parse_date_param(closed_until)
+
+        error_message = None
+        if opened_from and not opened_from_date:
+            error_message = "Opened (from) must be YYYY-MM-DD."
+        elif opened_until and not opened_until_date:
+            error_message = "Opened (to) must be YYYY-MM-DD."
+        elif opened_from_date and opened_until_date and opened_from_date > opened_until_date:
+            error_message = "Opened start date must be before or equal to opened end date."
+        elif closed_from and not closed_from_date:
+            error_message = "Closed (from) must be YYYY-MM-DD."
+        elif closed_until and not closed_until_date:
+            error_message = "Closed (to) must be YYYY-MM-DD."
+        elif closed_from_date and closed_until_date and closed_from_date > closed_until_date:
+            error_message = "Closed start date must be before or equal to closed end date."
+
+        summaries = fetch_stock_lot_summaries(
+            repository,
+            account_name=(account_name or "").strip() or None,
+            account_number=(account_number or "").strip() or None,
+            ticker=(ticker or "").strip() or None,
+            status=status_filter,  # type: ignore[arg-type]
+        )
+
+        def _matches_date_filters(lot: StockLotSummary) -> bool:
+            opened_dt = _parse_lot_date(lot.opened_at)
+            closed_dt = _parse_lot_date(lot.closed_at)
+
+            if opened_from_date and (opened_dt is None or opened_dt < opened_from_date):
+                return False
+            if opened_until_date and (opened_dt is None or opened_dt > opened_until_date):
+                return False
+            if closed_from_date:
+                if not closed_dt or closed_dt < closed_from_date:
+                    return False
+            if closed_until_date:
+                if not closed_dt or closed_dt > closed_until_date:
+                    return False
+            return True
+
+        filtered_summaries = [summary for summary in summaries if _matches_date_filters(summary)]
+
+        filtered_summaries.sort(
+            key=lambda lot: (
+                lot.account_name,
+                lot.account_number or "",
+                lot.symbol,
+                lot.opened_at,
+            )
+        )
+
+        total_basis = Decimal("0")
+        total_realized = Decimal("0")
+        total_shares = 0
+        open_count = 0
+        lots_payload: list[dict[str, object]] = []
+
+        for summary in filtered_summaries:
+            total_basis += summary.basis_total
+            total_realized += summary.realized_pnl_total
+            total_shares += abs(summary.quantity)
+            if summary.status == "open":
+                open_count += 1
+
+            lots_payload.append(
+                {
+                    "symbol": summary.symbol,
+                    "account_name": summary.account_name,
+                    "account_number": summary.account_number,
+                    "direction": summary.direction.upper(),
+                    "status": summary.status.upper(),
+                    "shares": abs(summary.quantity),
+                    "quantity": summary.quantity,
+                    "opened_raw": summary.opened_at,
+                    "opened_at": _format_timestamp(summary.opened_at),
+                    "closed_at": (
+                        _format_timestamp(summary.closed_at) if summary.closed_at else None
+                    ),
+                    "basis_total": summary.basis_total,
+                    "basis_per_share": summary.basis_per_share,
+                    "realized_total": summary.realized_pnl_total,
+                    "realized_per_share": summary.realized_pnl_per_share,
+                    "share_price_total": summary.share_price_total,
+                    "share_price_per_share": summary.share_price_per_share,
+                    "assignment_kind": summary.assignment_kind,
+                    "strike_price": summary.strike_price,
+                    "option_type": summary.option_type,
+                    "expiration": summary.expiration,
+                }
+            )
+
+        summary_metrics = {
+            "total_lots": len(filtered_summaries),
+            "open_lots": open_count,
+            "closed_lots": len(filtered_summaries) - open_count,
+            "total_shares": total_shares,
+            "aggregate_basis": total_basis,
+            "aggregate_realized": total_realized,
+        }
+
+        filters = {
+            "account_name": (account_name or "").strip(),
+            "account_number": (account_number or "").strip(),
+            "ticker": (ticker or "").strip(),
+            "status": status_filter,
+            "opened_from": opened_from or "",
+            "opened_until": opened_until or "",
+            "closed_from": closed_from or "",
+            "closed_until": closed_until or "",
+        }
+
+        return templates.TemplateResponse(
+            request=request,
+            name="stock_lots.html",
+            context={
+                "title": "Stock Lots",
+                "lots": lots_payload,
+                "filters": filters,
+                "summary": summary_metrics,
+                "format_currency": format_currency,
+                "error_message": error_message,
+            },
+        )
 
     @app.get("/cashflow", response_class=HTMLResponse, tags=["ui"])
     async def cashflow_view(

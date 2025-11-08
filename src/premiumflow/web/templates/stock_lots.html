@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{ title }} • PremiumFlow Web UI</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='site.css') }}" />
+  </head>
+  <body>
+    <header>
+      <h1>{{ title }}</h1>
+      <nav class="top-nav">
+        <a href="{{ url_for('index') }}">Upload CSV</a>
+        <a href="{{ url_for('imports_history') }}">View import history</a>
+        <a href="{{ url_for('legs_view') }}">Matched legs</a>
+        <a href="{{ url_for('cashflow_view') }}">Cash Flow &amp; P&amp;L</a>
+      </nav>
+      <p>
+        Explore equity lots generated from assignments or direct share trades. Filter by account,
+        ticker, status, and date ranges to inspect basis and realized P&amp;L.
+      </p>
+    </header>
+    <main>
+      {% if error_message %}
+      <section class="notice notice-error">
+        <h2>Check your filters</h2>
+        <p>{{ error_message }}</p>
+      </section>
+      {% endif %}
+      <section class="filters">
+        <form method="get" class="filters-form">
+          <label class="field">
+            <span>Account name</span>
+            <input type="text" name="account_name" value="{{ filters.account_name }}" />
+          </label>
+          <label class="field">
+            <span>Account number</span>
+            <input type="text" name="account_number" value="{{ filters.account_number }}" />
+          </label>
+          <label class="field">
+            <span>Ticker</span>
+            <input type="text" name="ticker" value="{{ filters.ticker }}" />
+          </label>
+          <label class="field">
+            <span>Status</span>
+            <select name="status">
+              <option value="all" {% if filters.status == "all" %}selected{% endif %}>All</option>
+              <option value="open" {% if filters.status == "open" %}selected{% endif %}>Open</option>
+              <option value="closed" {% if filters.status == "closed" %}selected{% endif %}>
+                Closed
+              </option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Opened from</span>
+            <input type="date" name="opened_from" value="{{ filters.opened_from }}" />
+          </label>
+          <label class="field">
+            <span>Opened to</span>
+            <input type="date" name="opened_until" value="{{ filters.opened_until }}" />
+          </label>
+          <label class="field">
+            <span>Closed from</span>
+            <input type="date" name="closed_from" value="{{ filters.closed_from }}" />
+          </label>
+          <label class="field">
+            <span>Closed to</span>
+            <input type="date" name="closed_until" value="{{ filters.closed_until }}" />
+          </label>
+          <div class="filter-actions">
+            <button type="submit">Apply filters</button>
+            {% if filters.account_name or filters.account_number or filters.ticker or filters.status !=
+            "all" or filters.opened_from or filters.opened_until or filters.closed_from or
+            filters.closed_until %}
+            <a class="link-button" href="{{ url_for('stock_lots_view') }}">Reset</a>
+            {% endif %}
+          </div>
+        </form>
+      </section>
+      <section>
+        <div class="summary-cards">
+          <div class="summary-card">
+            <div class="summary-card-label">Total lots</div>
+            <div class="summary-card-value">{{ summary.total_lots }}</div>
+          </div>
+          <div class="summary-card">
+            <div class="summary-card-label">Open lots</div>
+            <div class="summary-card-value">{{ summary.open_lots }}</div>
+          </div>
+          <div class="summary-card">
+            <div class="summary-card-label">Closed lots</div>
+            <div class="summary-card-value">{{ summary.closed_lots }}</div>
+          </div>
+          <div class="summary-card">
+            <div class="summary-card-label">Total shares</div>
+            <div class="summary-card-value">{{ summary.total_shares }}</div>
+          </div>
+          <div class="summary-card">
+            <div class="summary-card-label">Aggregate basis</div>
+            <div class="summary-card-value">{{ format_currency(summary.aggregate_basis) }}</div>
+          </div>
+          <div class="summary-card">
+            <div class="summary-card-label">Aggregate realized P&amp;L</div>
+            <div class="summary-card-value">{{ format_currency(summary.aggregate_realized) }}</div>
+          </div>
+        </div>
+      </section>
+      <section>
+        {% if lots %}
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th scope="col">Symbol</th>
+              <th scope="col">Account</th>
+              <th scope="col">Direction</th>
+              <th scope="col" class="text-right">Shares</th>
+              <th scope="col">Status</th>
+              <th scope="col">Opened</th>
+              <th scope="col">Closed</th>
+              <th scope="col" class="text-right">Cost basis</th>
+              <th scope="col" class="text-right">Avg basis</th>
+              <th scope="col" class="text-right">Realized P&amp;L</th>
+              <th scope="col" class="text-right">Avg realized</th>
+              <th scope="col">Assignment</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for lot in lots %}
+            <tr>
+              <td>{{ lot.symbol }}</td>
+              <td>
+                {{ lot.account_name }}
+                {% if lot.account_number %}
+                <span class="account-number">({{ lot.account_number }})</span>
+                {% endif %}
+              </td>
+              <td>{{ lot.direction }}</td>
+              <td class="text-right">{{ lot.shares }}</td>
+              <td>
+                <span class="status-badge status-{{ lot.status|lower }}">{{ lot.status }}</span>
+              </td>
+              <td>{{ lot.opened_at }}</td>
+              <td>{{ lot.closed_at or "&mdash;"|safe }}</td>
+              <td class="text-right">{{ format_currency(lot.basis_total) }}</td>
+              <td class="text-right">{{ format_currency(lot.basis_per_share) }}</td>
+              <td class="text-right">{{ format_currency(lot.realized_total) }}</td>
+              <td class="text-right">{{ format_currency(lot.realized_per_share) }}</td>
+              <td>
+                {% if lot.assignment_kind %}
+                {{ lot.assignment_kind|replace("_", " ")|title }}
+                {% else %}
+                — 
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <p class="empty-state">No stock lots found for the selected filters.</p>
+        {% endif %}
+      </section>
+    </main>
+  </body>
+</html>
+
