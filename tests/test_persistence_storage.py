@@ -5,10 +5,16 @@ from __future__ import annotations
 import sqlite3
 from datetime import date
 from decimal import Decimal
+from typing import Optional
 
 import pytest
 
-from premiumflow.core.parser import NormalizedOptionTransaction, ParsedImportResult
+from premiumflow.core.parser import (
+    CSV_ROW_NUMBER_KEY,
+    NormalizedOptionTransaction,
+    NormalizedStockTransaction,
+    ParsedImportResult,
+)
 from premiumflow.persistence import storage as storage_module
 
 
@@ -38,9 +44,32 @@ def _make_transaction(**overrides) -> NormalizedOptionTransaction:
     )
 
 
-def _make_parsed(transactions: list[NormalizedOptionTransaction]) -> ParsedImportResult:
+def _make_stock_transaction(**overrides) -> NormalizedStockTransaction:
+    return NormalizedStockTransaction(
+        activity_date=overrides.get("activity_date", date(2025, 9, 1)),
+        process_date=overrides.get("process_date", date(2025, 9, 1)),
+        settle_date=overrides.get("settle_date", date(2025, 9, 3)),
+        instrument=overrides.get("instrument", "HOOD"),
+        description=overrides.get("description", "Robinhood Markets"),
+        trans_code=overrides.get("trans_code", "BUY"),
+        quantity=overrides.get("quantity", Decimal("100")),
+        price=overrides.get("price", Decimal("100.00")),
+        amount=overrides.get("amount", Decimal("-10000.00")),
+        action=overrides.get("action", "BUY"),
+        raw=overrides.get("raw", {"Activity Date": "09/01/2025"}),
+    )
+
+
+def _make_parsed(
+    transactions: list[NormalizedOptionTransaction],
+    *,
+    stock_transactions: Optional[list[NormalizedStockTransaction]] = None,
+) -> ParsedImportResult:
     return ParsedImportResult(
-        account_name="Primary Account", account_number="ACCT-1", transactions=transactions
+        account_name="Primary Account",
+        account_number="ACCT-1",
+        transactions=transactions,
+        stock_transactions=stock_transactions or [],
     )
 
 
@@ -61,7 +90,8 @@ def test_store_import_creates_records(tmp_path, monkeypatch):
                 amount=Decimal("-150"),
                 raw={"Activity Date": "09/15/2025"},
             ),
-        ]
+        ],
+        stock_transactions=[_make_stock_transaction()],
     )
 
     result = storage_module.store_import_result(
@@ -85,7 +115,7 @@ def test_store_import_creates_records(tmp_path, monkeypatch):
         ).fetchall()
         assert len(imports) == 1
         assert imports[0][0] == str(csv_path)
-        assert imports[0][2] == 2
+        assert imports[0][2] == 3
         assert imports[0][3] == "TSLA"
 
         transactions = conn.execute(
@@ -93,6 +123,100 @@ def test_store_import_creates_records(tmp_path, monkeypatch):
         ).fetchall()
         assert len(transactions) == 2
         assert [row[2] for row in transactions] == ["STO", "BTC"]
+
+        stock_rows = conn.execute(
+            "SELECT import_id, trans_code, action, instrument FROM stock_transactions ORDER BY row_index"
+        ).fetchall()
+        assert len(stock_rows) == 1
+        assert stock_rows[0][1] == "BUY"
+        assert stock_rows[0][2] == "BUY"
+
+
+def test_store_import_preserves_csv_row_numbers(tmp_path, monkeypatch):
+    db_path = tmp_path / "premiumflow.db"
+    csv_path = tmp_path / "sample.csv"
+    csv_path.write_text("sample", encoding="utf-8")
+    monkeypatch.setenv(storage_module.DB_ENV_VAR, str(db_path))
+
+    option_raw = {"Activity Date": "09/01/2025", CSV_ROW_NUMBER_KEY: "7"}
+    stock_raw = {"Activity Date": "09/02/2025", CSV_ROW_NUMBER_KEY: "12"}
+
+    parsed = _make_parsed(
+        [_make_transaction(raw=option_raw)],
+        stock_transactions=[_make_stock_transaction(raw=stock_raw)],
+    )
+
+    storage_module.store_import_result(
+        parsed,
+        source_path=str(csv_path),
+        options_only=True,
+        ticker=None,
+        strategy=None,
+        open_only=False,
+    )
+
+    with sqlite3.connect(db_path) as conn:
+        option_row_index = conn.execute(
+            "SELECT row_index FROM option_transactions LIMIT 1"
+        ).fetchone()[0]
+        stock_row_index = conn.execute(
+            "SELECT row_index FROM stock_transactions LIMIT 1"
+        ).fetchone()[0]
+
+    assert option_row_index == 7
+    assert stock_row_index == 12
+
+
+def test_store_import_handles_fractional_shares(tmp_path, monkeypatch):
+    db_path = tmp_path / "premiumflow.db"
+    csv_path = tmp_path / "sample.csv"
+    csv_path.write_text("sample", encoding="utf-8")
+    monkeypatch.setenv(storage_module.DB_ENV_VAR, str(db_path))
+
+    parsed = _make_parsed(
+        [],
+        stock_transactions=[_make_stock_transaction(quantity=Decimal("0.5"))],
+    )
+
+    storage_module.store_import_result(
+        parsed,
+        source_path=str(csv_path),
+        options_only=False,
+        ticker=None,
+        strategy=None,
+        open_only=False,
+    )
+
+    with sqlite3.connect(db_path) as conn:
+        stored_quantity = conn.execute(
+            "SELECT quantity FROM stock_transactions LIMIT 1"
+        ).fetchone()[0]
+
+    assert stored_quantity == "0.5"
+
+
+def test_store_import_counts_stock_only_rows(tmp_path, monkeypatch):
+    db_path = tmp_path / "premiumflow.db"
+    csv_path = tmp_path / "stock_only.csv"
+    csv_path.write_text("stock-only", encoding="utf-8")
+    monkeypatch.setenv(storage_module.DB_ENV_VAR, str(db_path))
+
+    parsed = _make_parsed([], stock_transactions=[_make_stock_transaction()])
+
+    result = storage_module.store_import_result(
+        parsed,
+        source_path=str(csv_path),
+        options_only=False,
+        ticker=None,
+        strategy=None,
+        open_only=False,
+    )
+
+    assert result.status == "inserted"
+    with sqlite3.connect(db_path) as conn:
+        row_count = conn.execute("SELECT row_count FROM imports").fetchone()[0]
+
+    assert row_count == 1
 
 
 def test_store_import_reuses_account(tmp_path, monkeypatch):
@@ -211,3 +335,55 @@ def test_store_import_replace_existing(tmp_path, monkeypatch):
 
     assert initial.status == "inserted"
     assert replaced.status == "replaced"
+
+
+def test_store_import_rejects_legacy_stock_lots_schema(tmp_path, monkeypatch):
+    db_path = tmp_path / "premiumflow.db"
+    monkeypatch.setenv(storage_module.DB_ENV_VAR, str(db_path))
+
+    storage = storage_module.SQLiteStorage(db_path)
+    storage._ensure_initialized()
+    with storage._connect() as conn:  # type: ignore[attr-defined]
+        conn.execute("DROP TABLE stock_lots")
+        conn.execute(
+            """
+            CREATE TABLE stock_lots (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                account_id INTEGER NOT NULL,
+                symbol TEXT NOT NULL,
+                opened_at TEXT NOT NULL,
+                closed_at TEXT,
+                quantity INTEGER NOT NULL,
+                direction TEXT NOT NULL,
+                option_type TEXT NOT NULL,
+                strike_price TEXT NOT NULL,
+                expiration TEXT NOT NULL,
+                share_price_total TEXT NOT NULL,
+                share_price_per_share TEXT NOT NULL,
+                open_premium_total TEXT NOT NULL,
+                open_premium_per_share TEXT NOT NULL,
+                open_fee_total TEXT NOT NULL,
+                net_credit_total TEXT NOT NULL,
+                net_credit_per_share TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'open',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+
+    csv_path = tmp_path / "legacy.csv"
+    csv_path.write_text("legacy", encoding="utf-8")
+    parsed = _make_parsed([_make_transaction()])
+
+    with pytest.raises(RuntimeError) as excinfo:
+        storage_module.store_import_result(
+            parsed,
+            source_path=str(csv_path),
+            options_only=True,
+            ticker=None,
+            strategy=None,
+            open_only=False,
+        )
+
+    assert "Table stock_lots is missing columns" in str(excinfo.value)

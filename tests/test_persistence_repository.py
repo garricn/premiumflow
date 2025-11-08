@@ -5,10 +5,15 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
+from typing import Optional
 
 import pytest
 
-from premiumflow.core.parser import NormalizedOptionTransaction, ParsedImportResult
+from premiumflow.core.parser import (
+    NormalizedOptionTransaction,
+    NormalizedStockTransaction,
+    ParsedImportResult,
+)
 from premiumflow.persistence import repository as repository_module
 from premiumflow.persistence import storage as storage_module
 from premiumflow.persistence.storage import store_import_result
@@ -40,13 +45,33 @@ def _make_transaction(**overrides) -> NormalizedOptionTransaction:
     )
 
 
+def _make_stock_transaction(**overrides) -> NormalizedStockTransaction:
+    return NormalizedStockTransaction(
+        activity_date=overrides.get("activity_date", date(2025, 9, 1)),
+        process_date=overrides.get("process_date", date(2025, 9, 1)),
+        settle_date=overrides.get("settle_date", date(2025, 9, 3)),
+        instrument=overrides.get("instrument", "HOOD"),
+        description=overrides.get("description", "Robinhood Markets"),
+        trans_code=overrides.get("trans_code", "BUY"),
+        quantity=overrides.get("quantity", Decimal("100")),
+        price=overrides.get("price", Decimal("100.00")),
+        amount=overrides.get("amount", Decimal("-10000.00")),
+        action=overrides.get("action", "BUY"),
+        raw=overrides.get("raw", {"Activity Date": "09/01/2025"}),
+    )
+
+
 def _make_parsed(
-    transactions: list[NormalizedOptionTransaction], **overrides
+    transactions: list[NormalizedOptionTransaction],
+    *,
+    stock_transactions: Optional[list[NormalizedStockTransaction]] = None,
+    **overrides,
 ) -> ParsedImportResult:
     return ParsedImportResult(
         account_name=overrides.get("account_name", "Primary Account"),
         account_number=overrides.get("account_number", "ACCT-1"),
         transactions=transactions,
+        stock_transactions=stock_transactions or [],
     )
 
 
@@ -57,6 +82,7 @@ def _seed_import(
     account_number: str | None = "ACCT-1",
     csv_name: str,
     transactions: list[NormalizedOptionTransaction],
+    stock_transactions: Optional[list[NormalizedStockTransaction]] = None,
     options_only: bool = True,
     ticker: str | None = "TSLA",
     strategy: str | None = "calls",
@@ -64,7 +90,12 @@ def _seed_import(
 ) -> None:
     csv_path = tmp_dir / csv_name
     csv_path.write_text(csv_name, encoding="utf-8")
-    parsed = _make_parsed(transactions, account_name=account_name, account_number=account_number)
+    parsed = _make_parsed(
+        transactions,
+        stock_transactions=stock_transactions,
+        account_name=account_name,
+        account_number=account_number,
+    )
     store_import_result(
         parsed,
         source_path=str(csv_path),
@@ -182,6 +213,43 @@ def test_fetch_transactions_respects_status_flag(tmp_path, repository):
 
     closed_transactions = repository.fetch_transactions(status="closed")
     assert {txn.instrument for txn in closed_transactions} == {"TSLA"}
+
+
+def test_fetch_stock_transactions_filters(tmp_path, repository):
+    _seed_import(
+        tmp_path,
+        csv_name="stocks.csv",
+        transactions=[],
+        stock_transactions=[
+            _make_stock_transaction(instrument="HOOD", trans_code="Buy", action="BUY"),
+            _make_stock_transaction(
+                instrument="HOOD",
+                trans_code="Sell",
+                action="SELL",
+                amount=Decimal("5000.00"),
+                activity_date=date(2025, 9, 2),
+            ),
+            _make_stock_transaction(
+                instrument="TSLA",
+                trans_code="Buy",
+                action="BUY",
+                activity_date=date(2025, 9, 3),
+                quantity=Decimal("0.25"),
+            ),
+        ],
+    )
+
+    hood_rows = repository.fetch_stock_transactions(ticker="HOOD")
+    assert len(hood_rows) == 2
+    assert {row.action for row in hood_rows} == {"BUY", "SELL"}
+    assert {row.quantity for row in hood_rows} == {Decimal("100"), Decimal("100")}
+
+    filtered = repository.fetch_stock_transactions(ticker="HOOD", since=date(2025, 9, 2))
+    assert len(filtered) == 1
+    assert filtered[0].action == "SELL"
+    tsla_rows = repository.fetch_stock_transactions(ticker="TSLA")
+    assert len(tsla_rows) == 1
+    assert tsla_rows[0].quantity == Decimal("0.25")
 
 
 def test_fetch_import_activity_ranges(tmp_path, repository):

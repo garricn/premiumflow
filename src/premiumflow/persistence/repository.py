@@ -55,6 +55,28 @@ class StoredTransaction:
 
 
 @dataclass(frozen=True)
+class StoredStockTransaction:
+    """Representation of a persisted stock (equity) transaction."""
+
+    id: int
+    import_id: int
+    account_name: str
+    account_number: Optional[str]
+    row_index: int
+    activity_date: str
+    process_date: Optional[str]
+    settle_date: Optional[str]
+    instrument: str
+    description: str
+    trans_code: str
+    action: str
+    quantity: Decimal
+    price: str
+    amount: str
+    raw_json: str
+
+
+@dataclass(frozen=True)
 class AssignmentStockLotRecord:
     """Stock lot opened by an assignment event."""
 
@@ -275,6 +297,81 @@ class SQLiteRepository:
             rows = conn.execute(sql, params).fetchall()
         return [_row_to_stored_transaction(row) for row in rows]
 
+    def fetch_stock_transactions(
+        self,
+        *,
+        account_name: Optional[str] = None,
+        account_number: Optional[str] = None,
+        ticker: Optional[str] = None,
+        since: Optional[date] = None,
+        until: Optional[date] = None,
+        limit: Optional[int] = None,
+        offset: int = 0,
+    ) -> List[StoredStockTransaction]:
+        """Return persisted stock transactions for the requested filters."""
+
+        self._storage._ensure_initialized()  # type: ignore[attr-defined]
+        query = [
+            "SELECT",
+            "  t.id,",
+            "  t.import_id,",
+            "  a.name AS account_name,",
+            "  a.number AS account_number,",
+            "  t.row_index,",
+            "  t.activity_date,",
+            "  t.process_date,",
+            "  t.settle_date,",
+            "  t.instrument,",
+            "  t.description,",
+            "  t.trans_code,",
+            "  t.action,",
+            "  t.quantity,",
+            "  t.price,",
+            "  t.amount,",
+            "  t.raw_json",
+            "FROM stock_transactions AS t",
+            "JOIN imports AS i ON t.import_id = i.id",
+            "JOIN accounts AS a ON i.account_id = a.id",
+        ]
+        clauses: list[str] = []
+        params: list[object] = []
+
+        if account_name is not None:
+            clauses.append("a.name = ?")
+            params.append(account_name)
+        if account_number is not None:
+            clauses.append("IFNULL(a.number, '') = IFNULL(?, '')")
+            params.append(account_number)
+        if ticker is not None:
+            clauses.append("UPPER(t.instrument) = ?")
+            params.append(ticker.strip().upper())
+        if since is not None:
+            clauses.append("t.activity_date >= ?")
+            params.append(since.isoformat())
+        if until is not None:
+            clauses.append("t.activity_date <= ?")
+            params.append(until.isoformat())
+
+        if clauses:
+            query.append("WHERE " + " AND ".join(clauses))
+
+        query.append("ORDER BY t.activity_date ASC, t.row_index ASC, t.id ASC")
+
+        if limit is not None:
+            query.append("LIMIT ?")
+            params.append(limit)
+            if offset:
+                query.append("OFFSET ?")
+                params.append(offset)
+        elif offset:
+            query.append("LIMIT -1 OFFSET ?")
+            params.append(offset)
+
+        sql = "\n".join(query)
+        with self._storage._connect() as conn:  # type: ignore[attr-defined]
+            rows = conn.execute(sql, params).fetchall()
+        return [_row_to_stored_stock_transaction(row) for row in rows]
+
     def replace_assignment_stock_lots(
         self,
         *,
@@ -419,5 +516,26 @@ def _row_to_stored_transaction(row) -> StoredTransaction:
         option_type=row["option_type"],
         expiration=row["expiration"],
         action=row["action"],
+        raw_json=row["raw_json"],
+    )
+
+
+def _row_to_stored_stock_transaction(row) -> StoredStockTransaction:
+    return StoredStockTransaction(
+        id=int(row["id"]),
+        import_id=int(row["import_id"]),
+        account_name=row["account_name"],
+        account_number=row["account_number"],
+        row_index=int(row["row_index"]),
+        activity_date=row["activity_date"],
+        process_date=row["process_date"],
+        settle_date=row["settle_date"],
+        instrument=row["instrument"],
+        description=row["description"],
+        trans_code=row["trans_code"],
+        action=row["action"],
+        quantity=Decimal(row["quantity"]),
+        price=row["price"],
+        amount=row["amount"],
         raw_json=row["raw_json"],
     )
