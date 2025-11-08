@@ -15,6 +15,48 @@ from typing import Literal, Optional, Union
 
 from ..core.parser import CSV_ROW_NUMBER_KEY, ParsedImportResult
 
+STOCK_TRANSACTIONS_REQUIRED_COLUMNS = {
+    "id",
+    "import_id",
+    "row_index",
+    "activity_date",
+    "process_date",
+    "settle_date",
+    "instrument",
+    "description",
+    "trans_code",
+    "action",
+    "quantity",
+    "price",
+    "amount",
+    "raw_json",
+}
+
+STOCK_LOTS_REQUIRED_COLUMNS = {
+    "id",
+    "account_id",
+    "source_transaction_id",
+    "symbol",
+    "opened_at",
+    "closed_at",
+    "quantity",
+    "direction",
+    "option_type",
+    "strike_price",
+    "expiration",
+    "share_price_total",
+    "share_price_per_share",
+    "open_premium_total",
+    "open_premium_per_share",
+    "open_fee_total",
+    "net_credit_total",
+    "net_credit_per_share",
+    "assignment_kind",
+    "status",
+    "created_at",
+    "updated_at",
+}
+
 DEFAULT_DB_PATH = Path.home() / ".premiumflow" / "premiumflow.db"
 DB_ENV_VAR = "PREMIUMFLOW_DB_PATH"
 
@@ -138,8 +180,7 @@ class SQLiteStorage:
                 CREATE INDEX IF NOT EXISTS idx_transactions_activity_date
                     ON option_transactions(activity_date);
 
-                DROP TABLE IF EXISTS stock_transactions;
-                CREATE TABLE stock_transactions (
+                CREATE TABLE IF NOT EXISTS stock_transactions (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     import_id INTEGER NOT NULL REFERENCES imports(id) ON DELETE CASCADE,
                     row_index INTEGER NOT NULL,
@@ -156,15 +197,7 @@ class SQLiteStorage:
                     raw_json TEXT NOT NULL
                 );
 
-                CREATE INDEX IF NOT EXISTS idx_stock_transactions_import
-                    ON stock_transactions(import_id);
-                CREATE INDEX IF NOT EXISTS idx_stock_transactions_symbol
-                    ON stock_transactions(instrument);
-                CREATE INDEX IF NOT EXISTS idx_stock_transactions_activity_date
-                    ON stock_transactions(activity_date);
-
-                DROP TABLE IF EXISTS stock_lots;
-                CREATE TABLE stock_lots (
+                CREATE TABLE IF NOT EXISTS stock_lots (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
                     source_transaction_id INTEGER REFERENCES option_transactions(id) ON DELETE SET NULL,
@@ -189,11 +222,40 @@ class SQLiteStorage:
                     updated_at TEXT NOT NULL
                 );
 
+                """
+            )
+            self._verify_table_schema(
+                conn, "stock_transactions", STOCK_TRANSACTIONS_REQUIRED_COLUMNS
+            )
+            self._verify_table_schema(conn, "stock_lots", STOCK_LOTS_REQUIRED_COLUMNS)
+            conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_stock_transactions_import
+                    ON stock_transactions(import_id)
+                """
+            )
+            conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_stock_transactions_symbol
+                    ON stock_transactions(instrument)
+                """
+            )
+            conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_stock_transactions_activity_date
+                    ON stock_transactions(activity_date)
+                """
+            )
+            conn.execute(
+                """
                 CREATE INDEX IF NOT EXISTS idx_stock_lots_source_transaction
-                    ON stock_lots(source_transaction_id);
+                    ON stock_lots(source_transaction_id)
+                """
+            )
+            conn.execute(
+                """
                 CREATE INDEX IF NOT EXISTS idx_stock_lots_account_status
-                    ON stock_lots(account_id, status);
-
+                    ON stock_lots(account_id, status)
                 """
             )
             # Clean up any legacy duplicates that may exist from versions prior to
@@ -214,6 +276,25 @@ class SQLiteStorage:
                 """
             )
         self._initialized = True
+
+    @staticmethod
+    def _table_columns(conn: sqlite3.Connection, table: str) -> set[str]:
+        try:
+            rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+        except sqlite3.OperationalError:
+            return set()
+        return {row["name"] for row in rows}
+
+    def _verify_table_schema(
+        self, conn: sqlite3.Connection, table: str, required_columns: set[str]
+    ) -> None:
+        columns = self._table_columns(conn, table)
+        missing = required_columns - columns
+        if missing:
+            raise RuntimeError(
+                f"Table {table} is missing columns {', '.join(sorted(missing))}. "
+                "Delete the existing database file to rebuild the schema."
+            )
 
     def store_import(
         self,

@@ -313,7 +313,7 @@ def test_store_import_replace_existing(tmp_path, monkeypatch):
     assert replaced.status == "replaced"
 
 
-def test_store_import_initializes_legacy_stock_lots_schema(tmp_path, monkeypatch):
+def test_store_import_rejects_legacy_stock_lots_schema(tmp_path, monkeypatch):
     db_path = tmp_path / "premiumflow.db"
     monkeypatch.setenv(storage_module.DB_ENV_VAR, str(db_path))
 
@@ -352,18 +352,14 @@ def test_store_import_initializes_legacy_stock_lots_schema(tmp_path, monkeypatch
     csv_path.write_text("legacy", encoding="utf-8")
     parsed = _make_parsed([_make_transaction()])
 
-    result = storage_module.store_import_result(
-        parsed,
-        source_path=str(csv_path),
-        options_only=True,
-        ticker=None,
-        strategy=None,
-        open_only=False,
-    )
+    with pytest.raises(RuntimeError) as excinfo:
+        storage_module.store_import_result(
+            parsed,
+            source_path=str(csv_path),
+            options_only=True,
+            ticker=None,
+            strategy=None,
+            open_only=False,
+        )
 
-    assert result.status == "inserted"
-    with sqlite3.connect(db_path) as conn:
-        columns = {row[1] for row in conn.execute("PRAGMA table_info(stock_lots)")}
-
-    assert "assignment_kind" in columns
-    assert "source_transaction_id" in columns
+    assert "Table stock_lots is missing columns" in str(excinfo.value)
