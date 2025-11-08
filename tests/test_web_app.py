@@ -15,6 +15,7 @@ from premiumflow.core.parser import NormalizedOptionTransaction, ParsedImportRes
 from premiumflow.persistence import repository as repository_module
 from premiumflow.persistence import storage as storage_module
 from premiumflow.persistence.storage import store_import_result
+from premiumflow.services.stock_lot_builder import rebuild_assignment_stock_lots
 from premiumflow.web import create_app, dependencies
 from premiumflow.web.app import MIN_PAGE_SIZE
 from premiumflow.web.dependencies import get_repository
@@ -85,6 +86,92 @@ def _persist_import(
         open_only=open_only,
     )
     return result.import_id
+
+
+def _seed_assignment_stock_lots(tmp_path: Path) -> None:
+    """Populate the persistence layer with assignment-driven stock lots."""
+
+    csv_path = tmp_path / "assignment-stock.csv"
+    csv_path.write_text("assignment lots", encoding="utf-8")
+
+    transactions = [
+        _make_transaction(
+            instrument="HOOD",
+            description="HOOD 09/06/2025 Call $104.00",
+            trans_code="STO",
+            option_type="CALL",
+            strike=Decimal("104.00"),
+            quantity=2,
+            price=Decimal("1.08"),
+            amount=Decimal("216.00"),
+            activity_date=date(2025, 8, 28),
+        ),
+        _make_transaction(
+            instrument="HOOD",
+            description="HOOD 09/06/2025 Call $104.00",
+            trans_code="OASGN",
+            option_type="CALL",
+            strike=Decimal("104.00"),
+            activity_date=date(2025, 9, 5),
+            quantity=1,
+            price=Decimal("0"),
+            amount=None,
+        ),
+        _make_transaction(
+            instrument="HOOD",
+            description="HOOD 09/06/2025 Call $104.00",
+            trans_code="OASGN",
+            option_type="CALL",
+            strike=Decimal("104.00"),
+            activity_date=date(2025, 9, 6),
+            quantity=1,
+            price=Decimal("0"),
+            amount=None,
+        ),
+        _make_transaction(
+            instrument="ETHU",
+            description="ETHU 11/01/2025 Put $110.00",
+            trans_code="STO",
+            option_type="PUT",
+            strike=Decimal("110.00"),
+            price=Decimal("1.75"),
+            amount=Decimal("175.00"),
+            activity_date=date(2025, 10, 24),
+        ),
+        _make_transaction(
+            instrument="ETHU",
+            description="ETHU 11/01/2025 Put $110.00",
+            trans_code="OASGN",
+            option_type="PUT",
+            strike=Decimal("110.00"),
+            activity_date=date(2025, 10, 31),
+            quantity=1,
+            price=Decimal("0"),
+            amount=None,
+        ),
+    ]
+
+    parsed = ParsedImportResult(
+        account_name="Lot Account",
+        account_number="LOTS-1",
+        transactions=transactions,
+    )
+
+    store_import_result(
+        parsed,
+        source_path=str(csv_path),
+        options_only=True,
+        ticker=None,
+        strategy=None,
+        open_only=False,
+    )
+
+    repository = repository_module.SQLiteRepository()
+    rebuild_assignment_stock_lots(
+        repository,
+        account_name="Lot Account",
+        account_number="LOTS-1",
+    )
 
 
 @pytest.fixture
@@ -564,6 +651,38 @@ def test_legs_api_filters_work(client_with_storage, tmp_path):
     assert response.status_code == 200
     data = response.json()
     assert all(leg["contract"]["symbol"] == "TSLA" for leg in data["legs"])
+
+
+def test_stock_lots_api_returns_json(client_with_storage, tmp_path):
+    """Stock lots API endpoint returns serialized stock lots."""
+    _seed_assignment_stock_lots(tmp_path)
+
+    response = client_with_storage.get(
+        "/api/stock-lots",
+        params={"account_name": "Lot Account", "account_number": "LOTS-1"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    lots = payload.get("lots", [])
+    assert len(lots) == 3
+
+    symbols = {lot["symbol"] for lot in lots}
+    assert symbols == {"HOOD", "ETHU"}
+
+    hood_lots = [lot for lot in lots if lot["symbol"] == "HOOD"]
+    assert len(hood_lots) == 2
+    assert all(lot["status"] == "open" for lot in hood_lots)
+    assert all(lot["basis_total"] == "10508" for lot in hood_lots)
+
+    ethus = [lot for lot in lots if lot["symbol"] == "ETHU"]
+    assert ethus and ethus[0]["basis_total"] == "10825"
+
+
+def test_stock_lots_api_validates_status(client_with_storage):
+    """Stock lots API rejects unsupported status values."""
+    response = client_with_storage.get("/api/stock-lots", params={"status": "archived"})
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Unsupported status filter"
 
 
 def test_legs_view_empty_state(client_with_storage):
