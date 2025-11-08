@@ -71,9 +71,19 @@
               </option>
             </select>
           </label>
+          <label class="field">
+            <span>Realized totals</span>
+            <select name="realized_view">
+              {% for value, info in realized_view_choices.items() %}
+              <option value="{{ value }}" {% if filters.realized_view == value %}selected{% endif %}>
+                {{ info.select }}
+              </option>
+              {% endfor %}
+            </select>
+          </label>
           <div class="filter-actions">
             <button type="submit" id="submit-button">Apply filters</button>
-            {% if filters.account or filters.ticker or filters.period != "total" or filters.since or filters.until or filters.assignment_handling != "include" %}
+            {% if filters.account or filters.ticker or filters.period != "total" or filters.since or filters.until or filters.assignment_handling != "include" or filters.realized_view != "options" %}
             <a class="link-button" href="{{ url_for('cashflow_view') }}">Reset</a>
             {% endif %}
           </div>
@@ -85,13 +95,14 @@
       </section>
       {% if report and report.periods %}
       <section class="summary-cards">
+        {% set totals_breakdown = report.totals.realized_breakdowns[filters.realized_view] %}
         <div class="summary-card">
           <div class="summary-card-label">Total Cash Flow</div>
           <div class="summary-card-value">{{ format_currency(report.totals.net_cash_flow) }}</div>
         </div>
         <div class="summary-card">
-          <div class="summary-card-label">Realized P&L (After Fees)</div>
-          <div class="summary-card-value">{{ format_currency(report.totals.realized_pnl_net) }}</div>
+          <div class="summary-card-label">Realized P&L (After Fees • {{ realized_view_label }})</div>
+          <div class="summary-card-value">{{ format_currency(totals_breakdown.net_net) }}</div>
         </div>
         <div class="summary-card">
           <div class="summary-card-label">Assignment Premium (After Fees)</div>
@@ -103,7 +114,7 @@
         </div>
         <div class="summary-card">
           <div class="summary-card-label">Net P&L</div>
-          <div class="summary-card-value">{{ format_currency(report.totals.realized_pnl_net + report.totals.unrealized_exposure) }}</div>
+          <div class="summary-card-value">{{ format_currency(totals_breakdown.net_net + report.totals.unrealized_exposure) }}</div>
         </div>
       </section>
       <section>
@@ -114,12 +125,12 @@
               <th scope="col" class="text-right">Credits</th>
               <th scope="col" class="text-right">Debits</th>
               <th scope="col" class="text-right">Net Cash Flow</th>
-              <th scope="col" class="text-right">Profits (Before Fees)</th>
-              <th scope="col" class="text-right">Losses (Before Fees)</th>
-              <th scope="col" class="text-right">Realized P&L (Before Fees)</th>
-              <th scope="col" class="text-right">Profits (After Fees)</th>
-              <th scope="col" class="text-right">Losses (After Fees)</th>
-              <th scope="col" class="text-right">Realized P&L (After Fees)</th>
+              <th scope="col" class="text-right">Profits (Before Fees • {{ realized_view_label }})</th>
+              <th scope="col" class="text-right">Losses (Before Fees • {{ realized_view_label }})</th>
+              <th scope="col" class="text-right">Realized P&L (Before Fees • {{ realized_view_label }})</th>
+              <th scope="col" class="text-right">Profits (After Fees • {{ realized_view_label }})</th>
+              <th scope="col" class="text-right">Losses (After Fees • {{ realized_view_label }})</th>
+              <th scope="col" class="text-right">Realized P&L (After Fees • {{ realized_view_label }})</th>
               <th scope="col" class="text-right">Assignment Premium (After Fees)</th>
               <th scope="col" class="text-right">Unrealized Exposure</th>
               <th scope="col" class="text-right">Opening Fees</th>
@@ -129,17 +140,18 @@
           </thead>
           <tbody>
             {% for period in report.periods %}
+            {% set breakdown = period.realized_breakdowns[filters.realized_view] %}
             <tr>
               <td>{{ period.period_label }}</td>
               <td class="text-right">{{ format_currency(period.credits) }}</td>
               <td class="text-right">{{ format_currency(period.debits) }}</td>
               <td class="text-right">{{ format_currency(period.net_cash_flow) }}</td>
-              <td class="text-right">{{ format_currency(period.realized_profits_gross) }}</td>
-              <td class="text-right">{{ format_currency(period.realized_losses_gross) }}</td>
-              <td class="text-right">{{ format_currency(period.realized_pnl_gross) }}</td>
-              <td class="text-right">{{ format_currency(period.realized_profits_net) }}</td>
-              <td class="text-right">{{ format_currency(period.realized_losses_net) }}</td>
-              <td class="text-right">{{ format_currency(period.realized_pnl_net) }}</td>
+              <td class="text-right">{{ format_currency(breakdown.profits_gross) }}</td>
+              <td class="text-right">{{ format_currency(breakdown.losses_gross) }}</td>
+              <td class="text-right">{{ format_currency(breakdown.net_gross) }}</td>
+              <td class="text-right">{{ format_currency(breakdown.profits_net) }}</td>
+              <td class="text-right">{{ format_currency(breakdown.losses_net) }}</td>
+              <td class="text-right">{{ format_currency(breakdown.net_net) }}</td>
               <td class="text-right">{{ format_currency(period.assignment_realized_net) }}</td>
               <td class="text-right">{{ format_currency(period.unrealized_exposure) }}</td>
               <td class="text-right">{{ format_currency(period.opening_fees) }}</td>
@@ -147,17 +159,18 @@
               <td class="text-right">{{ format_currency(period.total_fees) }}</td>
             </tr>
             {% endfor %}
+            {% set total_breakdown = report.totals.realized_breakdowns[filters.realized_view] %}
             <tr class="totals-row">
               <td><strong>{{ report.totals.period_label }}</strong></td>
               <td class="text-right"><strong>{{ format_currency(report.totals.credits) }}</strong></td>
               <td class="text-right"><strong>{{ format_currency(report.totals.debits) }}</strong></td>
               <td class="text-right"><strong>{{ format_currency(report.totals.net_cash_flow) }}</strong></td>
-              <td class="text-right"><strong>{{ format_currency(report.totals.realized_profits_gross) }}</strong></td>
-              <td class="text-right"><strong>{{ format_currency(report.totals.realized_losses_gross) }}</strong></td>
-              <td class="text-right"><strong>{{ format_currency(report.totals.realized_pnl_gross) }}</strong></td>
-              <td class="text-right"><strong>{{ format_currency(report.totals.realized_profits_net) }}</strong></td>
-              <td class="text-right"><strong>{{ format_currency(report.totals.realized_losses_net) }}</strong></td>
-              <td class="text-right"><strong>{{ format_currency(report.totals.realized_pnl_net) }}</strong></td>
+              <td class="text-right"><strong>{{ format_currency(total_breakdown.profits_gross) }}</strong></td>
+              <td class="text-right"><strong>{{ format_currency(total_breakdown.losses_gross) }}</strong></td>
+              <td class="text-right"><strong>{{ format_currency(total_breakdown.net_gross) }}</strong></td>
+              <td class="text-right"><strong>{{ format_currency(total_breakdown.profits_net) }}</strong></td>
+              <td class="text-right"><strong>{{ format_currency(total_breakdown.losses_net) }}</strong></td>
+              <td class="text-right"><strong>{{ format_currency(total_breakdown.net_net) }}</strong></td>
               <td class="text-right"><strong>{{ format_currency(report.totals.assignment_realized_net) }}</strong></td>
               <td class="text-right"><strong>{{ format_currency(report.totals.unrealized_exposure) }}</strong></td>
               <td class="text-right"><strong>{{ format_currency(report.totals.opening_fees) }}</strong></td>

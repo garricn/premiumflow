@@ -8,7 +8,7 @@ cash flow and P&L metrics with time-based grouping.
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Optional
+from typing import Optional, cast
 
 import click
 from rich.console import Console
@@ -18,6 +18,7 @@ from ..persistence import SQLiteRepository
 from ..services.cash_flow import (
     AssignmentHandling,
     CashFlowPnlReport,
+    RealizedView,
     generate_cash_flow_pnl_report,
 )
 from ..services.cli_helpers import format_account_label
@@ -27,6 +28,12 @@ from ..services.json_serializer import serialize_cash_flow_pnl_report
 DateInput = Optional[datetime]
 PeriodChoice = click.Choice(["daily", "weekly", "monthly", "total"])
 AssignmentHandlingChoice = click.Choice(["include", "exclude"])
+RealizedViewChoice = click.Choice(["options", "stock", "combined"])
+REALIZED_VIEW_LABELS: dict[RealizedView, str] = {
+    "options": "Options",
+    "stock": "Stock",
+    "combined": "Combined",
+}
 
 
 def _parse_date(value: DateInput) -> Optional[date]:
@@ -36,22 +43,23 @@ def _parse_date(value: DateInput) -> Optional[date]:
     return value.date()
 
 
-def _build_cashflow_table(report: CashFlowPnlReport) -> Table:
+def _build_cashflow_table(report: CashFlowPnlReport, realized_view: RealizedView) -> Table:
     """Build a rich.Table for displaying cash flow and P&L metrics."""
     account_label = format_account_label(report.account_name, report.account_number)
     title = f"Cash Flow & P&L Report • {account_label}"
+    view_label = REALIZED_VIEW_LABELS.get(realized_view, REALIZED_VIEW_LABELS["options"])
 
     table = Table(title=title, expand=True)
     table.add_column("Period", style="cyan", no_wrap=True)
     table.add_column("Credits", justify="right")
     table.add_column("Debits", justify="right")
     table.add_column("Net Cash Flow", justify="right")
-    table.add_column("Profits (Before Fees)", justify="right")
-    table.add_column("Losses (Before Fees)", justify="right")
-    table.add_column("Realized P&L (Before Fees)", justify="right")
-    table.add_column("Profits (After Fees)", justify="right")
-    table.add_column("Losses (After Fees)", justify="right")
-    table.add_column("Realized P&L (After Fees)", justify="right")
+    table.add_column(f"Profits (Before Fees • {view_label})", justify="right")
+    table.add_column(f"Losses (Before Fees • {view_label})", justify="right")
+    table.add_column(f"Realized P&L (Before Fees • {view_label})", justify="right")
+    table.add_column(f"Profits (After Fees • {view_label})", justify="right")
+    table.add_column(f"Losses (After Fees • {view_label})", justify="right")
+    table.add_column(f"Realized P&L (After Fees • {view_label})", justify="right")
     table.add_column("Assignment Premium (After Fees)", justify="right")
     table.add_column("Unrealized Exposure", justify="right")
     table.add_column("Opening Fees", justify="right")
@@ -60,17 +68,20 @@ def _build_cashflow_table(report: CashFlowPnlReport) -> Table:
 
     # Add period rows
     for period in report.periods:
+        breakdown = (
+            period.realized_breakdowns.get(realized_view) or period.realized_breakdowns["options"]
+        )
         table.add_row(
             period.period_label,
             format_currency(period.credits),
             format_currency(period.debits),
             format_currency(period.net_cash_flow),
-            format_currency(period.realized_profits_gross),
-            format_currency(period.realized_losses_gross),
-            format_currency(period.realized_pnl_gross),
-            format_currency(period.realized_profits_net),
-            format_currency(period.realized_losses_net),
-            format_currency(period.realized_pnl_net),
+            format_currency(breakdown.profits_gross),
+            format_currency(breakdown.losses_gross),
+            format_currency(breakdown.net_gross),
+            format_currency(breakdown.profits_net),
+            format_currency(breakdown.losses_net),
+            format_currency(breakdown.net_net),
             format_currency(period.assignment_realized_net),
             format_currency(period.unrealized_exposure),
             format_currency(period.opening_fees),
@@ -79,17 +90,21 @@ def _build_cashflow_table(report: CashFlowPnlReport) -> Table:
         )
 
     # Add totals row
+    totals_breakdown = (
+        report.totals.realized_breakdowns.get(realized_view)
+        or report.totals.realized_breakdowns["options"]
+    )
     table.add_row(
         report.totals.period_label,
         format_currency(report.totals.credits),
         format_currency(report.totals.debits),
         format_currency(report.totals.net_cash_flow),
-        format_currency(report.totals.realized_profits_gross),
-        format_currency(report.totals.realized_losses_gross),
-        format_currency(report.totals.realized_pnl_gross),
-        format_currency(report.totals.realized_profits_net),
-        format_currency(report.totals.realized_losses_net),
-        format_currency(report.totals.realized_pnl_net),
+        format_currency(totals_breakdown.profits_gross),
+        format_currency(totals_breakdown.losses_gross),
+        format_currency(totals_breakdown.net_gross),
+        format_currency(totals_breakdown.profits_net),
+        format_currency(totals_breakdown.losses_net),
+        format_currency(totals_breakdown.net_net),
         format_currency(report.totals.assignment_realized_net),
         format_currency(report.totals.unrealized_exposure),
         format_currency(report.totals.opening_fees),
@@ -156,6 +171,13 @@ def _build_cashflow_table(report: CashFlowPnlReport) -> Table:
         "them separately to match broker UIs (exclude)."
     ),
 )
+@click.option(
+    "--realized-view",
+    type=RealizedViewChoice,
+    default="options",
+    show_default=True,
+    help="Select whether realized totals show options, stock, or combined results.",
+)
 def cashflow(
     account_name: str,
     account_number: str,
@@ -166,6 +188,7 @@ def cashflow(
     no_clamp_periods: bool,
     json_output: bool,
     assignment_handling: AssignmentHandling,
+    realized_view: str,
 ) -> None:
     """Display account-level cash flow and P&L metrics with time-based grouping."""
     console = Console()
@@ -200,11 +223,13 @@ def cashflow(
                 )
             return
 
+        realized_view_key = cast(RealizedView, realized_view)
+
         # Output based on format
         if json_output:
             console.print_json(data=serialize_cash_flow_pnl_report(report))
         else:
-            table = _build_cashflow_table(report)
+            table = _build_cashflow_table(report, realized_view_key)
             console.print(table)
 
     except Exception as e:

@@ -6,6 +6,7 @@ from .cash_flow import (
     CashFlowPnlReport,
     PeriodMetrics,
     PeriodType,
+    RealizedView,
     generate_cash_flow_pnl_report,
 )
 from .chain_builder import detect_roll_chains
@@ -97,4 +98,5 @@ __all__ = [
     "PeriodMetrics",
     "PeriodType",
     "AssignmentHandling",
+    "RealizedView",
 ]
