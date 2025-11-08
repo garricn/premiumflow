@@ -16,7 +16,11 @@ from premiumflow.core.parser import (
 )
 from premiumflow.persistence import storage as storage_module
 from premiumflow.persistence.storage import store_import_result
-from premiumflow.services.cash_flow import CashFlowPnlReport, PeriodMetrics
+from premiumflow.services.cash_flow import (
+    CashFlowPnlReport,
+    PeriodMetrics,
+    RealizedViewTotals,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -104,6 +108,10 @@ def test_cashflow_command_in_help():
     result = runner.invoke(premiumflow_cli, ["--help"])
     assert result.exit_code == 0
     assert "cashflow" in result.output
+
+    cashflow_help = runner.invoke(premiumflow_cli, ["cashflow", "--help"])
+    assert cashflow_help.exit_code == 0
+    assert "--realized-view" in cashflow_help.output
 
 
 def test_cashflow_requires_account_name(tmp_path):
@@ -274,6 +282,8 @@ def test_cashflow_json_output(tmp_path, monkeypatch):
     assert "opening_fees" in totals
     assert "closing_fees" in totals
     assert "assignment_realized_net" in totals
+    assert "realized_breakdowns" in totals
+    assert "options" in totals["realized_breakdowns"]
 
 
 def test_build_cashflow_table_includes_assignment_column():
@@ -296,6 +306,32 @@ def test_build_cashflow_table_includes_assignment_column():
         opening_fees=Decimal("5.00"),
         closing_fees=Decimal("5.00"),
         total_fees=Decimal("10.00"),
+        realized_breakdowns={
+            "options": RealizedViewTotals(
+                profits_gross=Decimal("100.00"),
+                losses_gross=Decimal("0.00"),
+                net_gross=Decimal("100.00"),
+                profits_net=Decimal("90.00"),
+                losses_net=Decimal("0.00"),
+                net_net=Decimal("90.00"),
+            ),
+            "stock": RealizedViewTotals(
+                profits_gross=Decimal("0.00"),
+                losses_gross=Decimal("0.00"),
+                net_gross=Decimal("0.00"),
+                profits_net=Decimal("0.00"),
+                losses_net=Decimal("0.00"),
+                net_net=Decimal("0.00"),
+            ),
+            "combined": RealizedViewTotals(
+                profits_gross=Decimal("100.00"),
+                losses_gross=Decimal("0.00"),
+                net_gross=Decimal("100.00"),
+                profits_net=Decimal("90.00"),
+                losses_net=Decimal("0.00"),
+                net_net=Decimal("90.00"),
+            ),
+        },
     )
     report = CashFlowPnlReport(
         account_name="Primary Account",
@@ -305,9 +341,69 @@ def test_build_cashflow_table_includes_assignment_column():
         totals=period,
     )
 
-    table = _build_cashflow_table(report)
+    table = _build_cashflow_table(report, "options")
     headers = [column.header for column in table.columns]
     assert "Assignment Premium (After Fees)" in headers
+
+
+def test_cashflow_realized_view_stock_header():
+    """Selecting stock realized view updates table headings."""
+    period = PeriodMetrics(
+        period_key="total",
+        period_label="Total",
+        credits=Decimal("0.00"),
+        debits=Decimal("0.00"),
+        net_cash_flow=Decimal("0.00"),
+        realized_profits_gross=Decimal("0.00"),
+        realized_losses_gross=Decimal("0.00"),
+        realized_pnl_gross=Decimal("0.00"),
+        realized_profits_net=Decimal("0.00"),
+        realized_losses_net=Decimal("0.00"),
+        realized_pnl_net=Decimal("0.00"),
+        assignment_realized_gross=Decimal("0.00"),
+        assignment_realized_net=Decimal("0.00"),
+        unrealized_exposure=Decimal("0.00"),
+        opening_fees=Decimal("0.00"),
+        closing_fees=Decimal("0.00"),
+        total_fees=Decimal("0.00"),
+        realized_breakdowns={
+            "options": RealizedViewTotals(
+                profits_gross=Decimal("0.00"),
+                losses_gross=Decimal("0.00"),
+                net_gross=Decimal("0.00"),
+                profits_net=Decimal("0.00"),
+                losses_net=Decimal("0.00"),
+                net_net=Decimal("0.00"),
+            ),
+            "stock": RealizedViewTotals(
+                profits_gross=Decimal("10.00"),
+                losses_gross=Decimal("0.00"),
+                net_gross=Decimal("10.00"),
+                profits_net=Decimal("10.00"),
+                losses_net=Decimal("0.00"),
+                net_net=Decimal("10.00"),
+            ),
+            "combined": RealizedViewTotals(
+                profits_gross=Decimal("10.00"),
+                losses_gross=Decimal("0.00"),
+                net_gross=Decimal("10.00"),
+                profits_net=Decimal("10.00"),
+                losses_net=Decimal("0.00"),
+                net_net=Decimal("10.00"),
+            ),
+        },
+    )
+    report = CashFlowPnlReport(
+        account_name="Primary Account",
+        account_number="ACCT-1",
+        period_type="total",
+        periods=[period],
+        totals=period,
+    )
+
+    table = _build_cashflow_table(report, "stock")
+    headers = [column.header for column in table.columns]
+    assert "Profits (Before Fees • Stock)" in headers
 
 
 def test_cashflow_assignment_handling_exclude_json(tmp_path, monkeypatch):

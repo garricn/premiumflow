@@ -1,12 +1,16 @@
 """JSON serialization utilities for roll chain data."""
 
+from __future__ import annotations
+
 from decimal import Decimal
-from typing import Any, Dict, List, Optional, Sequence
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence
 
 from ..core.parser import NormalizedOptionTransaction
-from .cash_flow import CashFlowPnlReport, PeriodMetrics
 from .display import ensure_display_name
 from .leg_matching import LotFillPortion, MatchedLeg, MatchedLegLot
+
+if TYPE_CHECKING:
+    from .cash_flow import CashFlowPnlReport, PeriodMetrics
 
 
 def is_open_chain(chain: Dict[str, Any]) -> bool:
@@ -251,6 +255,17 @@ def serialize_period_metrics(metrics: PeriodMetrics) -> Dict[str, Any]:
         "opening_fees": _decimal_to_string(metrics.opening_fees),
         "closing_fees": _decimal_to_string(metrics.closing_fees),
         "total_fees": _decimal_to_string(metrics.total_fees),
+        "realized_breakdowns": {
+            view: {
+                "profits_gross": _decimal_to_string(totals.profits_gross),
+                "losses_gross": _decimal_to_string(totals.losses_gross),
+                "net_gross": _decimal_to_string(totals.net_gross),
+                "profits_net": _decimal_to_string(totals.profits_net),
+                "losses_net": _decimal_to_string(totals.losses_net),
+                "net_net": _decimal_to_string(totals.net_net),
+            }
+            for view, totals in metrics.realized_breakdowns.items()
+        },
     }
 
 

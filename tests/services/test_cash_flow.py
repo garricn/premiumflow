@@ -77,6 +77,93 @@ def _seed_import(
     )
 
 
+def _insert_stock_lot(
+    repository,
+    *,
+    account_name: str,
+    account_number: str | None,
+    symbol: str,
+    closed_at: str,
+    net_credit_total: Decimal,
+    quantity: int = 100,
+    direction: str = "long",
+) -> None:
+    """Insert a closed stock lot directly into the persistence layer for testing."""
+    storage = repository._storage  # type: ignore[attr-defined]
+    storage._ensure_initialized()  # type: ignore[attr-defined]
+    share_price_total = Decimal("10000.00")
+    share_price_per_share = Decimal("100.00")
+    open_premium_total = Decimal("100.00")
+    open_premium_per_share = Decimal("1.00")
+    open_fee_total = Decimal("0.00")
+    share_count = Decimal(abs(quantity)) or Decimal("1")
+    net_credit_per_share = (net_credit_total / share_count).quantize(Decimal("0.0001"))
+    opened_at = "2025-09-01T00:00:00Z"
+    updated_at = "2025-10-01T00:00:00Z"
+    expiration = "2025-10-15"
+    strike_price = "100.00"
+    assignment_kind = "put_assignment" if direction == "long" else "call_assignment"
+
+    with storage._connect() as conn:  # type: ignore[attr-defined]
+        row = conn.execute(
+            "SELECT id FROM accounts WHERE name = ? AND IFNULL(number, '') = IFNULL(?, '')",
+            (account_name, account_number),
+        ).fetchone()
+        assert row is not None, "Account must exist before inserting stock lot"
+        account_id = int(row["id"])
+        conn.execute(
+            """
+            INSERT INTO stock_lots (
+                account_id,
+                source_transaction_id,
+                symbol,
+                opened_at,
+                closed_at,
+                quantity,
+                direction,
+                option_type,
+                strike_price,
+                expiration,
+                share_price_total,
+                share_price_per_share,
+                open_premium_total,
+                open_premium_per_share,
+                open_fee_total,
+                net_credit_total,
+                net_credit_per_share,
+                assignment_kind,
+                status,
+                created_at,
+                updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                account_id,
+                None,
+                symbol,
+                opened_at,
+                closed_at,
+                quantity,
+                direction,
+                "PUT" if direction == "long" else "CALL",
+                strike_price,
+                expiration,
+                format(share_price_total, "f"),
+                format(share_price_per_share, "f"),
+                format(open_premium_total, "f"),
+                format(open_premium_per_share, "f"),
+                format(open_fee_total, "f"),
+                format(net_credit_total, "f"),
+                format(net_credit_per_share, "f"),
+                assignment_kind,
+                "closed",
+                opened_at,
+                updated_at,
+            ),
+        )
+
+
 @pytest.fixture(autouse=True)
 def clear_storage_cache():
     """Clear storage cache before and after each test."""
@@ -1150,3 +1237,57 @@ def test_assignment_toggle_excludes_assignment_premium(tmp_path, repository):
 
     assert report_exclude.totals.assignment_realized_net == Decimal("283.00")
     assert report_exclude.totals.realized_pnl_net == Decimal("936.00")
+
+
+def test_generate_report_includes_stock_realized_pnl(tmp_path, repository):
+    """Closed stock lots contribute realized P&L alongside options."""
+    _seed_import(
+        tmp_path,
+        csv_name="seed.csv",
+        transactions=[
+            _make_transaction(
+                activity_date=date(2025, 9, 1),
+                trans_code="STO",
+                action="SELL",
+                price=Decimal("1.00"),
+                amount=Decimal("100.00"),
+            )
+        ],
+    )
+
+    _insert_stock_lot(
+        repository,
+        account_name="Primary Account",
+        account_number="ACCT-1",
+        symbol="TSLA",
+        closed_at="2025-10-01T00:00:00Z",
+        net_credit_total=Decimal("500.00"),
+    )
+    _insert_stock_lot(
+        repository,
+        account_name="Primary Account",
+        account_number="ACCT-1",
+        symbol="TSLA",
+        closed_at="2025-10-02T00:00:00Z",
+        net_credit_total=Decimal("-200.00"),
+    )
+
+    report = generate_cash_flow_pnl_report(
+        repository,
+        account_name="Primary Account",
+        account_number="ACCT-1",
+        period_type="daily",
+    )
+
+    period_breakdowns = {
+        period.period_key: period.realized_breakdowns["stock"] for period in report.periods
+    }
+    assert period_breakdowns["2025-10-01"].net_net == Decimal("500.00")
+    assert period_breakdowns["2025-10-01"].profits_net == Decimal("500.00")
+    assert period_breakdowns["2025-10-02"].net_net == Decimal("-200.00")
+    assert period_breakdowns["2025-10-02"].losses_net == Decimal("200.00")
+
+    stock_totals = report.totals.realized_breakdowns["stock"]
+    combined_totals = report.totals.realized_breakdowns["combined"]
+    assert stock_totals.net_net == Decimal("300.00")
+    assert combined_totals.net_net == report.totals.realized_pnl_net + stock_totals.net_net

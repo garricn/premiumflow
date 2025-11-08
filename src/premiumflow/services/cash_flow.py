@@ -9,13 +9,14 @@ monthly, total).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Dict, List, Literal, Optional
 
 from ..core.parser import NormalizedOptionTransaction
 from ..persistence import SQLiteRepository
 from .leg_matching import MatchedLeg, MatchedLegLot
+from .stock_lots import StockLotSummary, fetch_stock_lot_summaries
 from .transaction_loader import (
     fetch_normalized_transactions,
     match_legs_from_transactions,
@@ -25,6 +26,7 @@ CONTRACT_MULTIPLIER = Decimal("100")
 ZERO = Decimal("0")
 PeriodType = Literal["daily", "weekly", "monthly", "total"]
 AssignmentHandling = Literal["include", "exclude"]
+RealizedView = Literal["options", "stock", "combined"]
 
 
 def _calculate_cash_value(txn: NormalizedOptionTransaction) -> Decimal:
@@ -64,6 +66,7 @@ class PeriodMetrics:
     opening_fees: Decimal
     closing_fees: Decimal
     total_fees: Decimal
+    realized_breakdowns: Dict[RealizedView, "RealizedViewTotals"]
 
 
 @dataclass(frozen=True)
@@ -75,6 +78,97 @@ class CashFlowPnlReport:
     period_type: PeriodType
     periods: List[PeriodMetrics]
     totals: PeriodMetrics  # Grand totals across all periods
+
+
+@dataclass(frozen=True)
+class RealizedViewTotals:
+    """Aggregate realized P&L components for a specific view."""
+
+    profits_gross: Decimal
+    losses_gross: Decimal
+    net_gross: Decimal
+    profits_net: Decimal
+    losses_net: Decimal
+    net_net: Decimal
+
+
+def _zero_realized_view_totals() -> RealizedViewTotals:
+    """Return a zeroed-out RealizedViewTotals instance."""
+    return RealizedViewTotals(
+        profits_gross=ZERO,
+        losses_gross=ZERO,
+        net_gross=ZERO,
+        profits_net=ZERO,
+        losses_net=ZERO,
+        net_net=ZERO,
+    )
+
+
+def _empty_realized_breakdowns() -> Dict[RealizedView, RealizedViewTotals]:
+    """Return realized breakdowns with zero values for all views."""
+    breakdowns: Dict[RealizedView, RealizedViewTotals] = {
+        "options": _zero_realized_view_totals(),
+        "stock": _zero_realized_view_totals(),
+        "combined": _zero_realized_view_totals(),
+    }
+    return breakdowns
+
+
+def _build_realized_breakdowns(
+    *,
+    options_profits_gross: Decimal,
+    options_losses_gross: Decimal,
+    options_pnl_gross: Decimal,
+    options_profits_net: Decimal,
+    options_losses_net: Decimal,
+    options_pnl_net: Decimal,
+    stock_profits: Decimal,
+    stock_losses: Decimal,
+    stock_net: Decimal,
+) -> Dict[RealizedView, RealizedViewTotals]:
+    """Construct realized breakdowns for options, stock, and combined views."""
+    options_totals = RealizedViewTotals(
+        profits_gross=options_profits_gross,
+        losses_gross=options_losses_gross,
+        net_gross=options_pnl_gross,
+        profits_net=options_profits_net,
+        losses_net=options_losses_net,
+        net_net=options_pnl_net,
+    )
+    stock_totals = RealizedViewTotals(
+        profits_gross=stock_profits,
+        losses_gross=stock_losses,
+        net_gross=stock_net,
+        profits_net=stock_profits,
+        losses_net=stock_losses,
+        net_net=stock_net,
+    )
+    combined_totals = RealizedViewTotals(
+        profits_gross=options_profits_gross + stock_profits,
+        losses_gross=options_losses_gross + stock_losses,
+        net_gross=options_pnl_gross + stock_net,
+        profits_net=options_profits_net + stock_profits,
+        losses_net=options_losses_net + stock_losses,
+        net_net=options_pnl_net + stock_net,
+    )
+    breakdowns: Dict[RealizedView, RealizedViewTotals] = {
+        "options": options_totals,
+        "stock": stock_totals,
+        "combined": combined_totals,
+    }
+    return breakdowns
+
+
+def _sum_realized_breakdown(periods: List[PeriodMetrics], view: RealizedView) -> RealizedViewTotals:
+    """Sum realized breakdowns for the specified view across all periods."""
+    return RealizedViewTotals(
+        profits_gross=Decimal(sum(p.realized_breakdowns[view].profits_gross for p in periods)),
+        losses_gross=Decimal(sum(p.realized_breakdowns[view].losses_gross for p in periods)),
+        net_gross=Decimal(sum(p.realized_breakdowns[view].net_gross for p in periods)),
+        profits_net=Decimal(sum(p.realized_breakdowns[view].profits_net for p in periods)),
+        losses_net=Decimal(sum(p.realized_breakdowns[view].losses_net for p in periods)),
+        net_net=Decimal(sum(p.realized_breakdowns[view].net_net for p in periods)),
+    )
 
 
 def _group_date_to_period_key(
@@ -470,6 +564,61 @@ def _aggregate_unrealized_exposure(
                     period_data[period_key]["unrealized_exposure"] += exposure
 
 
+def _parse_stock_lot_closed_date(value: Optional[str]) -> Optional[date]:
+    """Parse a persisted stock lot closed_at timestamp into a date."""
+    if not value:
+        return None
+    normalized = value
+    if normalized.endswith("Z"):
+        normalized = normalized[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        try:
+            return date.fromisoformat(value.split("T")[0])
+        except (ValueError, IndexError):
+            return None
+    return parsed.date()
+
+
+def _empty_stock_realized_entry() -> Dict[str, Decimal]:
+    """Return a zeroed-out holder for stock realized P&L components."""
+    return {"profits": ZERO, "losses": ZERO, "net": ZERO}
+
+
+def _aggregate_stock_realized_by_period(
+    stock_lots: List[StockLotSummary],
+    period_type: PeriodType,
+    *,
+    since: Optional[date] = None,
+    until: Optional[date] = None,
+) -> Dict[str, Dict[str, Decimal]]:
+    """Aggregate realized stock P&L by lot closing period."""
+    period_data: Dict[str, Dict[str, Decimal]] = {}
+
+    for lot in stock_lots:
+        if lot.status.lower() != "closed":
+            continue
+
+        closed_date = _parse_stock_lot_closed_date(lot.closed_at)
+        if closed_date is None:
+            continue
+        if not _date_in_range(closed_date, since, until):
+            continue
+
+        period_key, _ = _group_date_to_period_key(closed_date, period_type)
+        entry = period_data.setdefault(period_key, _empty_stock_realized_entry())
+
+        realized_total = Decimal(lot.realized_pnl_total)
+        if realized_total >= ZERO:
+            entry["profits"] += realized_total
+        else:
+            entry["losses"] += -realized_total
+        entry["net"] += realized_total
+
+    return period_data
+
+
 def _aggregate_pnl_by_period(
     matched_legs: List[MatchedLeg],
     transactions: List[NormalizedOptionTransaction],
@@ -586,6 +735,7 @@ def _create_empty_report(
             opening_fees=ZERO,
             closing_fees=ZERO,
             total_fees=ZERO,
+            realized_breakdowns=_empty_realized_breakdowns(),
         ),
     )
 
@@ -635,11 +785,16 @@ def _generate_period_label(
 def _build_period_metrics(
     cash_flow_by_period: Dict[str, Dict[str, Decimal]],
     pnl_by_period: Dict[str, Dict[str, Decimal]],
+    stock_realized_by_period: Dict[str, Dict[str, Decimal]],
     filtered_transactions: List[NormalizedOptionTransaction],
     period_type: PeriodType,
 ) -> List[PeriodMetrics]:
     """Combine cash flow and P&L data into PeriodMetrics objects."""
-    all_period_keys = set(cash_flow_by_period.keys()) | set(pnl_by_period.keys())
+    all_period_keys = (
+        set(cash_flow_by_period.keys())
+        | set(pnl_by_period.keys())
+        | set(stock_realized_by_period.keys())
+    )
     periods: List[PeriodMetrics] = []
 
     for period_key in sorted(all_period_keys):
@@ -647,6 +802,7 @@ def _build_period_metrics(
 
         cash_flow = cash_flow_by_period.get(period_key, {"credits": ZERO, "debits": ZERO})
         pnl = pnl_by_period.get(period_key, _empty_period_entry())
+        stock_realized = stock_realized_by_period.get(period_key, _empty_stock_realized_entry())
 
         credits = Decimal(cash_flow["credits"])
         debits = Decimal(cash_flow["debits"])
@@ -663,6 +819,21 @@ def _build_period_metrics(
         opening_fees = Decimal(pnl["opening_fees"])
         closing_fees = Decimal(pnl["closing_fees"])
         total_fees = Decimal(pnl["total_fees"])
+        stock_profits = Decimal(stock_realized["profits"])
+        stock_losses = Decimal(stock_realized["losses"])
+        stock_net = Decimal(stock_realized["net"])
+
+        realized_breakdowns = _build_realized_breakdowns(
+            options_profits_gross=realized_profits_gross,
+            options_losses_gross=realized_losses_gross,
+            options_pnl_gross=realized_pnl_gross,
+            options_profits_net=realized_profits_net,
+            options_losses_net=realized_losses_net,
+            options_pnl_net=realized_pnl_net,
+            stock_profits=stock_profits,
+            stock_losses=stock_losses,
+            stock_net=stock_net,
+        )
 
         periods.append(
             PeriodMetrics(
@@ -683,6 +854,7 @@ def _build_period_metrics(
                 opening_fees=opening_fees,
                 closing_fees=closing_fees,
                 total_fees=total_fees,
+                realized_breakdowns=realized_breakdowns,
             )
         )
 
@@ -705,6 +877,21 @@ def _calculate_totals(periods: List[PeriodMetrics]) -> PeriodMetrics:
     total_opening_fees = Decimal(sum(p.opening_fees for p in periods))
     total_closing_fees = Decimal(sum(p.closing_fees for p in periods))
     total_fees = total_opening_fees + total_closing_fees
+    stock_totals = _sum_realized_breakdown(periods, "stock")
+    combined_totals = _sum_realized_breakdown(periods, "combined")
+    options_totals = RealizedViewTotals(
+        profits_gross=total_realized_profits_gross,
+        losses_gross=total_realized_losses_gross,
+        net_gross=total_realized_pnl_gross,
+        profits_net=total_realized_profits_net,
+        losses_net=total_realized_losses_net,
+        net_net=total_realized_pnl_net,
+    )
+    realized_breakdowns: Dict[RealizedView, RealizedViewTotals] = {
+        "options": options_totals,
+        "stock": stock_totals,
+        "combined": combined_totals,
+    }
 
     return PeriodMetrics(
         period_key="total",
@@ -724,6 +911,7 @@ def _calculate_totals(periods: List[PeriodMetrics]) -> PeriodMetrics:
         opening_fees=total_opening_fees,
         closing_fees=total_closing_fees,
         total_fees=total_fees,
+        realized_breakdowns=realized_breakdowns,
     )
 
 
@@ -791,6 +979,21 @@ def generate_cash_flow_pnl_report(
     # Filter transactions by date range for cash flow aggregation
     filtered_txns = _filter_transactions_by_date(all_normalized_txns, since=since, until=until)
 
+    # Aggregate realized stock P&L from closed lots
+    stock_lot_summaries = fetch_stock_lot_summaries(
+        repository,
+        account_name=account_name,
+        account_number=account_number,
+        ticker=ticker,
+        status="closed",
+    )
+    stock_realized_by_period = _aggregate_stock_realized_by_period(
+        stock_lot_summaries,
+        period_type,
+        since=since,
+        until=until,
+    )
+
     # Aggregate cash flow and P&L by period
     cash_flow_by_period = _aggregate_cash_flow_by_period(filtered_txns, period_type)
     pnl_by_period = _aggregate_pnl_by_period(
@@ -804,7 +1007,13 @@ def generate_cash_flow_pnl_report(
     )
 
     # Build period metrics and calculate totals
-    periods = _build_period_metrics(cash_flow_by_period, pnl_by_period, filtered_txns, period_type)
+    periods = _build_period_metrics(
+        cash_flow_by_period,
+        pnl_by_period,
+        stock_realized_by_period,
+        filtered_txns,
+        period_type,
+    )
     totals = _calculate_totals(periods)
 
     return CashFlowPnlReport(

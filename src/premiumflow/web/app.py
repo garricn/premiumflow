@@ -51,6 +51,12 @@ DEFAULT_PAGE_SIZE = 20
 MAX_PAGE_SIZE = 100
 MIN_PAGE_SIZE = 5
 
+REALIZED_VIEW_CHOICES: dict[str, dict[str, str]] = {
+    "options": {"label": "Options", "select": "Options Only"},
+    "stock": {"label": "Stock", "select": "Stock Only"},
+    "combined": {"label": "Combined", "select": "Options + Stock"},
+}
+
 
 def _default_form() -> dict[str, object]:
     return {
@@ -880,6 +886,7 @@ def create_app() -> FastAPI:
         since: str | None = Query(default=None),
         until: str | None = Query(default=None),
         assignment_handling: str = Query(default="include"),
+        realized_view: str = Query(default="options"),
         repository: SQLiteRepository = Depends(get_repository),
     ) -> HTMLResponse:
         """Display cash flow and P&L dashboard view."""
@@ -892,6 +899,10 @@ def create_app() -> FastAPI:
         assignment_mode = assignment_handling.strip().lower() if assignment_handling else "include"
         if assignment_mode not in ("include", "exclude"):
             assignment_mode = "include"
+        realized_mode = realized_view.strip().lower() if realized_view else "options"
+        if realized_mode not in REALIZED_VIEW_CHOICES:
+            realized_mode = "options"
+        realized_mode_label = REALIZED_VIEW_CHOICES[realized_mode]["label"]
 
         # Get unique accounts for dropdown
         accounts = _get_unique_accounts(repository)
@@ -917,6 +928,7 @@ def create_app() -> FastAPI:
             "since": since or "",
             "until": until or "",
             "assignment_handling": assignment_mode,
+            "realized_view": realized_mode,
         }
 
         # Generate report if account is available
@@ -953,6 +965,8 @@ def create_app() -> FastAPI:
                 "filters": filters,
                 "format_currency": format_currency,
                 "error_message": error_message,
+                "realized_view_choices": REALIZED_VIEW_CHOICES,
+                "realized_view_label": realized_mode_label,
             },
         )
 
