@@ -323,6 +323,8 @@ class SQLiteStorage:
                     conn.execute("DELETE FROM imports WHERE id = ?", (existing_id,))
                 else:
                     raise DuplicateImportError(parsed.account_name, parsed.account_number)
+            stock_transactions = getattr(parsed, "stock_transactions", []) or []
+            total_transactions = len(parsed.transactions) + len(stock_transactions)
             cur = conn.execute(
                 """
                 INSERT INTO imports (
@@ -340,7 +342,7 @@ class SQLiteStorage:
                     context.ticker,
                     context.strategy,
                     int(context.open_only),
-                    len(parsed.transactions),
+                    total_transactions,
                 ),
             )
             import_id = cur.lastrowid
@@ -387,7 +389,6 @@ class SQLiteStorage:
                     option_rows_to_insert,
                 )
             stock_rows_to_insert = []
-            stock_transactions = getattr(parsed, "stock_transactions", []) or []
             for index, stock_txn in enumerate(stock_transactions, start=1):
                 raw_row = dict(stock_txn.raw) if stock_txn.raw else {}
                 row_number_value = raw_row.get(CSV_ROW_NUMBER_KEY, index)

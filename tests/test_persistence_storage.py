@@ -115,7 +115,7 @@ def test_store_import_creates_records(tmp_path, monkeypatch):
         ).fetchall()
         assert len(imports) == 1
         assert imports[0][0] == str(csv_path)
-        assert imports[0][2] == 2
+        assert imports[0][2] == 3
         assert imports[0][3] == "TSLA"
 
         transactions = conn.execute(
@@ -193,6 +193,30 @@ def test_store_import_handles_fractional_shares(tmp_path, monkeypatch):
         ).fetchone()[0]
 
     assert stored_quantity == "0.5"
+
+
+def test_store_import_counts_stock_only_rows(tmp_path, monkeypatch):
+    db_path = tmp_path / "premiumflow.db"
+    csv_path = tmp_path / "stock_only.csv"
+    csv_path.write_text("stock-only", encoding="utf-8")
+    monkeypatch.setenv(storage_module.DB_ENV_VAR, str(db_path))
+
+    parsed = _make_parsed([], stock_transactions=[_make_stock_transaction()])
+
+    result = storage_module.store_import_result(
+        parsed,
+        source_path=str(csv_path),
+        options_only=False,
+        ticker=None,
+        strategy=None,
+        open_only=False,
+    )
+
+    assert result.status == "inserted"
+    with sqlite3.connect(db_path) as conn:
+        row_count = conn.execute("SELECT row_count FROM imports").fetchone()[0]
+
+    assert row_count == 1
 
 
 def test_store_import_reuses_account(tmp_path, monkeypatch):
