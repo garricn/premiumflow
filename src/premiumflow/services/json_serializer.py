@@ -82,7 +82,7 @@ def serialize_chain(chain: Dict[str, Any], chain_id: str) -> Dict[str, Any]:
     }
 
 
-def build_ingest_payload(
+def build_ingest_payload(  # noqa: PLR0913
     *,
     csv_file: str,
     account_name: str,

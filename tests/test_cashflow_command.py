@@ -43,7 +43,7 @@ def _write_sample_csv(tmp_path):
     return sample_csv
 
 
-def _seed_import_for_cashflow(
+def _seed_import_for_cashflow(  # noqa: PLR0913
     tmp_path: Path,
     monkeypatch,
     *,

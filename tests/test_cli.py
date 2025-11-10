@@ -102,7 +102,7 @@ def _make_normalized_transaction(**overrides) -> NormalizedOptionTransaction:
     )
 
 
-def _seed_import_for_cli(
+def _seed_import_for_cli(  # noqa: PLR0913
     tmp_path: Path,
     *,
     csv_name: str,

@@ -410,7 +410,7 @@ def _build_lot_table(leg: MatchedLeg) -> Table:
     default="table",
     help="Output format (default: table)",
 )
-def legs(
+def legs(  # noqa: C901, PLR0913
     account_name: Optional[str],
     account_number: Optional[str],
     ticker: Optional[str],

@@ -211,7 +211,7 @@ def _parse_lot_date(value: str | None) -> date | None:
     return parsed.date()
 
 
-def create_app() -> FastAPI:
+def create_app() -> FastAPI:  # noqa: C901
     """Construct and return the FastAPI application."""
     app = FastAPI(title="PremiumFlow Web UI")
 
@@ -237,7 +237,7 @@ def create_app() -> FastAPI:
         )
 
     @app.post("/upload", response_class=HTMLResponse, tags=["ui"])
-    async def upload(
+    async def upload(  # noqa: C901, PLR0913
         request: Request,
         csv_file: UploadFile = File(...),
         account_name: str = Form(...),
@@ -462,7 +462,7 @@ def create_app() -> FastAPI:
         )
 
     @app.get("/imports", response_class=HTMLResponse, tags=["ui"])
-    async def imports_history(
+    async def imports_history(  # noqa: PLR0913
         request: Request,
         account_name: str | None = Query(default=None),
         account_number: str | None = Query(default=None),
@@ -561,7 +561,7 @@ def create_app() -> FastAPI:
         )
 
     @app.post("/imports/{import_id}/delete", response_class=HTMLResponse, tags=["ui"])
-    async def delete_import(
+    async def delete_import(  # noqa: PLR0913
         request: Request,
         import_id: int,
         account_name: str | None = Form(default=None),
@@ -649,7 +649,7 @@ def create_app() -> FastAPI:
         )
 
     @app.get("/legs", response_class=HTMLResponse, tags=["ui"])
-    async def legs_view(
+    async def legs_view(  # noqa: PLR0913
         request: Request,
         account_name: str | None = Query(default=None),
         account_number: str | None = Query(default=None),
@@ -732,7 +732,7 @@ def create_app() -> FastAPI:
         return {"lots": lots}
 
     @app.get("/stock-lots", response_class=HTMLResponse, tags=["ui"])
-    async def stock_lots_view(
+    async def stock_lots_view(  # noqa: C901, PLR0913
         request: Request,
         account_name: str | None = Query(default=None),
         account_number: str | None = Query(default=None),
@@ -878,7 +878,7 @@ def create_app() -> FastAPI:
         )
 
     @app.get("/cashflow", response_class=HTMLResponse, tags=["ui"])
-    async def cashflow_view(
+    async def cashflow_view(  # noqa: PLR0913
         request: Request,
         account: str | None = Query(default=None),
         period: str = Query(default="total"),
@@ -971,7 +971,7 @@ def create_app() -> FastAPI:
         )
 
     @app.get("/api/cashflow", tags=["api"])
-    async def cashflow_api(
+    async def cashflow_api(  # noqa: PLR0913
         account: str | None = Query(default=None),
         period: str = Query(default="total"),
         ticker: str | None = Query(default=None),

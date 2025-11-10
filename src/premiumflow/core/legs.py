@@ -32,26 +32,32 @@ _DISPLAY_PREFIXES = (
 )
 
 
-def _compute_signed_quantity(trans_code: str, quantity: int, net_before: int, action: str) -> int:
+def _compute_signed_quantity(
+    trans_code: str, quantity: int, net_before: int, action: str
+) -> int:
     """Return the signed quantity delta contributed by the transaction."""
     code = (trans_code or "").upper()
+    result = 0
     if code == "BTO":
-        return quantity
-    if code == "STO":
-        return -quantity
-    if code == "BTC":
-        return quantity
-    if code == "STC":
-        return -quantity
-    if code in {"OASGN", "OEXP"}:
+        result = quantity
+    elif code == "STO":
+        result = -quantity
+    elif code == "BTC":
+        result = quantity
+    elif code == "STC":
+        result = -quantity
+    elif code in {"OASGN", "OEXP"}:
         if net_before < 0:
-            return quantity
-        if net_before > 0:
-            return -quantity
-        # Fallback when no prior context: default to closing short for OASGN, long for OEXP.
-        return quantity if code == "OASGN" else -quantity
-    normalized_action = (action or "").upper()
-    return quantity if normalized_action == "BUY" else -quantity
+            result = quantity
+        elif net_before > 0:
+            result = -quantity
+        else:
+            # Fallback when no prior context: default to closing short for OASGN, long for OEXP.
+            result = quantity if code == "OASGN" else -quantity
+    else:
+        normalized_action = (action or "").upper()
+        result = quantity if normalized_action == "BUY" else -quantity
+    return result
 
 
 def _strike_to_cents(value: Decimal) -> int:

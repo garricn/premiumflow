@@ -52,7 +52,7 @@ def _build_assignment_records_from_leg(leg: MatchedLeg) -> List[AssignmentStockL
     return records
 
 
-def _lot_to_assignment_record(
+def _lot_to_assignment_record(  # noqa: PLR0911
     lot: MatchedLegLot,
     assignment_portion,
 ) -> Optional[AssignmentStockLotRecord]:

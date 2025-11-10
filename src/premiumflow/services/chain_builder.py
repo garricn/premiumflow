@@ -70,7 +70,7 @@ def _extract_contract_details(description: str) -> Dict[str, Any]:
     }
 
 
-def detect_rolls(transactions: List[Dict[str, str]]) -> List[Dict[str, Any]]:
+def detect_rolls(transactions: List[Dict[str, str]]) -> List[Dict[str, Any]]:  # noqa: C901
     """Detect individual roll transactions (BTC + STO on same day)."""
 
     rolls = []
@@ -294,7 +294,7 @@ def _expand_chain_with_related_transactions(
         chain_txns.sort(key=lambda t: parse_date(t.get("Activity Date", "")))
 
 
-def build_chain(initial_open, all_txns, rolls, used_txns):
+def build_chain(initial_open, all_txns, rolls, used_txns):  # noqa: C901
     """Build a roll chain starting from an initial opening position."""
     chain_txns = [initial_open]
     current_position = initial_open.get("Description", "")

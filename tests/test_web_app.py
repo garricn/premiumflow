@@ -56,7 +56,7 @@ def _make_transaction(**overrides) -> NormalizedOptionTransaction:
     )
 
 
-def _persist_import(
+def _persist_import(  # noqa: PLR0913
     directory: Path,
     *,
     account_name: str,

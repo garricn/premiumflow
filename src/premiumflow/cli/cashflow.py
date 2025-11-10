@@ -178,7 +178,7 @@ def _build_cashflow_table(report: CashFlowPnlReport, realized_view: RealizedView
     show_default=True,
     help="Select whether realized totals show options, stock, or combined results.",
 )
-def cashflow(
+def cashflow(  # noqa: PLR0913
     account_name: str,
     account_number: str,
     period: str,

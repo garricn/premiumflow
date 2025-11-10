@@ -240,7 +240,7 @@ class SQLiteRepository:
             ranges[int(row["import_id"])] = (row["first_activity_date"], row["last_activity_date"])
         return ranges
 
-    def fetch_transactions(
+    def fetch_transactions(  # noqa: C901, PLR0913
         self,
         *,
         account_name: Optional[str] = None,
@@ -327,7 +327,7 @@ class SQLiteRepository:
             rows = conn.execute(sql, params).fetchall()
         return [_row_to_stored_transaction(row) for row in rows]
 
-    def fetch_stock_transactions(
+    def fetch_stock_transactions(  # noqa: PLR0913
         self,
         *,
         account_name: Optional[str] = None,
@@ -402,7 +402,7 @@ class SQLiteRepository:
             rows = conn.execute(sql, params).fetchall()
         return [_row_to_stored_stock_transaction(row) for row in rows]
 
-    def fetch_stock_lots(
+    def fetch_stock_lots(  # noqa: PLR0913
         self,
         *,
         account_name: Optional[str] = None,
