@@ -90,6 +90,14 @@ PremiumFlow targets Python **3.11** and uses [uv](https://github.com/astral-sh/u
    uv run pytest
    ```
 
+### Testing & Coverage
+
+`uv run pytest` now runs tests with coverage instrumentation (`pytest-cov` is included in the dev extras).
+The terminal output highlights the total coverage percentage and shows missing lines per file so you can quickly detect gaps,
+and an HTML report lands at `htmlcov/index.html` for a browsable module-by-module breakdown. Coverage must stay at or above
+**85% overall**—`pytest` fails locally and in CI when coverage falls beneath that bar—so inspect the terminal summary and
+open `htmlcov/index.html` after a run to verify the lines you just added are exercised.
+
 To add or upgrade dependencies, edit `pyproject.toml` and regenerate the lockfile:
 
 ```bash
