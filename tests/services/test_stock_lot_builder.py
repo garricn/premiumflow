@@ -16,6 +16,7 @@ from premiumflow.persistence import repository as repository_module
 from premiumflow.persistence import storage as storage_module
 from premiumflow.persistence.storage import store_import_result
 from premiumflow.services.stock_lot_builder import rebuild_stock_lots
+from premiumflow.services.stock_lots import fetch_stock_lot_summaries
 
 
 def _make_transaction(**overrides) -> NormalizedOptionTransaction:
@@ -215,6 +216,15 @@ def test_rebuild_stock_lots_assignments_only(repository, tmp_path):
     assert ethu_row["source_transaction_id"] == next(
         row["id"] for row in assignment_ids if row["instrument"] == "ETHU"
     )
+
+    summaries = fetch_stock_lot_summaries(
+        repository,
+        account_name="Primary Account",
+        account_number="ACCT-1",
+    )
+    open_statuses = {summary.status for summary in summaries}
+    assert open_statuses == {"open"}
+    assert all(summary.realized_pnl_total == Decimal("0") for summary in summaries)
 
 
 def test_rebuild_stock_lots_skips_assignment_follow_on_buy(repository, tmp_path):
@@ -508,3 +518,29 @@ def test_rebuild_stock_lots_with_trades_closes_fifo(repository, tmp_path):
     assert Decimal(open_tsla["share_price_total"]) == Decimal("6000.00")
     assert Decimal(open_tsla["net_credit_total"]) == Decimal("0.00")
     assert open_tsla["direction"] == "long"
+
+    summaries = fetch_stock_lot_summaries(
+        repository,
+        account_name="Primary Account",
+        account_number="ACCT-1",
+    )
+    open_lots = [summary for summary in summaries if summary.status == "open"]
+    assert all(summary.realized_pnl_total == Decimal("0") for summary in open_lots)
+
+    hood_closed_summaries = [
+        summary for summary in summaries if summary.symbol == "HOOD" and summary.status == "closed"
+    ]
+    assert {summary.realized_pnl_total for summary in hood_closed_summaries} == {
+        Decimal("208.00"),
+        Decimal("408.00"),
+    }
+
+    ethu_summary = next(
+        summary for summary in summaries if summary.symbol == "ETHU" and summary.status == "closed"
+    )
+    assert ethu_summary.realized_pnl_total == Decimal("675.00")
+
+    tsla_summary = next(
+        summary for summary in summaries if summary.symbol == "TSLA" and summary.status == "closed"
+    )
+    assert tsla_summary.realized_pnl_total == Decimal("750.00")
