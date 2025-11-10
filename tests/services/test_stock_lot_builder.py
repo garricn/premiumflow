@@ -544,3 +544,76 @@ def test_rebuild_stock_lots_with_trades_closes_fifo(repository, tmp_path):
         summary for summary in summaries if summary.symbol == "TSLA" and summary.status == "closed"
     )
     assert tsla_summary.realized_pnl_total == Decimal("750.00")
+
+
+def test_rebuild_stock_lots_handles_fractional_transactions(repository, tmp_path):
+    """Fractional share trades are aggregated into whole-share lots without phantom shorts."""
+    _seed_import(
+        tmp_path,
+        account_name="Primary Account",
+        account_number="ACCT-1",
+        csv_name="fractional-shares.csv",
+        transactions=[],
+        stock_transactions=[
+            _make_stock_transaction(
+                instrument="AAPL",
+                action="BUY",
+                quantity=Decimal("5"),
+                price=Decimal("100.00"),
+                amount=Decimal("-500.00"),
+                activity_date=date(2025, 7, 1),
+            ),
+            _make_stock_transaction(
+                instrument="AAPL",
+                action="BUY",
+                quantity=Decimal("5"),
+                price=Decimal("100.00"),
+                amount=Decimal("-500.00"),
+                activity_date=date(2025, 7, 2),
+            ),
+            _make_stock_transaction(
+                instrument="AAPL",
+                action="BUY",
+                quantity=Decimal("0.40"),
+                price=Decimal("100.00"),
+                amount=Decimal("-40.00"),
+                activity_date=date(2025, 7, 3),
+            ),
+            _make_stock_transaction(
+                instrument="AAPL",
+                action="BUY",
+                quantity=Decimal("0.60"),
+                price=Decimal("100.00"),
+                amount=Decimal("-60.00"),
+                activity_date=date(2025, 7, 4),
+            ),
+            _make_stock_transaction(
+                instrument="AAPL",
+                action="SELL",
+                quantity=Decimal("11"),
+                price=Decimal("120.00"),
+                amount=Decimal("1320.00"),
+                activity_date=date(2025, 8, 1),
+            ),
+        ],
+    )
+
+    rebuild_stock_lots(
+        repository,
+        account_name="Primary Account",
+        account_number="ACCT-1",
+    )
+
+    summaries = fetch_stock_lot_summaries(
+        repository,
+        account_name="Primary Account",
+        account_number="ACCT-1",
+        ticker="AAPL",
+    )
+
+    assert summaries, "Expected at least one closed lot for fractional share test."
+    assert all(summary.status == "closed" for summary in summaries)
+    assert all(summary.direction == "long" for summary in summaries)
+
+    total_realized = sum(summary.realized_pnl_total for summary in summaries)
+    assert total_realized == Decimal("220.00")

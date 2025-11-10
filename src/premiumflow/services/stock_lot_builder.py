@@ -299,11 +299,10 @@ def _stock_trade_events(
         key = (symbol, activity_date, event_quantity)
         key_counts[key] = key_counts.get(key, 0) + 1
 
-    for txn in transactions:
-        quantity = _safe_int_quantity(txn.quantity)
-        if quantity is None or quantity == 0:
-            continue
+    fractional_long: Dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
+    fractional_short: Dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
 
+    for txn in transactions:
         symbol = (txn.instrument or "").strip().upper()
         if not symbol:
             continue
@@ -312,21 +311,48 @@ def _stock_trade_events(
         price = Decimal(txn.price).quantize(PER_SHARE_QUANTIZER, rounding=ROUND_HALF_UP)
         sequence = 1_000_000 + txn.row_index
         action = (txn.action or "").strip().upper()
+        quantity_decimal = Decimal(txn.quantity)
+        if quantity_decimal == 0:
+            continue
 
-        event_quantity = quantity if action == "BUY" else -quantity
-        key = (symbol, activity_date, event_quantity)
-        if assignment_keys and key in assignment_keys:
-            if _looks_like_assignment_follow_on(txn) or _is_unique_assignment_match(
-                key, txn, key_counts, assignment_prices
-            ):
-                continue
+        integer_quantity = _safe_int_quantity(txn.quantity)
+        if integer_quantity is not None and integer_quantity != 0:
+            event_quantity_int = integer_quantity if action == "BUY" else -integer_quantity
+            key = (symbol, activity_date, event_quantity_int)
+            if assignment_keys and key in assignment_keys:
+                if _looks_like_assignment_follow_on(txn) or _is_unique_assignment_match(
+                    key, txn, key_counts, assignment_prices
+                ):
+                    continue
+
+        quantity_abs = abs(quantity_decimal)
+        whole_shares = int(quantity_abs // Decimal("1"))
+        fractional_shares = quantity_abs - Decimal(whole_shares)
 
         if action == "BUY":
+            if fractional_shares:
+                short_fraction = fractional_short[symbol]
+                if short_fraction:
+                    coverage = min(fractional_shares, short_fraction)
+                    short_fraction -= coverage
+                    fractional_shares -= coverage
+                    fractional_short[symbol] = short_fraction
+                long_fraction = fractional_long[symbol] + fractional_shares
+                extra_from_fraction = 0
+                while long_fraction >= Decimal("1"):
+                    extra_from_fraction += 1
+                    long_fraction -= Decimal("1")
+                fractional_long[symbol] = long_fraction
+                whole_shares += extra_from_fraction
+
+            if whole_shares <= 0:
+                continue
+
             events.append(
                 ShareEvent(
                     symbol=symbol,
                     date=activity_date,
-                    quantity=event_quantity,
+                    quantity=whole_shares,
                     purchase_price_per_share=price,
                     sale_price_per_share=Decimal("0"),
                     additional_credit_per_share=Decimal("0"),
@@ -341,11 +367,32 @@ def _stock_trade_events(
                 )
             )
         elif action == "SELL":
+            if fractional_shares:
+                long_fraction = fractional_long[symbol]
+                if long_fraction >= fractional_shares:
+                    long_fraction -= fractional_shares
+                else:
+                    deficit = fractional_shares - long_fraction
+                    long_fraction = Decimal("0")
+                    fractional_short[symbol] += deficit
+                fractional_long[symbol] = long_fraction
+
+            short_fraction = fractional_short[symbol]
+            extra_short_shares = 0
+            while short_fraction >= Decimal("1"):
+                extra_short_shares += 1
+                short_fraction -= Decimal("1")
+            fractional_short[symbol] = short_fraction
+            whole_shares += extra_short_shares
+
+            if whole_shares <= 0:
+                continue
+
             events.append(
                 ShareEvent(
                     symbol=symbol,
                     date=activity_date,
-                    quantity=event_quantity,
+                    quantity=-whole_shares,
                     purchase_price_per_share=Decimal("0"),
                     sale_price_per_share=price,
                     additional_credit_per_share=Decimal("0"),
