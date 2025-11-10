@@ -102,12 +102,13 @@ def _summarize_lot(lot: StoredStockLot) -> StockLotSummary:
     quantity = lot.quantity
     share_count = abs(quantity)
     divisor = Decimal(share_count) if share_count else Decimal("1")
-    direction_sign = Decimal("1") if quantity >= 0 else Decimal("-1")
 
+    is_closed = lot.status.lower() == "closed"
+    direction_sign = Decimal("1") if quantity >= 0 else Decimal("-1")
     basis_total = lot.share_price_total - (direction_sign * lot.net_credit_total)
     basis_per_share = basis_total / divisor
 
-    realized_total = lot.net_credit_total
+    realized_total = lot.net_credit_total if is_closed else Decimal("0")
     realized_per_share = realized_total / divisor
 
     return StockLotSummary(

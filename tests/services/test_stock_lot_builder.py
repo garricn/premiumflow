@@ -1,4 +1,4 @@
-"""Tests for assignment-driven stock lot builder."""
+"""Tests for the consolidated stock lot builder."""
 
 from __future__ import annotations
 
@@ -7,11 +7,16 @@ from decimal import Decimal
 
 import pytest
 
-from premiumflow.core.parser import NormalizedOptionTransaction, ParsedImportResult
+from premiumflow.core.parser import (
+    NormalizedOptionTransaction,
+    NormalizedStockTransaction,
+    ParsedImportResult,
+)
 from premiumflow.persistence import repository as repository_module
 from premiumflow.persistence import storage as storage_module
 from premiumflow.persistence.storage import store_import_result
-from premiumflow.services.stock_lot_builder import rebuild_assignment_stock_lots
+from premiumflow.services.stock_lot_builder import rebuild_stock_lots
+from premiumflow.services.stock_lots import fetch_stock_lot_summaries
 
 
 def _make_transaction(**overrides) -> NormalizedOptionTransaction:
@@ -33,6 +38,22 @@ def _make_transaction(**overrides) -> NormalizedOptionTransaction:
     )
 
 
+def _make_stock_transaction(**overrides) -> NormalizedStockTransaction:
+    return NormalizedStockTransaction(
+        activity_date=overrides.get("activity_date", date(2025, 9, 1)),
+        process_date=overrides.get("process_date", date(2025, 9, 1)),
+        settle_date=overrides.get("settle_date", date(2025, 9, 3)),
+        instrument=overrides.get("instrument", "TSLA"),
+        description=overrides.get("description", "Tesla Inc"),
+        trans_code=overrides.get("trans_code", overrides.get("action", "BUY")),
+        quantity=overrides.get("quantity", Decimal("100")),
+        price=overrides.get("price", Decimal("100.00")),
+        amount=overrides.get("amount", Decimal("-10000.00")),
+        action=overrides.get("action", "BUY"),
+        raw=overrides.get("raw", {"Activity Date": "09/01/2025"}),
+    )
+
+
 def _seed_import(
     tmp_dir,
     *,
@@ -40,6 +61,7 @@ def _seed_import(
     account_number: str,
     csv_name: str,
     transactions: list[NormalizedOptionTransaction],
+    stock_transactions: list[NormalizedStockTransaction] | None = None,
 ) -> None:
     csv_path = tmp_dir / csv_name
     csv_path.write_text(csv_name, encoding="utf-8")
@@ -47,6 +69,7 @@ def _seed_import(
         account_name=account_name,
         account_number=account_number,
         transactions=transactions,
+        stock_transactions=stock_transactions or [],
     )
     store_import_result(
         parsed,
@@ -74,8 +97,8 @@ def repository(tmp_path, monkeypatch):
     return repository_module.SQLiteRepository()
 
 
-def test_rebuild_assignment_stock_lots_records_put_and_call(repository, tmp_path):
-    """Rebuilding stock lots captures both put and call assignments."""
+def test_rebuild_stock_lots_assignments_only(repository, tmp_path):
+    """Assignments alone produce distinct open lots with aggregated premiums."""
     _seed_import(
         tmp_path,
         account_name="Primary Account",
@@ -145,7 +168,7 @@ def test_rebuild_assignment_stock_lots_records_put_and_call(repository, tmp_path
         ],
     )
 
-    rebuild_assignment_stock_lots(
+    rebuild_stock_lots(
         repository,
         account_name="Primary Account",
         account_number="ACCT-1",
@@ -161,27 +184,22 @@ def test_rebuild_assignment_stock_lots_records_put_and_call(repository, tmp_path
 
     hood_rows = rows_by_symbol["HOOD"]
     assert len(hood_rows) == 2
-    first_hood_row, second_hood_row = sorted(hood_rows, key=lambda r: r["opened_at"])
-    hood_assignment_ids = {row["source_transaction_id"] for row in hood_rows}
-    assert len(hood_assignment_ids) == 2
-    assert [first_hood_row["opened_at"], second_hood_row["opened_at"]] == [
-        "2025-09-05",
-        "2025-09-06",
-    ]
-    assert all(row["assignment_kind"] == "call_assignment" for row in hood_rows)
-    assert all(row["direction"] == "short" for row in hood_rows)
+    assert {row["status"] for row in hood_rows} == {"open"}
+    assert {row["assignment_kind"] for row in hood_rows} == {"call_assignment"}
+    assert {row["direction"] for row in hood_rows} == {"short"}
     assert {row["quantity"] for row in hood_rows} == {-100}
-    assert all(Decimal(row["share_price_total"]) == Decimal("10400") for row in hood_rows)
-    assert all(Decimal(row["open_premium_total"]) == Decimal("108") for row in hood_rows)
-    assert all(Decimal(row["net_credit_total"]) == Decimal("108") for row in hood_rows)
+    assert all(Decimal(row["share_price_total"]) == Decimal("0.00") for row in hood_rows)
+    assert all(Decimal(row["net_credit_total"]) == Decimal("10508.00") for row in hood_rows)
+    assert all(Decimal(row["net_credit_per_share"]) == Decimal("105.0800") for row in hood_rows)
 
     ethu_row = rows_by_symbol["ETHU"][0]
     assert ethu_row["assignment_kind"] == "put_assignment"
     assert ethu_row["direction"] == "long"
+    assert ethu_row["status"] == "open"
     assert ethu_row["quantity"] == 100
-    assert Decimal(ethu_row["share_price_total"]) == Decimal("11000")
-    assert Decimal(ethu_row["open_premium_total"]) == Decimal("175")
-    assert Decimal(ethu_row["net_credit_total"]) == Decimal("175")
+    assert Decimal(ethu_row["share_price_total"]) == Decimal("11000.00")
+    assert Decimal(ethu_row["net_credit_total"]) == Decimal("175.00")
+    assert Decimal(ethu_row["net_credit_per_share"]) == Decimal("1.7500")
 
     # Ensure stock lots reference the assignment transactions
     with repository._storage._connect() as conn:  # type: ignore[attr-defined]
@@ -193,7 +211,409 @@ def test_rebuild_assignment_stock_lots_records_put_and_call(repository, tmp_path
             """
         ).fetchall()
     hood_assignment_ids_db = [row["id"] for row in assignment_ids if row["instrument"] == "HOOD"]
-    assert sorted(hood_assignment_ids) == sorted(hood_assignment_ids_db)
+    hood_record_ids = {row["source_transaction_id"] for row in hood_rows}
+    assert sorted(hood_record_ids) == sorted(hood_assignment_ids_db)
     assert ethu_row["source_transaction_id"] == next(
         row["id"] for row in assignment_ids if row["instrument"] == "ETHU"
     )
+
+    summaries = fetch_stock_lot_summaries(
+        repository,
+        account_name="Primary Account",
+        account_number="ACCT-1",
+    )
+    open_statuses = {summary.status for summary in summaries}
+    assert open_statuses == {"open"}
+    assert all(summary.realized_pnl_total == Decimal("0") for summary in summaries)
+
+
+def test_rebuild_stock_lots_skips_assignment_follow_on_buy(repository, tmp_path):
+    """Robinhood assignment buy rows are ignored when a matching assignment exists."""
+    assignment_description = "2x Ether ETF CUSIP: 92864M798 1 ETHU Option Assigned"
+
+    _seed_import(
+        tmp_path,
+        account_name="Primary Account",
+        account_number="ACCT-1",
+        csv_name="assignment-with-buy.csv",
+        transactions=[
+            _make_transaction(
+                instrument="ETHU",
+                description="ETHU 11/01/2025 Put $110.00",
+                trans_code="STO",
+                option_type="PUT",
+                strike=Decimal("110.00"),
+                expiration=date(2025, 11, 1),
+                price=Decimal("1.75"),
+                amount=Decimal("175.00"),
+                quantity=1,
+                activity_date=date(2025, 10, 24),
+            ),
+            _make_transaction(
+                instrument="ETHU",
+                description="ETHU 11/01/2025 Put $110.00",
+                trans_code="OASGN",
+                option_type="PUT",
+                strike=Decimal("110.00"),
+                expiration=date(2025, 11, 1),
+                price=Decimal("0.00"),
+                amount=None,
+                quantity=1,
+                activity_date=date(2025, 10, 31),
+            ),
+        ],
+        stock_transactions=[
+            _make_stock_transaction(
+                instrument="ETHU",
+                action="BUY",
+                trans_code="BUY",
+                quantity=Decimal("100"),
+                price=Decimal("110.00"),
+                amount=Decimal("-11000.00"),
+                activity_date=date(2025, 10, 31),
+                description=assignment_description,
+                raw={
+                    "Description": assignment_description,
+                    "Activity Date": "10/31/2025",
+                    "Trans Code": "BUY",
+                    "__row_number": "48",
+                },
+            ),
+        ],
+    )
+
+    rebuild_stock_lots(
+        repository,
+        account_name="Primary Account",
+        account_number="ACCT-1",
+    )
+
+    with repository._storage._connect() as conn:  # type: ignore[attr-defined]
+        lot_rows = conn.execute("SELECT * FROM stock_lots").fetchall()
+        stock_txn_rows = conn.execute("SELECT * FROM stock_transactions").fetchall()
+
+    assert len(stock_txn_rows) == 1, "Stock transaction should still be stored"
+    assert len(lot_rows) == 1, "Only the assignment lot should remain"
+    lot = lot_rows[0]
+    assert lot["symbol"] == "ETHU"
+    assert lot["assignment_kind"] == "put_assignment"
+    assert lot["quantity"] == 100
+    assert lot["status"] == "open"
+
+
+def test_rebuild_stock_lots_skips_assignment_when_description_generic(repository, tmp_path):
+    """Fallback detection ignores unique assignment-sized buy even without assignment wording."""
+    _seed_import(
+        tmp_path,
+        account_name="Primary Account",
+        account_number="ACCT-1",
+        csv_name="assignment-generic-buy.csv",
+        transactions=[
+            _make_transaction(
+                instrument="ETHU",
+                description="ETHU 11/01/2025 Put $110.00",
+                trans_code="STO",
+                option_type="PUT",
+                strike=Decimal("110.00"),
+                expiration=date(2025, 11, 1),
+                price=Decimal("1.75"),
+                amount=Decimal("175.00"),
+                quantity=1,
+                activity_date=date(2025, 10, 24),
+            ),
+            _make_transaction(
+                instrument="ETHU",
+                description="ETHU 11/01/2025 Put $110.00",
+                trans_code="OASGN",
+                option_type="PUT",
+                strike=Decimal("110.00"),
+                expiration=date(2025, 11, 1),
+                quantity=1,
+                activity_date=date(2025, 10, 31),
+            ),
+        ],
+        stock_transactions=[
+            _make_stock_transaction(
+                instrument="ETHU",
+                action="BUY",
+                trans_code="BUY",
+                quantity=Decimal("100"),
+                price=Decimal("110.00"),
+                amount=Decimal("-11000.00"),
+                activity_date=date(2025, 10, 31),
+                description="2x Ether ETF CUSIP: 92864M798",
+                raw={
+                    "Description": "2x Ether ETF CUSIP: 92864M798",
+                    "Activity Date": "10/31/2025",
+                    "Trans Code": "BUY",
+                },
+            ),
+        ],
+    )
+
+    rebuild_stock_lots(
+        repository,
+        account_name="Primary Account",
+        account_number="ACCT-1",
+    )
+
+    with repository._storage._connect() as conn:  # type: ignore[attr-defined]
+        lot_rows = conn.execute("SELECT * FROM stock_lots").fetchall()
+
+    assert len(lot_rows) == 1
+    lot = lot_rows[0]
+    assert lot["symbol"] == "ETHU"
+    assert lot["assignment_kind"] == "put_assignment"
+    assert lot["quantity"] == 100
+    assert lot["status"] == "open"
+
+
+def test_rebuild_stock_lots_with_trades_closes_fifo(repository, tmp_path):
+    """Assignments combined with stock trades yield closed lots and FIFO treatment."""
+    _seed_import(
+        tmp_path,
+        account_name="Primary Account",
+        account_number="ACCT-1",
+        csv_name="with-trades.csv",
+        transactions=[
+            _make_transaction(
+                instrument="HOOD",
+                trans_code="STO",
+                option_type="CALL",
+                strike=Decimal("104.00"),
+                expiration=date(2025, 9, 6),
+                price=Decimal("1.08"),
+                amount=Decimal("216.00"),
+                quantity=2,
+                activity_date=date(2025, 8, 28),
+            ),
+            _make_transaction(
+                instrument="HOOD",
+                trans_code="OASGN",
+                option_type="CALL",
+                strike=Decimal("104.00"),
+                expiration=date(2025, 9, 6),
+                quantity=1,
+                activity_date=date(2025, 9, 5),
+            ),
+            _make_transaction(
+                instrument="HOOD",
+                trans_code="OASGN",
+                option_type="CALL",
+                strike=Decimal("104.00"),
+                expiration=date(2025, 9, 6),
+                quantity=1,
+                activity_date=date(2025, 9, 6),
+            ),
+            _make_transaction(
+                instrument="ETHU",
+                trans_code="STO",
+                option_type="PUT",
+                strike=Decimal("110.00"),
+                expiration=date(2025, 11, 1),
+                price=Decimal("1.75"),
+                amount=Decimal("175.00"),
+                activity_date=date(2025, 10, 24),
+            ),
+            _make_transaction(
+                instrument="ETHU",
+                trans_code="OASGN",
+                option_type="PUT",
+                strike=Decimal("110.00"),
+                expiration=date(2025, 11, 1),
+                quantity=1,
+                activity_date=date(2025, 10, 31),
+            ),
+        ],
+        stock_transactions=[
+            _make_stock_transaction(
+                instrument="HOOD",
+                action="BUY",
+                quantity=Decimal("100"),
+                price=Decimal("103.00"),
+                amount=Decimal("-10300.00"),
+                activity_date=date(2025, 9, 9),
+            ),
+            _make_stock_transaction(
+                instrument="HOOD",
+                action="BUY",
+                quantity=Decimal("100"),
+                price=Decimal("101.00"),
+                amount=Decimal("-10100.00"),
+                activity_date=date(2025, 9, 10),
+            ),
+            _make_stock_transaction(
+                instrument="ETHU",
+                action="SELL",
+                quantity=Decimal("100"),
+                price=Decimal("115.00"),
+                amount=Decimal("11500.00"),
+                activity_date=date(2025, 11, 5),
+            ),
+            _make_stock_transaction(
+                instrument="TSLA",
+                action="BUY",
+                quantity=Decimal("80"),
+                price=Decimal("200.00"),
+                amount=Decimal("-16000.00"),
+                activity_date=date(2025, 9, 15),
+            ),
+            _make_stock_transaction(
+                instrument="TSLA",
+                action="SELL",
+                quantity=Decimal("50"),
+                price=Decimal("215.00"),
+                amount=Decimal("10750.00"),
+                activity_date=date(2025, 9, 18),
+            ),
+        ],
+    )
+
+    rebuild_stock_lots(
+        repository,
+        account_name="Primary Account",
+        account_number="ACCT-1",
+    )
+
+    with repository._storage._connect() as conn:  # type: ignore[attr-defined]
+        rows = conn.execute(
+            "SELECT * FROM stock_lots ORDER BY symbol ASC, opened_at ASC, status DESC"
+        ).fetchall()
+
+    assert len(rows) == 5
+
+    hood_rows = [row for row in rows if row["symbol"] == "HOOD"]
+    assert len(hood_rows) == 2
+    assert {row["status"] for row in hood_rows} == {"closed"}
+    assert {row["quantity"] for row in hood_rows} == {-100}
+    assert [row["closed_at"] for row in hood_rows] == ["2025-09-09", "2025-09-10"]
+    assert {Decimal(row["share_price_total"]) for row in hood_rows} == {
+        Decimal("10300.00"),
+        Decimal("10100.00"),
+    }
+    assert {Decimal(row["net_credit_total"]) for row in hood_rows} == {
+        Decimal("208.00"),
+        Decimal("408.00"),
+    }
+
+    ethu_row = next(row for row in rows if row["symbol"] == "ETHU")
+    assert ethu_row["status"] == "closed"
+    assert ethu_row["quantity"] == 100
+    assert ethu_row["closed_at"] == "2025-11-05"
+    assert Decimal(ethu_row["share_price_total"]) == Decimal("11000.00")
+    assert Decimal(ethu_row["net_credit_total"]) == Decimal("675.00")
+    assert Decimal(ethu_row["net_credit_per_share"]) == Decimal("6.75")
+
+    tsla_rows = [row for row in rows if row["symbol"] == "TSLA"]
+    closed_tsla = next(row for row in tsla_rows if row["status"] == "closed")
+    open_tsla = next(row for row in tsla_rows if row["status"] == "open")
+
+    assert closed_tsla["quantity"] == 50
+    assert closed_tsla["closed_at"] == "2025-09-18"
+    assert Decimal(closed_tsla["share_price_total"]) == Decimal("10000.00")
+    assert Decimal(closed_tsla["net_credit_total"]) == Decimal("750.00")
+
+    assert open_tsla["quantity"] == 30
+    assert open_tsla["closed_at"] is None
+    assert Decimal(open_tsla["share_price_total"]) == Decimal("6000.00")
+    assert Decimal(open_tsla["net_credit_total"]) == Decimal("0.00")
+    assert open_tsla["direction"] == "long"
+
+    summaries = fetch_stock_lot_summaries(
+        repository,
+        account_name="Primary Account",
+        account_number="ACCT-1",
+    )
+    open_lots = [summary for summary in summaries if summary.status == "open"]
+    assert all(summary.realized_pnl_total == Decimal("0") for summary in open_lots)
+
+    hood_closed_summaries = [
+        summary for summary in summaries if summary.symbol == "HOOD" and summary.status == "closed"
+    ]
+    assert {summary.realized_pnl_total for summary in hood_closed_summaries} == {
+        Decimal("208.00"),
+        Decimal("408.00"),
+    }
+
+    ethu_summary = next(
+        summary for summary in summaries if summary.symbol == "ETHU" and summary.status == "closed"
+    )
+    assert ethu_summary.realized_pnl_total == Decimal("675.00")
+
+    tsla_summary = next(
+        summary for summary in summaries if summary.symbol == "TSLA" and summary.status == "closed"
+    )
+    assert tsla_summary.realized_pnl_total == Decimal("750.00")
+
+
+def test_rebuild_stock_lots_handles_fractional_transactions(repository, tmp_path):
+    """Fractional share trades are aggregated into whole-share lots without phantom shorts."""
+    _seed_import(
+        tmp_path,
+        account_name="Primary Account",
+        account_number="ACCT-1",
+        csv_name="fractional-shares.csv",
+        transactions=[],
+        stock_transactions=[
+            _make_stock_transaction(
+                instrument="AAPL",
+                action="BUY",
+                quantity=Decimal("5"),
+                price=Decimal("100.00"),
+                amount=Decimal("-500.00"),
+                activity_date=date(2025, 7, 1),
+            ),
+            _make_stock_transaction(
+                instrument="AAPL",
+                action="BUY",
+                quantity=Decimal("5"),
+                price=Decimal("100.00"),
+                amount=Decimal("-500.00"),
+                activity_date=date(2025, 7, 2),
+            ),
+            _make_stock_transaction(
+                instrument="AAPL",
+                action="BUY",
+                quantity=Decimal("0.40"),
+                price=Decimal("100.00"),
+                amount=Decimal("-40.00"),
+                activity_date=date(2025, 7, 3),
+            ),
+            _make_stock_transaction(
+                instrument="AAPL",
+                action="BUY",
+                quantity=Decimal("0.60"),
+                price=Decimal("100.00"),
+                amount=Decimal("-60.00"),
+                activity_date=date(2025, 7, 4),
+            ),
+            _make_stock_transaction(
+                instrument="AAPL",
+                action="SELL",
+                quantity=Decimal("11"),
+                price=Decimal("120.00"),
+                amount=Decimal("1320.00"),
+                activity_date=date(2025, 8, 1),
+            ),
+        ],
+    )
+
+    rebuild_stock_lots(
+        repository,
+        account_name="Primary Account",
+        account_number="ACCT-1",
+    )
+
+    summaries = fetch_stock_lot_summaries(
+        repository,
+        account_name="Primary Account",
+        account_number="ACCT-1",
+        ticker="AAPL",
+    )
+
+    assert summaries, "Expected at least one closed lot for fractional share test."
+    assert all(summary.status == "closed" for summary in summaries)
+    assert all(summary.direction == "long" for summary in summaries)
+
+    total_realized = sum(summary.realized_pnl_total for summary in summaries)
+    assert total_realized == Decimal("220.00")
