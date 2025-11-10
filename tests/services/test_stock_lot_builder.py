@@ -217,6 +217,147 @@ def test_rebuild_stock_lots_assignments_only(repository, tmp_path):
     )
 
 
+def test_rebuild_stock_lots_skips_assignment_follow_on_buy(repository, tmp_path):
+    """Robinhood assignment buy rows are ignored when a matching assignment exists."""
+    assignment_description = "2x Ether ETF CUSIP: 92864M798 1 ETHU Option Assigned"
+
+    _seed_import(
+        tmp_path,
+        account_name="Primary Account",
+        account_number="ACCT-1",
+        csv_name="assignment-with-buy.csv",
+        transactions=[
+            _make_transaction(
+                instrument="ETHU",
+                description="ETHU 11/01/2025 Put $110.00",
+                trans_code="STO",
+                option_type="PUT",
+                strike=Decimal("110.00"),
+                expiration=date(2025, 11, 1),
+                price=Decimal("1.75"),
+                amount=Decimal("175.00"),
+                quantity=1,
+                activity_date=date(2025, 10, 24),
+            ),
+            _make_transaction(
+                instrument="ETHU",
+                description="ETHU 11/01/2025 Put $110.00",
+                trans_code="OASGN",
+                option_type="PUT",
+                strike=Decimal("110.00"),
+                expiration=date(2025, 11, 1),
+                price=Decimal("0.00"),
+                amount=None,
+                quantity=1,
+                activity_date=date(2025, 10, 31),
+            ),
+        ],
+        stock_transactions=[
+            _make_stock_transaction(
+                instrument="ETHU",
+                action="BUY",
+                trans_code="BUY",
+                quantity=Decimal("100"),
+                price=Decimal("110.00"),
+                amount=Decimal("-11000.00"),
+                activity_date=date(2025, 10, 31),
+                description=assignment_description,
+                raw={
+                    "Description": assignment_description,
+                    "Activity Date": "10/31/2025",
+                    "Trans Code": "BUY",
+                    "__row_number": "48",
+                },
+            ),
+        ],
+    )
+
+    rebuild_stock_lots(
+        repository,
+        account_name="Primary Account",
+        account_number="ACCT-1",
+    )
+
+    with repository._storage._connect() as conn:  # type: ignore[attr-defined]
+        lot_rows = conn.execute("SELECT * FROM stock_lots").fetchall()
+        stock_txn_rows = conn.execute("SELECT * FROM stock_transactions").fetchall()
+
+    assert len(stock_txn_rows) == 1, "Stock transaction should still be stored"
+    assert len(lot_rows) == 1, "Only the assignment lot should remain"
+    lot = lot_rows[0]
+    assert lot["symbol"] == "ETHU"
+    assert lot["assignment_kind"] == "put_assignment"
+    assert lot["quantity"] == 100
+    assert lot["status"] == "open"
+
+
+def test_rebuild_stock_lots_skips_assignment_when_description_generic(repository, tmp_path):
+    """Fallback detection ignores unique assignment-sized buy even without assignment wording."""
+    _seed_import(
+        tmp_path,
+        account_name="Primary Account",
+        account_number="ACCT-1",
+        csv_name="assignment-generic-buy.csv",
+        transactions=[
+            _make_transaction(
+                instrument="ETHU",
+                description="ETHU 11/01/2025 Put $110.00",
+                trans_code="STO",
+                option_type="PUT",
+                strike=Decimal("110.00"),
+                expiration=date(2025, 11, 1),
+                price=Decimal("1.75"),
+                amount=Decimal("175.00"),
+                quantity=1,
+                activity_date=date(2025, 10, 24),
+            ),
+            _make_transaction(
+                instrument="ETHU",
+                description="ETHU 11/01/2025 Put $110.00",
+                trans_code="OASGN",
+                option_type="PUT",
+                strike=Decimal("110.00"),
+                expiration=date(2025, 11, 1),
+                quantity=1,
+                activity_date=date(2025, 10, 31),
+            ),
+        ],
+        stock_transactions=[
+            _make_stock_transaction(
+                instrument="ETHU",
+                action="BUY",
+                trans_code="BUY",
+                quantity=Decimal("100"),
+                price=Decimal("110.00"),
+                amount=Decimal("-11000.00"),
+                activity_date=date(2025, 10, 31),
+                description="2x Ether ETF CUSIP: 92864M798",
+                raw={
+                    "Description": "2x Ether ETF CUSIP: 92864M798",
+                    "Activity Date": "10/31/2025",
+                    "Trans Code": "BUY",
+                },
+            ),
+        ],
+    )
+
+    rebuild_stock_lots(
+        repository,
+        account_name="Primary Account",
+        account_number="ACCT-1",
+    )
+
+    with repository._storage._connect() as conn:  # type: ignore[attr-defined]
+        lot_rows = conn.execute("SELECT * FROM stock_lots").fetchall()
+
+    assert len(lot_rows) == 1
+    lot = lot_rows[0]
+    assert lot["symbol"] == "ETHU"
+    assert lot["assignment_kind"] == "put_assignment"
+    assert lot["quantity"] == 100
+    assert lot["status"] == "open"
+
+
 def test_rebuild_stock_lots_with_trades_closes_fifo(repository, tmp_path):
     """Assignments combined with stock trades yield closed lots and FIFO treatment."""
     _seed_import(
@@ -340,15 +481,18 @@ def test_rebuild_stock_lots_with_trades_closes_fifo(repository, tmp_path):
         Decimal("10300.00"),
         Decimal("10100.00"),
     }
-    assert {Decimal(row["net_credit_total"]) for row in hood_rows} == {Decimal("10508.00")}
+    assert {Decimal(row["net_credit_total"]) for row in hood_rows} == {
+        Decimal("208.00"),
+        Decimal("408.00"),
+    }
 
     ethu_row = next(row for row in rows if row["symbol"] == "ETHU")
     assert ethu_row["status"] == "closed"
     assert ethu_row["quantity"] == 100
     assert ethu_row["closed_at"] == "2025-11-05"
     assert Decimal(ethu_row["share_price_total"]) == Decimal("11000.00")
-    assert Decimal(ethu_row["net_credit_total"]) == Decimal("11675.00")
-    assert Decimal(ethu_row["net_credit_per_share"]) == Decimal("116.75")
+    assert Decimal(ethu_row["net_credit_total"]) == Decimal("675.00")
+    assert Decimal(ethu_row["net_credit_per_share"]) == Decimal("6.75")
 
     tsla_rows = [row for row in rows if row["symbol"] == "TSLA"]
     closed_tsla = next(row for row in tsla_rows if row["status"] == "closed")
@@ -357,7 +501,7 @@ def test_rebuild_stock_lots_with_trades_closes_fifo(repository, tmp_path):
     assert closed_tsla["quantity"] == 50
     assert closed_tsla["closed_at"] == "2025-09-18"
     assert Decimal(closed_tsla["share_price_total"]) == Decimal("10000.00")
-    assert Decimal(closed_tsla["net_credit_total"]) == Decimal("10750.00")
+    assert Decimal(closed_tsla["net_credit_total"]) == Decimal("750.00")
 
     assert open_tsla["quantity"] == 30
     assert open_tsla["closed_at"] is None

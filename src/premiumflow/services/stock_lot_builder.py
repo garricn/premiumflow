@@ -5,8 +5,8 @@ from __future__ import annotations
 import datetime as dt
 from collections import defaultdict, deque
 from dataclasses import dataclass
-from decimal import ROUND_HALF_UP, Decimal
-from typing import Deque, List, Optional, Sequence
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
+from typing import Deque, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
 from ..persistence import (
     AssignmentStockLotRecord,
@@ -134,8 +134,16 @@ def _build_share_events(
     trades: Sequence[StoredStockTransaction],
 ) -> List[ShareEvent]:
     events: List[ShareEvent] = []
-    events.extend(_assignment_events(assignments))
-    events.extend(_stock_trade_events(trades))
+    assignment_events = _assignment_events(assignments)
+    events.extend(assignment_events)
+    assignment_keys = {(event.symbol, event.date, event.quantity) for event in assignment_events}
+    assignment_prices: Dict[Tuple[str, dt.date, int], Decimal] = {
+        (event.symbol, event.date, event.quantity): (
+            event.purchase_price_per_share if event.quantity > 0 else event.sale_price_per_share
+        )
+        for event in assignment_events
+    }
+    events.extend(_stock_trade_events(trades, assignment_keys, assignment_prices))
     events.sort(key=lambda event: (event.date, event.sequence, event.symbol))
     return events
 
@@ -269,8 +277,28 @@ def _assignment_events(
     return events
 
 
-def _stock_trade_events(transactions: Sequence[StoredStockTransaction]) -> List[ShareEvent]:
+def _stock_trade_events(
+    transactions: Sequence[StoredStockTransaction],
+    assignment_keys: Optional[Set[Tuple[str, dt.date, int]]] = None,
+    assignment_prices: Optional[Mapping[Tuple[str, dt.date, int], Decimal]] = None,
+) -> List[ShareEvent]:
     events: List[ShareEvent] = []
+    key_counts: Dict[Tuple[str, dt.date, int], int] = {}
+    for txn in transactions:
+        quantity = _safe_int_quantity(txn.quantity)
+        if quantity is None or quantity == 0:
+            continue
+
+        symbol = (txn.instrument or "").strip().upper()
+        if not symbol:
+            continue
+
+        activity_date = dt.date.fromisoformat(txn.activity_date)
+        action = (txn.action or "").strip().upper()
+        event_quantity = quantity if action == "BUY" else -quantity
+        key = (symbol, activity_date, event_quantity)
+        key_counts[key] = key_counts.get(key, 0) + 1
+
     for txn in transactions:
         quantity = _safe_int_quantity(txn.quantity)
         if quantity is None or quantity == 0:
@@ -285,12 +313,20 @@ def _stock_trade_events(transactions: Sequence[StoredStockTransaction]) -> List[
         sequence = 1_000_000 + txn.row_index
         action = (txn.action or "").strip().upper()
 
+        event_quantity = quantity if action == "BUY" else -quantity
+        key = (symbol, activity_date, event_quantity)
+        if assignment_keys and key in assignment_keys:
+            if _looks_like_assignment_follow_on(txn) or _is_unique_assignment_match(
+                key, txn, key_counts, assignment_prices
+            ):
+                continue
+
         if action == "BUY":
             events.append(
                 ShareEvent(
                     symbol=symbol,
                     date=activity_date,
-                    quantity=quantity,
+                    quantity=event_quantity,
                     purchase_price_per_share=price,
                     sale_price_per_share=Decimal("0"),
                     additional_credit_per_share=Decimal("0"),
@@ -309,7 +345,7 @@ def _stock_trade_events(transactions: Sequence[StoredStockTransaction]) -> List[
                 ShareEvent(
                     symbol=symbol,
                     date=activity_date,
-                    quantity=-quantity,
+                    quantity=event_quantity,
                     purchase_price_per_share=Decimal("0"),
                     sale_price_per_share=price,
                     additional_credit_per_share=Decimal("0"),
@@ -324,6 +360,56 @@ def _stock_trade_events(transactions: Sequence[StoredStockTransaction]) -> List[
                 )
             )
     return events
+
+
+def _looks_like_assignment_follow_on(txn: StoredStockTransaction) -> bool:
+    description = (txn.description or "").lower()
+    if "option" in description and ("assigned" in description or "assignment" in description):
+        return True
+
+    try:
+        import json
+
+        raw = json.loads(txn.raw_json or "{}")
+    except (TypeError, json.JSONDecodeError):
+        return False
+
+    raw_description = (raw.get("Description") or "").lower()
+    return "option" in raw_description and (
+        "assigned" in raw_description or "assignment" in raw_description
+    )
+
+
+def _is_unique_assignment_match(
+    key: Tuple[str, dt.date, int],
+    txn: StoredStockTransaction,
+    key_counts: Mapping[Tuple[str, dt.date, int], int],
+    assignment_prices: Optional[Mapping[Tuple[str, dt.date, int], Decimal]],
+) -> bool:
+    if assignment_prices is None:
+        return False
+
+    if key_counts.get(key, 0) != 1:
+        return False
+
+    expected_price = assignment_prices.get(key)
+    if expected_price is None:
+        return False
+
+    try:
+        trade_price = Decimal(txn.price).quantize(PER_SHARE_QUANTIZER, rounding=ROUND_HALF_UP)
+        trade_amount = Decimal(txn.amount).quantize(CURRENCY_QUANTIZER, rounding=ROUND_HALF_UP)
+    except (InvalidOperation, TypeError):
+        return False
+
+    if trade_price != expected_price:
+        return False
+
+    expected_total = _currency(expected_price * Decimal(abs(key[2])))
+    if key[2] > 0:
+        expected_total = -expected_total
+
+    return trade_amount == expected_total
 
 
 def _create_long_lot(event: ShareEvent, quantity: int) -> Optional[LotPosition]:
@@ -375,11 +461,15 @@ def _close_long_lot(lot: LotPosition, event: ShareEvent, quantity: int) -> Stock
     open_premium_total = _currency(lot.premium_per_share * quantity)
     open_fee_total = _currency(lot.fee_per_share * quantity)
 
-    net_credit_per_share_raw = (
-        lot.credit_per_share + event.sale_price_per_share + event.additional_credit_per_share
+    realized_per_share_raw = (
+        lot.credit_per_share
+        + event.sale_price_per_share
+        + event.additional_credit_per_share
+        - lot.cost_per_share
+        - event.fee_per_share
     )
-    net_credit_per_share = _per_share(net_credit_per_share_raw)
-    net_credit_total = _currency(net_credit_per_share_raw * quantity)
+    net_credit_per_share = _per_share(realized_per_share_raw)
+    net_credit_total = _currency(realized_per_share_raw * quantity)
 
     return StockLotRecord(
         symbol=lot.symbol,
@@ -409,8 +499,16 @@ def _close_short_lot(lot: LotPosition, event: ShareEvent, quantity: int) -> Stoc
     open_premium_total = _currency(lot.premium_per_share * quantity)
     open_fee_total = _currency(lot.fee_per_share * quantity)
 
-    net_credit_per_share = _per_share(lot.credit_per_share)
-    net_credit_total = _currency(lot.credit_per_share * quantity)
+    realized_per_share_raw = (
+        lot.credit_per_share
+        + event.sale_price_per_share
+        + event.additional_credit_per_share
+        - event.purchase_price_per_share
+        - lot.cost_per_share
+        - event.fee_per_share
+    )
+    net_credit_per_share = _per_share(realized_per_share_raw)
+    net_credit_total = _currency(realized_per_share_raw * quantity)
 
     return StockLotRecord(
         symbol=lot.symbol,
