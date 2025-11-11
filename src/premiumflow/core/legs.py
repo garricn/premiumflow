@@ -32,9 +32,7 @@ _DISPLAY_PREFIXES = (
 )
 
 
-def _compute_signed_quantity(
-    trans_code: str, quantity: int, net_before: int, action: str
-) -> int:
+def _compute_signed_quantity(trans_code: str, quantity: int, net_before: int, action: str) -> int:
     """Return the signed quantity delta contributed by the transaction."""
     code = (trans_code or "").upper()
     result = 0
