@@ -7,6 +7,7 @@ cash flow and P&L metrics with time-based grouping.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Optional, cast
 
@@ -34,6 +35,20 @@ REALIZED_VIEW_LABELS: dict[RealizedView, str] = {
     "stock": "Stock",
     "combined": "Combined",
 }
+
+
+@dataclass(frozen=True)
+class CashflowCommandArgs:
+    account_name: str
+    account_number: str
+    period: str
+    since: DateInput
+    until: DateInput
+    ticker: Optional[str]
+    no_clamp_periods: bool
+    json_output: bool
+    assignment_handling: AssignmentHandling
+    realized_view: str
 
 
 def _parse_date(value: DateInput) -> Optional[date]:
@@ -178,44 +193,34 @@ def _build_cashflow_table(report: CashFlowPnlReport, realized_view: RealizedView
     show_default=True,
     help="Select whether realized totals show options, stock, or combined results.",
 )
-def cashflow(  # noqa: PLR0913
-    account_name: str,
-    account_number: str,
-    period: str,
-    since: DateInput,
-    until: DateInput,
-    ticker: Optional[str],
-    no_clamp_periods: bool,
-    json_output: bool,
-    assignment_handling: AssignmentHandling,
-    realized_view: str,
-) -> None:
+def cashflow(**options: object) -> None:
     """Display account-level cash flow and P&L metrics with time-based grouping."""
+    args = CashflowCommandArgs(**options)  # type: ignore[arg-type]
     console = Console()
 
     try:
         repo = SQLiteRepository()
 
         # Parse dates
-        since_date = _parse_date(since)
-        until_date = _parse_date(until)
+        since_date = _parse_date(args.since)
+        until_date = _parse_date(args.until)
 
         # Generate report
         report = generate_cash_flow_pnl_report(
             repo,
-            account_name=account_name,
-            account_number=account_number,
-            period_type=period,  # type: ignore[arg-type]
-            ticker=ticker,
+            account_name=args.account_name,
+            account_number=args.account_number,
+            period_type=args.period,  # type: ignore[arg-type]
+            ticker=args.ticker,
             since=since_date,
             until=until_date,
-            clamp_periods_to_range=not no_clamp_periods,
-            assignment_handling=assignment_handling,
+            clamp_periods_to_range=not args.no_clamp_periods,
+            assignment_handling=args.assignment_handling,
         )
 
         # Handle empty state
         if not report.periods:
-            if json_output:
+            if args.json_output:
                 console.print_json(data=serialize_cash_flow_pnl_report(report))
             else:
                 console.print(
@@ -223,10 +228,10 @@ def cashflow(  # noqa: PLR0913
                 )
             return
 
-        realized_view_key = cast(RealizedView, realized_view)
+        realized_view_key = cast(RealizedView, args.realized_view)
 
         # Output based on format
-        if json_output:
+        if args.json_output:
             console.print_json(data=serialize_cash_flow_pnl_report(report))
         else:
             table = _build_cashflow_table(report, realized_view_key)
