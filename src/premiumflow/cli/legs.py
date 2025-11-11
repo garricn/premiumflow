@@ -426,69 +426,85 @@ def _build_lot_table(leg: MatchedLeg) -> Table:
 def legs(**options: object) -> None:
     """Display matched option legs with FIFO matching."""
     args = LegsCommandArgs(**options)  # type: ignore[arg-type]
+    _run_legs_command(args)
+
+
+def _run_legs_command(args: LegsCommandArgs) -> None:
     console = Console()
-
     try:
-        repo = SQLiteRepository()
-        stored_txns = repo.fetch_transactions(
-            account_name=args.account_name or None,
-            account_number=args.account_number or None,
-            ticker=args.ticker or None,
-            since=_parse_date(args.since),
-            until=_parse_date(args.until),
-            status="all",
-        )
-
-        if not stored_txns:
-            if args.output_format == "json":
-                console.print_json(data={"legs": [], "warnings": []})
-            else:
-                console.print(
-                    "[yellow]No transactions found matching the specified filters.[/yellow]"
-                )
-            return
-
-        normalized_txns = [_stored_to_normalized(stored) for stored in stored_txns]
-        all_fills = group_fills_by_account(normalized_txns)
-        matched_map, errors = match_legs_with_errors(all_fills)
-        legs_list = _sorted_legs(matched_map.values())
-
-        if args.status != "all":
-            want_open = args.status == "open"
-            legs_list = [leg for leg in legs_list if leg.is_open == want_open]
-
-        warnings: List[str] = []
-        for (acct_name, acct_number, leg_id), exc, bucket in errors:
-            account_label = format_account_label(acct_name, acct_number)
-            # bucket is guaranteed non-empty by match_legs_with_errors structure
-            descriptor = bucket[0].transaction.description if bucket else "Unknown"
-            warnings.append(f"{account_label} • {leg_id} • {descriptor}: {exc}")
-
-        if args.output_format == "json":
-            payload = {
-                "legs": [serialize_leg(leg) for leg in legs_list],
-                "warnings": warnings,
-            }
-            console.print_json(data=payload)
-            return
-
-        if legs_list:
-            table = _build_leg_table(legs_list)
-            console.print(table)
-            if args.show_lots:
-                for leg in legs_list:
-                    lot_table = _build_lot_table(leg)
-                    console.print(lot_table)
-        else:
-            console.print("[yellow]No matched legs match the requested filters.[/yellow]")
-
-        if warnings:
-            console.print("\n[red]Warnings:[/red]")
-            for message in warnings:
-                console.print(f"- {message}")
-
+        stored_txns = _fetch_leg_transactions(args)
+        _render_leg_results(console, stored_txns, args)
     except click.ClickException:
         raise
     except Exception as exc:  # pragma: no cover - surfaced to user
         console.print(f"[red]Error: {exc}[/red]")
         raise click.Abort() from exc
+
+
+def _fetch_leg_transactions(args: LegsCommandArgs) -> list[MatchedLeg]:
+    repo = SQLiteRepository()
+    return repo.fetch_transactions(
+        account_name=args.account_name or None,
+        account_number=args.account_number or None,
+        ticker=args.ticker or None,
+        since=_parse_date(args.since),
+        until=_parse_date(args.until),
+        status="all",
+    )
+
+
+def _format_leg_warnings(
+    errors: list[tuple[LegKey, Exception, list[MatchedLeg]]]
+) -> list[str]:
+    warnings: List[str] = []
+    for (acct_name, acct_number, leg_id), exc, bucket in errors:
+        account_label = format_account_label(acct_name, acct_number)
+        descriptor = bucket[0].transaction.description if bucket else "Unknown"
+        warnings.append(f"{account_label} • {leg_id} • {descriptor}: {exc}")
+    return warnings
+
+
+def _render_leg_results(console: Console, stored_txns: list[MatchedLeg], args: LegsCommandArgs) -> None:
+    if not stored_txns:
+        _render_empty_leg_state(console, args)
+        return
+
+    normalized_txns = [_stored_to_normalized(stored) for stored in stored_txns]
+    all_fills = group_fills_by_account(normalized_txns)
+    matched_map, errors = match_legs_with_errors(all_fills)
+    legs_list = _sorted_legs(matched_map.values())
+
+    if args.status != "all":
+        want_open = args.status == "open"
+        legs_list = [leg for leg in legs_list if leg.is_open == want_open]
+
+    warnings = _format_leg_warnings(errors)
+    _print_leg_output(console, legs_list, args)
+    if warnings:
+        console.print("\n[red]Warnings:[/red]")
+        for message in warnings:
+            console.print(f"- {message}")
+
+
+def _render_empty_leg_state(console: Console, args: LegsCommandArgs) -> None:
+    if args.output_format == "json":
+        console.print_json(data={"legs": [], "warnings": []})
+    else:
+        console.print("[yellow]No transactions found matching the specified filters.[/yellow]")
+
+
+def _print_leg_output(console: Console, legs_list: list[MatchedLeg], args: LegsCommandArgs) -> None:
+    if args.output_format == "json":
+        payload = {"legs": [serialize_leg(leg) for leg in legs_list], "warnings": []}
+        console.print_json(data=payload)
+        return
+
+    if legs_list:
+        table = _build_leg_table(legs_list)
+        console.print(table)
+        if args.show_lots:
+            for leg in legs_list:
+                lot_table = _build_lot_table(leg)
+                console.print(lot_table)
+    else:
+        console.print("[yellow]No matched legs match the requested filters.[/yellow]")
