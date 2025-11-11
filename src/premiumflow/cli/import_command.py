@@ -9,6 +9,7 @@ serialize raw options transactions extracted from CSV input.
 from __future__ import annotations
 
 import sqlite3
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Literal, Optional, Sequence, Tuple
 
@@ -33,6 +34,22 @@ from ..services.display import format_currency
 from ..services.json_serializer import build_ingest_payload
 from ..services.stock_lot_builder import rebuild_assignment_stock_lots
 from ..services.transactions import normalized_to_csv_dicts
+
+
+@dataclass
+class ImportOptions:
+    """Bundled options for the import command."""
+
+    options_only: bool
+    ticker_symbol: Optional[str]
+    strategy: Optional[str]
+    csv_file: Path
+    open_only: bool
+    account_name: str
+    account_number: str
+    skip_existing: bool
+    replace_existing: bool
+    json_output: bool
 
 
 def _transaction_key_from_txn(txn: NormalizedOptionTransaction) -> tuple:
@@ -134,6 +151,24 @@ def _build_transaction_table(
     return table
 
 
+def _validate_import_options(opts: ImportOptions, ctx: click.Context) -> None:
+    """Validate import options and fail fast if invalid."""
+    if not opts.account_name or not opts.account_name.strip():
+        ctx.fail("--account-name is required when importing transactions.")
+        return
+
+    if not opts.account_number or not opts.account_number.strip():
+        ctx.fail("--account-number is required when importing transactions.")
+        return
+
+    if not opts.csv_file.exists():
+        ctx.fail(f"CSV file not found: {opts.csv_file}")
+        return
+
+    if opts.skip_existing and opts.replace_existing:
+        ctx.fail("--skip-existing and --replace-existing cannot be used together.")
+
+
 def _apply_import_options(func):
     """Attach the shared options used by the CLI import command and its subcommands."""
 
@@ -190,88 +225,113 @@ def _apply_import_options(func):
     return func
 
 
-def _run_import(  # noqa: C901, PLR0913, PLR0911
-    ctx: click.Context,
-    *,
-    options_only,
-    ticker_symbol,
-    strategy,
-    csv_file,
-    open_only,
-    account_name,
-    account_number,
-    skip_existing,
-    replace_existing,
-    json_output,
-    console_label: str,
-) -> None:
-    """Shared implementation used by the CLI import command."""
-
-    console = Console()
-
-    if not account_name or not account_name.strip():
-        ctx.fail("--account-name is required when importing transactions.")
-        return
-
-    if not account_number or not account_number.strip():
-        ctx.fail("--account-number is required when importing transactions.")
-        return
-
-    account_name = account_name.strip()
-    account_number = account_number.strip()
-
-    csv_file = Path(csv_file)
-
-    if not csv_file.exists():
-        ctx.fail(f"CSV file not found: {csv_file}")
-        return
-
-    if skip_existing and replace_existing:
-        ctx.fail("--skip-existing and --replace-existing cannot be used together.")
-        return
-
-    duplicate_strategy: Literal["error", "skip", "replace"] = (
-        "skip" if skip_existing else "replace" if replace_existing else "error"
-    )
-
+def _parse_and_store_import(opts: ImportOptions, ctx: click.Context):
+    """Parse CSV and store import result, returning parsed data and store result."""
     try:
         parsed = load_option_transactions(
-            str(csv_file),
-            account_name=account_name,
-            account_number=account_number,
+            str(opts.csv_file),
+            account_name=opts.account_name,
+            account_number=opts.account_number,
         )
     except ImportValidationError as exc:
         ctx.fail(str(exc))
-        return
+        return None, None
 
-    emit_text = not json_output
-    if emit_text:
-        console.print(f"[blue]{console_label} {csv_file}...[/blue]")
+    duplicate_strategy: Literal["error", "skip", "replace"] = (
+        "skip" if opts.skip_existing else "replace" if opts.replace_existing else "error"
+    )
 
     try:
         store_result = store_import_result(
             parsed,
-            source_path=str(csv_file),
-            options_only=bool(options_only),
-            ticker=(ticker_symbol.strip().upper() if ticker_symbol else None),
-            strategy=strategy,
-            open_only=bool(open_only),
+            source_path=str(opts.csv_file),
+            options_only=bool(opts.options_only),
+            ticker=(opts.ticker_symbol.strip().upper() if opts.ticker_symbol else None),
+            strategy=opts.strategy,
+            open_only=bool(opts.open_only),
             duplicate_strategy=duplicate_strategy,
         )
     except DuplicateImportError as exc:
         ctx.fail(str(exc))
-        return
-    except sqlite3.Error as exc:  # pragma: no cover - storage warning only
+        return None, None
+    except sqlite3.Error:  # pragma: no cover - storage warning only
         store_result = StoreResult(import_id=-1, status="skipped")
-        if emit_text:
-            console.print(
-                f"[yellow]Warning: Failed to persist import data ({exc}). Continuing without storage.[/yellow]"
-            )
 
-    if emit_text and store_result.status == "skipped" and duplicate_strategy == "skip":
+    return parsed, store_result
+
+
+def _emit_storage_status(
+    opts: ImportOptions, store_result: StoreResult, duplicate_strategy: str, console: Console
+) -> None:
+    """Emit storage status messages."""
+    if opts.json_output:
+        return
+
+    if store_result.status == "skipped" and duplicate_strategy == "skip":
         console.print("[yellow]Import already persisted; skipping new storage.[/yellow]")
-    elif emit_text and store_result.status == "replaced":
+    elif store_result.status == "replaced":
         console.print("[cyan]Existing persisted import replaced with new data.[/cyan]")
+    elif store_result.status == "skipped":
+        console.print(
+            "[yellow]Warning: Failed to persist import data. Continuing without storage.[/yellow]"
+        )
+
+
+def _filter_and_emit_transactions(
+    opts: ImportOptions,
+    transactions: List[NormalizedOptionTransaction],
+    console: Console,
+) -> tuple[List[NormalizedOptionTransaction], int]:
+    """Filter transactions and emit status messages."""
+    filtered = _filter_by_ticker(transactions, opts.ticker_symbol)
+
+    if opts.ticker_symbol:
+        ticker_key = opts.ticker_symbol.strip().upper()
+        if not filtered:
+            return [], 0
+        if not opts.json_output:
+            console.print(
+                f"[green]Filtered to {len(filtered)} {ticker_key} options transactions[/green]"
+            )
+    else:
+        if not opts.json_output:
+            console.print(f"[green]Found {len(filtered)} options transactions[/green]")
+
+    filtered = _filter_by_strategy(filtered, opts.strategy)
+    filtered = _sort_transactions(filtered)
+
+    open_count = 0
+    if opts.open_only:
+        filtered, open_count = _filter_open_transactions(filtered)
+        filtered = _sort_transactions(filtered)
+        if not opts.json_output:
+            console.print(f"[cyan]Open positions: {open_count}[/cyan]")
+
+    return filtered, open_count
+
+
+def _run_import(
+    ctx: click.Context,
+    opts: ImportOptions,
+    console_label: str,
+) -> None:
+    """Execute the import operation with the provided options."""
+
+    _validate_import_options(opts, ctx)
+
+    console = Console()
+    if not opts.json_output:
+        console.print(f"[blue]{console_label} {opts.csv_file}...[/blue]")
+
+    parsed, store_result = _parse_and_store_import(opts, ctx)
+    if parsed is None or store_result is None:
+        return
+
+    duplicate_strategy: Literal["error", "skip", "replace"] = (
+        "skip" if opts.skip_existing else "replace" if opts.replace_existing else "error"
+    )
+
+    _emit_storage_status(opts, store_result, duplicate_strategy, console)
 
     if store_result.status != "skipped":
         repository = SQLiteRepository()
@@ -282,64 +342,41 @@ def _run_import(  # noqa: C901, PLR0913, PLR0911
         )
 
     transactions = list(parsed.transactions)
-    filtered_transactions = _filter_by_ticker(transactions, ticker_symbol)
+    filtered_transactions, _ = _filter_and_emit_transactions(opts, transactions, console)
 
-    if ticker_symbol:
-        ticker_key = ticker_symbol.strip().upper()
-        if not filtered_transactions:
-            if json_output:
-                payload = build_ingest_payload(
-                    csv_file=str(csv_file),
-                    account_name=parsed.account_name,
-                    account_number=parsed.account_number,
-                    transactions=[],
-                    chains=[],
-                    options_only=options_only,
-                    ticker=ticker_symbol,
-                    strategy=strategy,
-                    open_only=open_only,
-                )
-                console.print_json(data=payload)
-            else:
-                console.print(
-                    f"[yellow]No options transactions found for ticker {ticker_key}[/yellow]"
-                )
-            return
-        if emit_text:
-            console.print(
-                f"[green]Filtered to {len(filtered_transactions)} {ticker_key} options transactions[/green]"
+    if opts.ticker_symbol and not filtered_transactions:
+        ticker_key = opts.ticker_symbol.strip().upper()
+        if not opts.json_output:
+            console.print(f"[yellow]No options transactions found for ticker {ticker_key}[/yellow]")
+        else:
+            payload = build_ingest_payload(
+                csv_file=str(opts.csv_file),
+                account_name=parsed.account_name,
+                account_number=parsed.account_number,
+                transactions=[],
+                chains=[],
+                options_only=opts.options_only,
+                ticker=opts.ticker_symbol,
+                strategy=opts.strategy,
+                open_only=opts.open_only,
             )
-    else:
-        if emit_text:
-            console.print(f"[green]Found {len(filtered_transactions)} options transactions[/green]")
+            console.print_json(data=payload)
+        return
 
-    filtered_transactions = _filter_by_strategy(filtered_transactions, strategy)
-    filtered_transactions = _sort_transactions(filtered_transactions)
     chain_source_transactions = normalized_to_csv_dicts(filtered_transactions)
-
-    open_position_count = 0
-    if open_only:
-        filtered_transactions, open_position_count = _filter_open_transactions(
-            filtered_transactions
-        )
-        filtered_transactions = _sort_transactions(filtered_transactions)
-        if emit_text:
-            console.print(f"[cyan]Open positions: {open_position_count}[/cyan]")
-        chain_source_transactions = normalized_to_csv_dicts(filtered_transactions)
-
     chains_for_json = detect_roll_chains(chain_source_transactions)
 
-    if json_output:
+    if opts.json_output:
         payload = build_ingest_payload(
-            csv_file=str(csv_file),
+            csv_file=str(opts.csv_file),
             account_name=parsed.account_name,
             account_number=parsed.account_number,
             transactions=filtered_transactions,
             chains=chains_for_json,
-            options_only=options_only,
-            ticker=ticker_symbol,
-            strategy=strategy,
-            open_only=open_only,
+            options_only=opts.options_only,
+            ticker=opts.ticker_symbol,
+            strategy=opts.strategy,
+            open_only=opts.open_only,
         )
         console.print_json(data=payload)
         return
@@ -357,6 +394,39 @@ def _run_import(  # noqa: C901, PLR0913, PLR0911
     console.print(table)
 
 
+def _make_import_options_from_click_params(  # noqa: PLR0913
+    options_only,
+    ticker_symbol,
+    strategy,
+    csv_file,
+    open_only,
+    account_name,
+    account_number,
+    skip_existing,
+    replace_existing,
+    json_output,
+) -> ImportOptions:
+    """
+    Build ImportOptions from Click parameter values.
+
+    Note: PLR0913 (too many arguments) is necessary here because this function
+    receives all the Click option parameters from the decorator. It acts as an
+    adapter between Click's interface and the ImportOptions dataclass.
+    """
+    return ImportOptions(
+        options_only=options_only,
+        ticker_symbol=ticker_symbol,
+        strategy=strategy,
+        csv_file=Path(csv_file),
+        open_only=open_only,
+        account_name=account_name.strip() if account_name else "",
+        account_number=account_number.strip() if account_number else "",
+        skip_existing=skip_existing,
+        replace_existing=replace_existing,
+        json_output=json_output,
+    )
+
+
 @click.group(name="import", invoke_without_command=True)
 @_apply_import_options
 def import_group(  # noqa: PLR0913
@@ -372,14 +442,19 @@ def import_group(  # noqa: PLR0913
     replace_existing,
     json_output,
 ):
-    """Import and manage stored option CSV ingests."""
+    """
+    Import and manage stored option CSV ingests.
+
+    Note: PLR0913 (too many arguments) is necessary because the @_apply_import_options
+    decorator injects all option parameters into the function signature. This is a
+    standard Click pattern.
+    """
 
     if ctx.invoked_subcommand is not None:
         ctx.ensure_object(dict)
         return
 
-    _run_import(
-        ctx,
+    opts = _make_import_options_from_click_params(
         options_only=options_only,
         ticker_symbol=ticker_symbol,
         strategy=strategy,
@@ -390,8 +465,8 @@ def import_group(  # noqa: PLR0913
         skip_existing=skip_existing,
         replace_existing=replace_existing,
         json_output=json_output,
-        console_label="Importing",
     )
+    _run_import(ctx, opts, console_label="Importing")
 
 
 def _format_account_label(import_record) -> str:
