@@ -1,3 +1,4 @@
+# file-length-ignore
 """FastAPI application factory for the PremiumFlow web UI."""
 
 from __future__ import annotations

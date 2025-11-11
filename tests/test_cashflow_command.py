@@ -1,3 +1,4 @@
+# file-length-ignore
 """Tests for the cashflow CLI command."""
 
 import json

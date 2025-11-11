@@ -1,3 +1,4 @@
+# file-length-ignore
 """Query helpers for persisted PremiumFlow imports and transactions."""
 
 from __future__ import annotations

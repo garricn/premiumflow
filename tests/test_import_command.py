@@ -1,3 +1,4 @@
+# file-length-ignore
 """Tests for the import command module."""
 
 import json

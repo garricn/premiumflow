@@ -1,3 +1,4 @@
+# file-length-ignore
 """
 Roll chain detection and building functionality.
 

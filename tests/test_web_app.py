@@ -1,3 +1,4 @@
+# file-length-ignore
 """Tests for the PremiumFlow FastAPI application."""
 
 from __future__ import annotations

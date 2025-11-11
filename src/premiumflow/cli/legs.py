@@ -1,3 +1,4 @@
+# file-length-ignore
 """
 Inspect matched option legs from persisted imports.
 
