@@ -22,6 +22,10 @@
 - Constants: UPPER_CASE; functions/variables: snake_case; classes: PascalCase.
 - Markdown is formatted with mdformat (`uv run mdformat README.md`); shell scripts with shfmt (`shfmt -w scripts`).
 
+### File Length
+
+To encourage modularity and readability, files are limited to a maximum of 400 lines. This is enforced by a pre-commit hook and in the CI pipeline.
+
 ## Testing Guidelines
 
 - Tests rely on pytest; name functions `test_<behavior>` and group by module beneath `tests/<area>/`.

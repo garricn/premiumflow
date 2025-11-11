@@ -1,3 +1,4 @@
+# file-length-ignore
 """Tests for account-level cash flow and P&L reporting service."""
 
 from __future__ import annotations

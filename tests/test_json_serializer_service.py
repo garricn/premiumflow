@@ -1,3 +1,4 @@
+# file-length-ignore
 """Tests for JSON serializer service."""
 
 import unittest

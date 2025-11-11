@@ -1,3 +1,4 @@
+# file-length-ignore
 """CLI integration-related tests for premiumflow commands."""
 
 import json

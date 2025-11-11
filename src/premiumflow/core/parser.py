@@ -1,3 +1,4 @@
+# file-length-ignore
 """
 CSV parsing functionality for roll chain analysis.
 

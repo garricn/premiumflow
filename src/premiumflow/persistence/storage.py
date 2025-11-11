@@ -1,3 +1,4 @@
+# file-length-ignore
 """SQLite-backed persistence layer for premiumflow imports."""
 
 from __future__ import annotations

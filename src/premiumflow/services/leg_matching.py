@@ -1,3 +1,4 @@
+# file-length-ignore
 """FIFO leg matching service.
 
 Transforms :class:`~premiumflow.core.legs.LegFill` sequences into matched lots that pair opening
