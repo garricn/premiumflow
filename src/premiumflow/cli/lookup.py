@@ -44,6 +44,31 @@ def _build_results_table(position_spec: str, transactions: List[dict]) -> Table:
     return table
 
 
+def _filter_matching_transactions(
+    transactions: List[dict],
+    target_symbol: str,
+    target_option: str,
+    strike_decimal: Decimal,
+    expiration_display: str,
+) -> List[dict]:
+    """Filter transactions matching the target option specification."""
+    matches = []
+    for txn in transactions:
+        descriptor = parse_option_description(txn.get("Description", ""))
+        if not descriptor:
+            continue
+        if descriptor.symbol != target_symbol:
+            continue
+        if descriptor.option_type != target_option:
+            continue
+        if descriptor.strike != strike_decimal:
+            continue
+        if descriptor.expiration != expiration_display:
+            continue
+        matches.append(txn)
+    return matches
+
+
 @click.command()
 @click.argument("position_spec")
 @click.option(
@@ -54,7 +79,7 @@ def _build_results_table(position_spec: str, transactions: List[dict]) -> Table:
     show_default=True,
     help="CSV file to search",
 )
-def lookup(position_spec, csv_file):  # noqa: C901
+def lookup(position_spec, csv_file):
     """Look up a specific position in the CSV data."""
     console = Console()
 
@@ -78,20 +103,9 @@ def lookup(position_spec, csv_file):  # noqa: C901
         year_text, month_text, day_text = expiration_parts
         expiration_display = f"{int(month_text):02d}/{int(day_text):02d}/{year_text}"
 
-        matches = []
-        for txn in transactions:
-            descriptor = parse_option_description(txn.get("Description", ""))
-            if not descriptor:
-                continue
-            if descriptor.symbol != target_symbol:
-                continue
-            if descriptor.option_type != target_option:
-                continue
-            if descriptor.strike != strike_decimal:
-                continue
-            if descriptor.expiration != expiration_display:
-                continue
-            matches.append(txn)
+        matches = _filter_matching_transactions(
+            transactions, target_symbol, target_option, strike_decimal, expiration_display
+        )
 
         if matches:
             console.print(f"[green]Found {len(matches)} matching transactions[/green]")
