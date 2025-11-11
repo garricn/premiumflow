@@ -32,6 +32,7 @@ from ..services.leg_matching import (
     group_fills_by_account,
     match_legs_with_errors,
 )
+from ..services.positions import fetch_positions
 from ..services.stock_lot_builder import rebuild_assignment_stock_lots
 from ..services.stock_lots import (
     StockLotSummary,
@@ -874,6 +875,91 @@ def create_app() -> FastAPI:
                 "summary": summary_metrics,
                 "format_currency": format_currency,
                 "error_message": error_message,
+            },
+        )
+
+    @app.get("/positions", response_class=HTMLResponse, tags=["ui"])
+    async def positions_view(
+        request: Request,
+        account_name: str | None = Query(default=None),
+        account_number: str | None = Query(default=None),
+        ticker: str | None = Query(default=None),
+        repository: SQLiteRepository = Depends(get_repository),
+    ) -> HTMLResponse:
+        """Display combined equity and option positions."""
+
+        account_name_filter = (account_name or "").strip() or None
+        account_number_filter = (account_number or "").strip() or None
+        ticker_filter = (ticker or "").strip() or None
+
+        equity_positions, option_positions = fetch_positions(
+            repository,
+            account_name=account_name_filter,
+            account_number=account_number_filter,
+            ticker=ticker_filter,
+        )
+
+        equities_payload = []
+        total_share_count = 0
+        for equity in equity_positions:
+            shares_abs = abs(equity.shares)
+            total_share_count += shares_abs
+            equities_payload.append(
+                {
+                    "account_name": equity.account_name,
+                    "account_number": equity.account_number,
+                    "symbol": equity.symbol,
+                    "direction": equity.direction.upper(),
+                    "shares": shares_abs,
+                    "basis_total": equity.basis_total,
+                    "basis_per_share": equity.basis_per_share,
+                    "realized_total": equity.realized_pnl_total,
+                }
+            )
+
+        options_payload = []
+        total_contract_count = 0
+        for option in option_positions:
+            total_contract_count += option.contracts
+            options_payload.append(
+                {
+                    "account_name": option.account_name,
+                    "account_number": option.account_number,
+                    "symbol": option.symbol,
+                    "option_type": option.option_type.upper(),
+                    "strike": option.strike,
+                    "expiration": option.expiration,
+                    "direction": option.direction.upper(),
+                    "contracts": option.contracts,
+                    "open_credit": option.open_credit,
+                    "open_fees": option.open_fees,
+                    "credit_remaining": option.credit_remaining,
+                }
+            )
+
+        summary = {
+            "equity_count": len(equities_payload),
+            "option_count": len(options_payload),
+            "total_shares": total_share_count,
+            "total_contracts": total_contract_count,
+        }
+
+        filters = {
+            "account_name": (account_name or "").strip(),
+            "account_number": (account_number or "").strip(),
+            "ticker": (ticker or "").strip(),
+        }
+
+        return templates.TemplateResponse(
+            request=request,
+            name="positions.html",
+            context={
+                "title": "Positions",
+                "equities": equities_payload,
+                "options": options_payload,
+                "summary": summary,
+                "filters": filters,
+                "format_currency": format_currency,
             },
         )
 

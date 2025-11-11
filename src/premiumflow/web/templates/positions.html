@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{ title }} • PremiumFlow Web UI</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='site.css') }}" />
+  </head>
+  <body>
+    <header>
+      <h1>{{ title }}</h1>
+      <nav class="top-nav">
+        <a href="{{ url_for('index') }}">Upload CSV</a>
+        <a href="{{ url_for('imports_history') }}">View import history</a>
+        <a href="{{ url_for('legs_view') }}">Matched legs</a>
+        <a href="{{ url_for('cashflow_view') }}">Cash Flow &amp; P&amp;L</a>
+        <a href="{{ url_for('positions_view') }}" class="active">Positions</a>
+        <a href="{{ url_for('stock_lots_view') }}">Stock lots</a>
+      </nav>
+      <p>
+        Review your current equity and option holdings derived from PremiumFlow's matched legs and
+        stock lots. Compare share and contract counts, track average basis, and reconcile remaining
+        credits against your brokerage.
+      </p>
+    </header>
+    <main>
+      <section class="filters">
+        <form method="get" class="filters-form">
+          <label class="field">
+            <span>Account name</span>
+            <input type="text" name="account_name" value="{{ filters.account_name }}" />
+          </label>
+          <label class="field">
+            <span>Account number</span>
+            <input type="text" name="account_number" value="{{ filters.account_number }}" />
+          </label>
+          <label class="field">
+            <span>Ticker</span>
+            <input type="text" name="ticker" value="{{ filters.ticker }}" />
+          </label>
+          <button type="submit" class="button primary">Apply filters</button>
+          <a href="{{ url_for('positions_view') }}" class="button secondary">Reset</a>
+        </form>
+      </section>
+      <section>
+        <div class="summary-cards">
+          <div class="summary-card">
+            <div class="summary-card-label">Equity positions</div>
+            <div class="summary-card-value">{{ summary.equity_count }}</div>
+          </div>
+          <div class="summary-card">
+            <div class="summary-card-label">Option positions</div>
+            <div class="summary-card-value">{{ summary.option_count }}</div>
+          </div>
+          <div class="summary-card">
+            <div class="summary-card-label">Total shares (absolute)</div>
+            <div class="summary-card-value">{{ summary.total_shares }}</div>
+          </div>
+          <div class="summary-card">
+            <div class="summary-card-label">Total contracts</div>
+            <div class="summary-card-value">{{ summary.total_contracts }}</div>
+          </div>
+        </div>
+      </section>
+      <section>
+        <h2>Equity holdings</h2>
+        {% if equities %}
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th scope="col">Account</th>
+              <th scope="col">Symbol</th>
+              <th scope="col">Direction</th>
+              <th scope="col" class="text-right">Shares</th>
+              <th scope="col" class="text-right">Basis / Share</th>
+              <th scope="col" class="text-right">Basis Total</th>
+              <th scope="col" class="text-right">Realized P&amp;L</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for equity in equities %}
+            <tr>
+              <td>
+                {{ equity.account_name }}
+                {% if equity.account_number %}
+                <span class="account-number">({{ equity.account_number }})</span>
+                {% endif %}
+              </td>
+              <td>{{ equity.symbol }}</td>
+              <td>{{ equity.direction }}</td>
+              <td class="text-right">{{ equity.shares }}</td>
+              <td class="text-right">{{ format_currency(equity.basis_per_share) }}</td>
+              <td class="text-right">{{ format_currency(equity.basis_total) }}</td>
+              <td class="text-right">{{ format_currency(equity.realized_total) }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <p class="empty-state">
+          No equity positions match the current filters. Adjust the filters or import additional
+          data to populate this section.
+        </p>
+        {% endif %}
+      </section>
+      <section>
+        <h2>Option holdings</h2>
+        {% if options %}
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th scope="col">Account</th>
+              <th scope="col">Symbol</th>
+              <th scope="col">Type</th>
+              <th scope="col" class="text-right">Strike</th>
+              <th scope="col">Expiration</th>
+              <th scope="col">Direction</th>
+              <th scope="col" class="text-right">Contracts</th>
+              <th scope="col" class="text-right">Open credit</th>
+              <th scope="col" class="text-right">Opening fees</th>
+              <th scope="col" class="text-right">Credit remaining</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for option in options %}
+            <tr>
+              <td>
+                {{ option.account_name }}
+                {% if option.account_number %}
+                <span class="account-number">({{ option.account_number }})</span>
+                {% endif %}
+              </td>
+              <td>{{ option.symbol }}</td>
+              <td>{{ option.option_type }}</td>
+              <td class="text-right">{{ format_currency(option.strike) }}</td>
+              <td>{{ option.expiration }}</td>
+              <td>{{ option.direction }}</td>
+              <td class="text-right">{{ option.contracts }}</td>
+              <td class="text-right">{{ format_currency(option.open_credit) }}</td>
+              <td class="text-right">{{ format_currency(option.open_fees) }}</td>
+              <td class="text-right">{{ format_currency(option.credit_remaining) }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <p class="empty-state">
+          No option positions match the current filters. Import or rebuild option data to populate
+          this section.
+        </p>
+        {% endif %}
+      </section>
+    </main>
+  </body>
+</html>
+

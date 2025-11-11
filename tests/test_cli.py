@@ -4,6 +4,7 @@ import json
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
+from typing import Optional
 
 from click.testing import CliRunner
 
@@ -14,6 +15,7 @@ from premiumflow.core.parser import (
     ParsedImportResult,
     load_option_transactions,
 )
+from premiumflow.persistence import AssignmentStockLotRecord
 from premiumflow.persistence import repository as repository_module
 from premiumflow.persistence import storage as storage_module
 from premiumflow.persistence.storage import store_import_result
@@ -34,7 +36,7 @@ def test_cli_help_lists_all_commands():
 
     assert result.exit_code == 0
     output = result.output
-    for command in ("analyze", "cashflow", "import", "legs", "lookup", "trace"):
+    for command in ("analyze", "cashflow", "import", "legs", "lookup", "positions", "trace"):
         assert command in output
 
 
@@ -110,8 +112,8 @@ def _seed_import_for_cli(
     account_name: str = "Primary Account",
     account_number: str = "ACCT-1",
     options_only: bool = True,
-    ticker: str | None = None,
-    strategy: str | None = None,
+    ticker: Optional[str] = None,
+    strategy: Optional[str] = None,
     open_only: bool = False,
 ) -> None:
     csv_path = tmp_path / csv_name
@@ -1225,3 +1227,78 @@ def test_legs_command_json_output_no_legs(tmp_path, monkeypatch):
     assert data["warnings"] == []
 
     storage_module.get_storage.cache_clear()
+
+
+def test_positions_cli_json_output(tmp_path, monkeypatch):
+    """positions command should emit combined holdings in JSON format."""
+
+    runner = CliRunner()
+    monkeypatch.setenv(storage_module.DB_ENV_VAR, str(tmp_path / "positions.db"))
+    storage_module.get_storage.cache_clear()
+    repository = repository_module.SQLiteRepository()
+
+    _seed_import_for_cli(
+        tmp_path,
+        csv_name="equities.csv",
+        transactions=[],
+        account_name="Primary Account",
+        account_number="ACCT-1",
+        options_only=False,
+    )
+
+    repository.replace_assignment_stock_lots(
+        account_name="Primary Account",
+        account_number="ACCT-1",
+        records=[
+            AssignmentStockLotRecord(
+                symbol="AAPL",
+                opened_at=date(2025, 9, 1),
+                share_quantity=10,
+                direction="long",
+                option_type="PUT",
+                strike_price=Decimal("40.00"),
+                expiration=date(2025, 9, 20),
+                share_price_total=Decimal("400.00"),
+                share_price_per_share=Decimal("40.00"),
+                open_premium_total=Decimal("0.00"),
+                open_premium_per_share=Decimal("0.0000"),
+                open_fee_total=Decimal("0.00"),
+                net_credit_total=Decimal("0.00"),
+                net_credit_per_share=Decimal("0.0000"),
+                assignment_kind="put_assignment",
+                source_transaction_id=None,
+            )
+        ],
+    )
+
+    _seed_import_for_cli(
+        tmp_path,
+        csv_name="options.csv",
+        transactions=[
+            NormalizedOptionTransaction(
+                activity_date=date(2025, 9, 5),
+                process_date=date(2025, 9, 5),
+                settle_date=date(2025, 9, 8),
+                instrument="TSLA",
+                description="TSLA 10/17/2025 Call $300.00",
+                trans_code="BTO",
+                quantity=1,
+                price=Decimal("2.50"),
+                amount=Decimal("-250.00"),
+                strike=Decimal("300.00"),
+                option_type="CALL",
+                expiration=date(2025, 10, 17),
+                action="BUY",
+                raw={"Activity Date": "09/05/2025"},
+            )
+        ],
+    )
+
+    result = runner.invoke(premiumflow_cli, ["positions", "--format", "json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["equities"]
+    assert payload["equities"][0]["symbol"] == "AAPL"
+    assert payload["options"]
+    assert payload["options"][0]["symbol"] == "TSLA"

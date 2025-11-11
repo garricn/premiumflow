@@ -158,6 +158,16 @@ class SQLiteRepository:
     def __init__(self, storage: Optional[SQLiteStorage] = None) -> None:
         self._storage = storage or get_storage()
 
+    def list_accounts(self) -> List[Tuple[str, Optional[str]]]:
+        """Return all persisted (name, number) account pairs."""
+
+        self._storage._ensure_initialized()  # type: ignore[attr-defined]
+        with self._storage._connect() as conn:  # type: ignore[attr-defined]
+            rows = conn.execute(
+                "SELECT name, number FROM accounts ORDER BY name ASC, IFNULL(number, '') ASC"
+            ).fetchall()
+        return [(row["name"], row["number"]) for row in rows]
+
     def list_imports(
         self,
         *,
