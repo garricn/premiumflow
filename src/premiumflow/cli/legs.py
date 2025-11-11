@@ -481,8 +481,8 @@ def _render_leg_results(
         legs_list = [leg for leg in legs_list if leg.is_open == want_open]
 
     warnings = _format_leg_warnings(errors)
-    _print_leg_output(console, legs_list, args)
-    if warnings:
+    _print_leg_output(console, legs_list, args, warnings)
+    if args.output_format != "json" and warnings:
         console.print("\n[red]Warnings:[/red]")
         for message in warnings:
             console.print(f"- {message}")
@@ -495,9 +495,14 @@ def _render_empty_leg_state(console: Console, args: LegsCommandArgs) -> None:
         console.print("[yellow]No transactions found matching the specified filters.[/yellow]")
 
 
-def _print_leg_output(console: Console, legs_list: list[MatchedLeg], args: LegsCommandArgs) -> None:
+def _print_leg_output(
+    console: Console,
+    legs_list: list[MatchedLeg],
+    args: LegsCommandArgs,
+    warnings: list[str],
+) -> None:
     if args.output_format == "json":
-        payload = {"legs": [serialize_leg(leg) for leg in legs_list], "warnings": []}
+        payload = {"legs": [serialize_leg(leg) for leg in legs_list], "warnings": warnings}
         console.print_json(data=payload)
         return
 
