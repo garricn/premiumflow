@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import sqlite3
 from pathlib import Path
-from typing import Dict, Iterable, List, Literal, Optional, Sequence, Tuple, cast
+from typing import Dict, Iterable, List, Literal, Optional, Sequence, Tuple
 
 import click
 from rich.console import Console
@@ -189,22 +189,24 @@ def _apply_import_options(func):
     return func
 
 
-def _run_import(ctx: click.Context, **options: object) -> None:
+def _run_import(  # noqa: C901, PLR0913, PLR0911
+    ctx: click.Context,
+    *,
+    options_only,
+    ticker_symbol,
+    strategy,
+    csv_file,
+    open_only,
+    account_name,
+    account_number,
+    skip_existing,
+    replace_existing,
+    json_output,
+    console_label: str,
+) -> None:
     """Shared implementation used by the CLI import command."""
 
     console = Console()
-
-    options_only = cast(bool, options.get("options_only", False))
-    ticker_symbol = cast(Optional[str], options.get("ticker_symbol"))
-    strategy = cast(Optional[str], options.get("strategy"))
-    csv_file = cast(str, options.get("csv_file", ""))
-    open_only = cast(bool, options.get("open_only", False))
-    account_name = cast(Optional[str], options.get("account_name"))
-    account_number = cast(Optional[str], options.get("account_number"))
-    skip_existing = cast(bool, options.get("skip_existing", False))
-    replace_existing = cast(bool, options.get("replace_existing", False))
-    json_output = cast(bool, options.get("json_output", False))
-    console_label = cast(str, options.get("console_label", "Importing"))
 
     if not account_name or not account_name.strip():
         ctx.fail("--account-name is required when importing transactions.")
@@ -356,14 +358,39 @@ def _run_import(ctx: click.Context, **options: object) -> None:
 
 @click.group(name="import", invoke_without_command=True)
 @_apply_import_options
-def import_group(ctx, **options: object):
+def import_group(  # noqa: PLR0913
+    ctx,
+    options_only,
+    ticker_symbol,
+    strategy,
+    csv_file,
+    open_only,
+    account_name,
+    account_number,
+    skip_existing,
+    replace_existing,
+    json_output,
+):
     """Import and manage stored option CSV ingests."""
 
     if ctx.invoked_subcommand is not None:
         ctx.ensure_object(dict)
         return
 
-    _run_import(ctx, **options, console_label="Importing")
+    _run_import(
+        ctx,
+        options_only=options_only,
+        ticker_symbol=ticker_symbol,
+        strategy=strategy,
+        csv_file=csv_file,
+        open_only=open_only,
+        account_name=account_name,
+        account_number=account_number,
+        skip_existing=skip_existing,
+        replace_existing=replace_existing,
+        json_output=json_output,
+        console_label="Importing",
+    )
 
 
 def _format_account_label(import_record) -> str:
