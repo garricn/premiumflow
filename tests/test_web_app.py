@@ -199,6 +199,32 @@ def test_health_endpoint_returns_ok():
     assert response.json() == {"status": "ok"}
 
 
+def test_smoke_web_app_serves_primary_ui_routes(client_with_storage, tmp_path):
+    """Smoke test that boots the real app and hits `/` and `/cashflow`."""
+
+    account_name = "Smoke Account"
+    account_number = "SMOKE-1"
+    _persist_import(
+        tmp_path,
+        account_name=account_name,
+        account_number=account_number,
+        csv_name="smoke.csv",
+        transactions=[_make_transaction()],
+    )
+
+    index_response = client_with_storage.get("/")
+    assert index_response.status_code == 200
+    assert "PremiumFlow web interface" in index_response.text
+
+    cashflow_response = client_with_storage.get(
+        "/cashflow",
+        params={"account": f"{account_name}|{account_number}"},
+    )
+    assert cashflow_response.status_code == 200
+    assert "Cash Flow" in cashflow_response.text
+    assert "Total Cash Flow" in cashflow_response.text
+
+
 def test_index_renders_placeholder_template():
     client = _make_client()
     response = client.get("/")
