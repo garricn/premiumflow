@@ -5,13 +5,6 @@
 - DO NOT support backwards compatibility unless specifically asked.
 - DO NOT fail gracefully. Fail hard and fast.
 
-## Signatures
-
-- **Scope**: Sign PR reviews, issue comments, and automated PR/thread notes. Do not include the signature in PR or issue titles.
-- **Signature format**: `— [Your Name]` (ALWAYS use this exact format)
-- **Commit footer**: `Signed-off-by: [Your Name]` (when committing via automation)
-- **Identity**: If you are Codex, sign as Codex. If you are Cursor, sign as Cursor.
-
 ## Development Guidelines
 
 See [docs/developers/development.md](docs/developers/development.md) for project structure, coding style, testing, and build commands.
