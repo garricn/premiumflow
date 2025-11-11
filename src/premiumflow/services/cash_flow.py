@@ -16,7 +16,17 @@ from typing import Dict, List, Literal, Optional
 
 from ..core.parser import NormalizedOptionTransaction
 from ..persistence import SQLiteRepository
-from .leg_matching import MatchedLeg, MatchedLegLot
+from .cash_flow_periods import (
+    PeriodType,
+    _clamp_period_to_range,
+    _date_in_range,
+    _group_date_to_period_key,
+    _lot_closed_by_assignment,
+    _lot_overlaps_date_range,
+    _lot_was_open_during_period,
+    _parse_period_key_to_date,
+)
+from .leg_matching import MatchedLeg
 from .stock_lots import StockLotSummary, fetch_stock_lot_summaries
 from .transaction_loader import (
     fetch_normalized_transactions,
@@ -25,7 +35,6 @@ from .transaction_loader import (
 
 CONTRACT_MULTIPLIER = Decimal("100")
 ZERO = Decimal("0")
-PeriodType = Literal["daily", "weekly", "monthly", "total"]
 AssignmentHandling = Literal["include", "exclude"]
 RealizedView = Literal["options", "stock", "combined"]
 
@@ -170,170 +179,6 @@ def _sum_realized_breakdown(periods: List[PeriodMetrics], view: RealizedView) ->
         losses_net=Decimal(sum(p.realized_breakdowns[view].losses_net for p in periods)),
         net_net=Decimal(sum(p.realized_breakdowns[view].net_net for p in periods)),
     )
-
-
-def _group_date_to_period_key(
-    activity_date: date,
-    period_type: PeriodType,
-) -> tuple[str, str]:
-    """
-    Convert an activity date to a period key and label for grouping.
-
-    Returns
-    -------
-    tuple[str, str]
-        (period_key, period_label) where period_key is used for grouping
-        and period_label is human-readable.
-    """
-    if period_type == "daily":
-        return (activity_date.isoformat(), activity_date.strftime("%Y-%m-%d"))
-
-    if period_type == "weekly":
-        # ISO week format: YYYY-Www
-        iso_year, iso_week, _ = activity_date.isocalendar()
-        period_key = f"{iso_year}-W{iso_week:02d}"
-        period_label = f"Week {iso_week}, {iso_year}"
-        return (period_key, period_label)
-
-    if period_type == "monthly":
-        period_key = activity_date.strftime("%Y-%m")
-        period_label = activity_date.strftime("%B %Y")
-        return (period_key, period_label)
-
-    # period_type == "total"
-    return ("total", "Total")
-
-
-def _date_in_range(
-    check_date: date, since: Optional[date] = None, until: Optional[date] = None
-) -> bool:
-    """Check if a date falls within the filter range (if provided)."""
-    if since is not None and check_date < since:
-        return False
-    if until is not None and check_date > until:
-        return False
-    return True
-
-
-def _lot_overlaps_date_range(opened_at: date, until: Optional[date] = None) -> bool:
-    """
-    Check if an open lot's lifetime overlaps the date range.
-
-    An open lot overlaps the range if it was opened before or during the range.
-    Since it's open, it's active throughout the range, so we include it if
-    opened_at <= until (or until is None).
-    """
-    if until is not None and opened_at > until:
-        return False
-    return True
-
-
-def _lot_was_open_during_period(lot: MatchedLegLot, until: Optional[date] = None) -> bool:
-    """
-    Check if a lot was open during the requested period.
-
-    A lot was open during the period if:
-    - It's currently open (`lot.is_open`), OR
-    - It was closed after the period end (`closed_at > until`)
-
-    This ensures historical reports include unrealized exposure for positions
-    that were open during the period, even if they were closed afterwards.
-    """
-    if lot.is_open:
-        return True
-    if until is None:
-        # If no end date, only include currently open lots
-        return False
-    # Include lots closed after the period end (they were open during the period)
-    if lot.closed_at and lot.closed_at > until:
-        return True
-    return False
-
-
-def _lot_closed_by_assignment(lot: MatchedLegLot) -> bool:
-    """Return True if every closing portion for the lot is an assignment."""
-    if not lot.is_closed or not lot.close_portions:
-        return False
-    return all(portion.fill.is_assignment for portion in lot.close_portions)
-
-
-def _parse_period_key_to_date(period_key: str, period_type: PeriodType) -> Optional[date]:
-    """
-    Parse a period_key back to a date for comparison and label generation.
-
-    Parameters
-    ----------
-    period_key
-        The period key to parse (e.g., "2025-10-15", "2025-W42", "2025-10")
-    period_type
-        The period type (daily, weekly, monthly, total)
-
-    Returns
-    -------
-    Optional[date]
-        The date representing the start of the period, or None if parsing fails
-    """
-    try:
-        if period_type == "daily":
-            return date.fromisoformat(period_key)
-        elif period_type == "weekly":
-            # Parse YYYY-Www format
-            year, week = period_key.split("-W")
-            return date.fromisocalendar(int(year), int(week), 1)
-        elif period_type == "monthly":
-            # Parse YYYY-MM format
-            year, month = period_key.split("-")
-            return date(int(year), int(month), 1)
-    except (ValueError, AttributeError):
-        return None
-    return None
-
-
-def _clamp_period_to_range(
-    period_key: str,
-    period_type: PeriodType,
-    since: Optional[date],
-) -> str:
-    """
-    Clamp a period_key to the first period in the date range if it's before the range.
-
-    If the period represents a date before `since`, return the period_key for
-    the first period in the range. Otherwise, return the original period_key.
-
-    Parameters
-    ----------
-    period_key
-        The period key to potentially clamp
-    period_type
-        The period type (daily, weekly, monthly, total)
-    since
-        The start date of the range (if None, no clamping needed)
-
-    Returns
-    -------
-    str
-        The clamped period_key if needed, or the original period_key
-    """
-    if since is None or period_type == "total":
-        return period_key
-
-    # Get the period key for the start date
-    first_period_key, _ = _group_date_to_period_key(since, period_type)
-
-    # Convert period keys back to dates for proper comparison
-    period_date = _parse_period_key_to_date(period_key, period_type)
-    first_date = _parse_period_key_to_date(first_period_key, period_type)
-
-    if period_date is None or first_date is None:
-        # Fallback to string comparison if parsing fails
-        if period_key < first_period_key:
-            return first_period_key
-        return period_key
-
-    if period_date < first_date:
-        return first_period_key
-
-    return period_key
 
 
 def _aggregate_cash_flow_by_period(
