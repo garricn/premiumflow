@@ -38,6 +38,12 @@ repos:
         language: system
         files: ^pyproject\.toml$
         pass_filenames: false
+      - id: file-length-check
+        name: Check file length
+        entry: scripts/check-file-length.py
+        language: script
+        types: [python]
+        args: ["--max-lines=400"]
       - id: pytest
         name: pytest (uv)
         entry: uv run pytest

@@ -96,3 +96,7 @@ jobs:
       - name: Tests (pytest)
         id: pytest
         run: uv run pytest
+      - name: Check file length
+        id: file-length
+        run: |
+          find src tests -name "*.py" | xargs scripts/check-file-length.py --max-lines=400
