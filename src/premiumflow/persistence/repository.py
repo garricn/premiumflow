@@ -228,13 +228,24 @@ class SQLiteRepository:
         self._storage._ensure_initialized()  # type: ignore[attr-defined]
         placeholders = ", ".join("?" for _ in import_ids)
         sql = f"""
-            SELECT import_id, MIN(activity_date) AS first_activity_date, MAX(activity_date) AS last_activity_date
-            FROM option_transactions
-            WHERE import_id IN ({placeholders})
+            WITH combined AS (
+                SELECT import_id, activity_date
+                FROM option_transactions
+                WHERE import_id IN ({placeholders})
+                UNION ALL
+                SELECT import_id, activity_date
+                FROM stock_transactions
+                WHERE import_id IN ({placeholders})
+            )
+            SELECT import_id,
+                   MIN(activity_date) AS first_activity_date,
+                   MAX(activity_date) AS last_activity_date
+            FROM combined
             GROUP BY import_id
         """
+        params = tuple(int(import_id) for import_id in import_ids)
         with self._storage._connect() as conn:  # type: ignore[attr-defined]
-            rows = conn.execute(sql, tuple(int(import_id) for import_id in import_ids)).fetchall()
+            rows = conn.execute(sql, params * 2).fetchall()
         ranges: Dict[int, Tuple[Optional[str], Optional[str]]] = {}
         for row in rows:
             ranges[int(row["import_id"])] = (row["first_activity_date"], row["last_activity_date"])
@@ -327,11 +338,12 @@ class SQLiteRepository:
             rows = conn.execute(sql, params).fetchall()
         return [_row_to_stored_transaction(row) for row in rows]
 
-    def fetch_stock_transactions(  # noqa: PLR0913
+    def fetch_stock_transactions(  # noqa: C901, PLR0913
         self,
         *,
         account_name: Optional[str] = None,
         account_number: Optional[str] = None,
+        import_ids: Optional[Sequence[int]] = None,
         ticker: Optional[str] = None,
         since: Optional[date] = None,
         until: Optional[date] = None,
@@ -372,6 +384,10 @@ class SQLiteRepository:
         if account_number is not None:
             clauses.append("IFNULL(a.number, '') = IFNULL(?, '')")
             params.append(account_number)
+        if import_ids:
+            placeholders = ", ".join("?" for _ in import_ids)
+            clauses.append(f"t.import_id IN ({placeholders})")
+            params.extend(int(import_id) for import_id in import_ids)
         if ticker is not None:
             clauses.append("UPPER(t.instrument) = ?")
             params.append(ticker.strip().upper())

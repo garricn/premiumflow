@@ -239,6 +239,9 @@ def test_fetch_stock_transactions_filters(tmp_path, repository):
         ],
     )
 
+    imports = repository.list_imports()
+    import_id = imports[0].id
+
     hood_rows = repository.fetch_stock_transactions(ticker="HOOD")
     assert len(hood_rows) == 2
     assert {row.action for row in hood_rows} == {"BUY", "SELL"}
@@ -250,6 +253,9 @@ def test_fetch_stock_transactions_filters(tmp_path, repository):
     tsla_rows = repository.fetch_stock_transactions(ticker="TSLA")
     assert len(tsla_rows) == 1
     assert tsla_rows[0].quantity == Decimal("0.25")
+
+    by_import = repository.fetch_stock_transactions(import_ids=[import_id])
+    assert len(by_import) == 3
 
 
 def test_fetch_import_activity_ranges(tmp_path, repository):
@@ -268,15 +274,26 @@ def test_fetch_import_activity_ranges(tmp_path, repository):
         transactions=[_make_transaction(instrument="AAPL", activity_date=date(2025, 9, 5))],
         ticker="AAPL",
     )
+    _seed_import(
+        tmp_path,
+        csv_name="stocks.csv",
+        transactions=[],
+        stock_transactions=[
+            _make_stock_transaction(activity_date=date(2025, 10, 1)),
+            _make_stock_transaction(activity_date=date(2025, 10, 5)),
+        ],
+    )
 
     imports = repository.list_imports(order="asc")
     first_id = imports[0].id
     second_id = imports[1].id
+    third_id = imports[2].id
 
-    ranges = repository.fetch_import_activity_ranges([first_id, second_id])
+    ranges = repository.fetch_import_activity_ranges([first_id, second_id, third_id])
 
     assert ranges[first_id] == ("2025-09-01", "2025-09-03")
     assert ranges[second_id] == ("2025-09-05", "2025-09-05")
+    assert ranges[third_id] == ("2025-10-01", "2025-10-05")
     assert repository.fetch_import_activity_ranges([]) == {}
 
 

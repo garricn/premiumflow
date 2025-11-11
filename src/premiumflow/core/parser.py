@@ -16,6 +16,9 @@ CSV_ROW_NUMBER_KEY = "__row_number"
 STOCK_BUY_CODES = {"BUY"}
 STOCK_SELL_CODES = {"SELL"}
 STOCK_TRANS_CODES = STOCK_BUY_CODES | STOCK_SELL_CODES
+TRANSFER_CODE_PREFIXES = ("ACAT", "ABIP")
+ACH_CODE_PREFIXES = ("ACH",)
+ZERO_DECIMAL = Decimal("0")
 CONTRACT_MULTIPLIER = Decimal("100")
 
 
@@ -256,10 +259,19 @@ def _normalize_stock_row(
     trans_code = trans_code_raw.strip().upper()
     if not trans_code:
         return None
-    if trans_code not in STOCK_TRANS_CODES:
-        return None
     row[CSV_ROW_NUMBER_KEY] = str(row_number)
+    if trans_code in STOCK_TRANS_CODES:
+        return _normalize_standard_stock_row(row, row_number, trans_code)
+    if _is_transfer_code(trans_code):
+        return _normalize_transfer_stock_row(row, row_number, trans_code)
+    if _is_ach_code(trans_code):
+        return _normalize_cash_transfer_row(row, row_number, trans_code)
+    return None
 
+
+def _normalize_standard_stock_row(
+    row: Dict[str, str], row_number: int, trans_code: str
+) -> Optional[NormalizedStockTransaction]:
     required_fields = ("Activity Date", "Instrument", "Quantity", "Price", "Amount")
     for required in required_fields:
         value = row.get(required)
@@ -293,10 +305,130 @@ def _normalize_stock_row(
         trans_code=trans_code,
         quantity=abs(quantity),
         price=price,
-        amount=amount if amount is not None else Decimal("0"),
+        amount=amount if amount is not None else ZERO_DECIMAL,
         action=action,
         raw=raw,
     )
+
+
+def _normalize_transfer_stock_row(
+    row: Dict[str, str], row_number: int, trans_code: str
+) -> Optional[NormalizedStockTransaction]:
+    instrument_value = (row.get("Instrument") or "").strip()
+    quantity_value = (row.get("Quantity") or "").strip()
+    if instrument_value and quantity_value:
+        return _normalize_share_transfer_row(row, row_number, trans_code)
+    return _normalize_cash_transfer_row(row, row_number, trans_code)
+
+
+def _normalize_share_transfer_row(
+    row: Dict[str, str], row_number: int, trans_code: str
+) -> NormalizedStockTransaction:
+    activity_date = _parse_date_field(row, "Activity Date", row_number)
+    process_date = _parse_optional_date_field(row, "Process Date", row_number)
+    settle_date = _parse_optional_date_field(row, "Settle Date", row_number)
+    instrument = _require_field(row, "Instrument", row_number).strip().upper()
+    description = (row.get("Description") or "").strip()
+    quantity = _parse_share_quantity(row, "Quantity", row_number)
+    price_value = _parse_money(
+        row,
+        "Price",
+        row_number,
+        allow_negative=False,
+        required=False,
+    )
+    amount_value = _parse_money(
+        row,
+        "Amount",
+        row_number,
+        allow_negative=True,
+        required=False,
+    )
+    price = price_value if price_value is not None else ZERO_DECIMAL
+    amount = amount_value if amount_value is not None else ZERO_DECIMAL
+    action = "BUY" if quantity >= 0 else "SELL"
+    normalized_quantity = abs(quantity)
+
+    raw = dict(row)
+    raw["Trans Code"] = trans_code
+
+    return NormalizedStockTransaction(
+        activity_date=activity_date,
+        process_date=process_date,
+        settle_date=settle_date,
+        instrument=instrument,
+        description=description,
+        trans_code=trans_code,
+        quantity=normalized_quantity,
+        price=price,
+        amount=amount,
+        action=action,
+        raw=raw,
+    )
+
+
+def _normalize_cash_transfer_row(
+    row: Dict[str, str], row_number: int, trans_code: str
+) -> NormalizedStockTransaction:
+    activity_date = _parse_date_field(row, "Activity Date", row_number)
+    process_date = _parse_optional_date_field(row, "Process Date", row_number)
+    settle_date = _parse_optional_date_field(row, "Settle Date", row_number)
+    instrument_raw = (row.get("Instrument") or "").strip()
+    instrument = instrument_raw.strip().upper() if instrument_raw else trans_code
+    description = (row.get("Description") or "").strip()
+
+    amount_value = _parse_money(
+        row,
+        "Amount",
+        row_number,
+        allow_negative=True,
+        required=False,
+        allow_parenthesized_positive=True,
+    )
+    amount = amount_value if amount_value is not None else ZERO_DECIMAL
+
+    price_value = _parse_money(
+        row,
+        "Price",
+        row_number,
+        allow_negative=False,
+        required=False,
+    )
+    price = price_value if price_value is not None else ZERO_DECIMAL
+
+    quantity_field = (row.get("Quantity") or "").strip()
+    if quantity_field:
+        quantity = _parse_share_quantity(row, "Quantity", row_number)
+    else:
+        quantity = ZERO_DECIMAL
+    normalized_quantity = abs(quantity)
+
+    action = "BUY" if amount >= 0 else "SELL"
+
+    raw = dict(row)
+    raw["Trans Code"] = trans_code
+
+    return NormalizedStockTransaction(
+        activity_date=activity_date,
+        process_date=process_date,
+        settle_date=settle_date,
+        instrument=instrument,
+        description=description,
+        trans_code=trans_code,
+        quantity=normalized_quantity,
+        price=price,
+        amount=amount,
+        action=action,
+        raw=raw,
+    )
+
+
+def _is_transfer_code(trans_code: str) -> bool:
+    return any(trans_code.startswith(prefix) for prefix in TRANSFER_CODE_PREFIXES)
+
+
+def _is_ach_code(trans_code: str) -> bool:
+    return any(trans_code.startswith(prefix) for prefix in ACH_CODE_PREFIXES)
 
 
 def _parse_trans_code(row: Dict[str, str], row_number: int) -> Optional[str]:
