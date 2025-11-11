@@ -36,9 +36,9 @@ def filter_transactions_by_option_type(
     return transactions
 
 
-def filter_open_positions(
+def filter_open_positions(  # noqa: C901
     transactions: Iterable[Dict[str, Any]],
-) -> List[Dict[str, Any]]:  # noqa: C901
+) -> List[Dict[str, Any]]:
     """Filter transactions to show only positions that are still open (net quantity > 0)."""
     transactions = list(transactions)
     closing_codes = {"STC", "BTC"}
