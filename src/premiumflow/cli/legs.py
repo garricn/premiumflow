@@ -17,7 +17,9 @@ import click
 from rich.console import Console
 from rich.table import Table
 
+from ..core.legs import LegFill
 from ..persistence import SQLiteRepository
+from ..persistence.repository import StoredTransaction
 from ..services.cli_helpers import format_account_label
 from ..services.display import format_currency
 from ..services.json_serializer import serialize_leg
@@ -441,7 +443,7 @@ def _run_legs_command(args: LegsCommandArgs) -> None:
         raise click.Abort() from exc
 
 
-def _fetch_leg_transactions(args: LegsCommandArgs) -> list[MatchedLeg]:
+def _fetch_leg_transactions(args: LegsCommandArgs) -> list[StoredTransaction]:
     repo = SQLiteRepository()
     return repo.fetch_transactions(
         account_name=args.account_name or None,
@@ -453,9 +455,7 @@ def _fetch_leg_transactions(args: LegsCommandArgs) -> list[MatchedLeg]:
     )
 
 
-def _format_leg_warnings(
-    errors: list[tuple[LegKey, Exception, list[MatchedLeg]]]
-) -> list[str]:
+def _format_leg_warnings(errors: list[tuple[LegKey, Exception, list[LegFill]]]) -> list[str]:
     warnings: List[str] = []
     for (acct_name, acct_number, leg_id), exc, bucket in errors:
         account_label = format_account_label(acct_name, acct_number)
@@ -464,7 +464,9 @@ def _format_leg_warnings(
     return warnings
 
 
-def _render_leg_results(console: Console, stored_txns: list[MatchedLeg], args: LegsCommandArgs) -> None:
+def _render_leg_results(
+    console: Console, stored_txns: list[StoredTransaction], args: LegsCommandArgs
+) -> None:
     if not stored_txns:
         _render_empty_leg_state(console, args)
         return
