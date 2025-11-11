@@ -99,4 +99,4 @@ jobs:
       - name: Check file length
         id: file-length
         run: |
-          find src tests -name "*.py" | xargs scripts/check-file-length.py --max-lines=400
+          find src tests -name "*.py" -print0 | xargs -0 scripts/check-file-length.py --max-lines=400
