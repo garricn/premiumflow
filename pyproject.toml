@@ -89,15 +89,15 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = [
-    "E", # pycodestyle errors
-    "W", # pycodestyle warnings
-    "F", # pyflakes
-    "I", # isort
-    "B", # flake8-bugbear
-    "C4", # flake8-comprehensions
-    "C90",  # McCabe complexity
-    "PLR0911",  # too-many-statements
-    "PLR0913",  # too-many-arguments
+    "E",       # pycodestyle errors
+    "W",       # pycodestyle warnings
+    "F",       # pyflakes
+    "I",       # isort
+    "B",       # flake8-bugbear
+    "C4",      # flake8-comprehensions
+    "C90",     # McCabe complexity
+    "PLR0911", # too-many-statements
+    "PLR0913"  # too-many-arguments
 ]
 ignore = [
     "E501", # line too long (handled by black)
