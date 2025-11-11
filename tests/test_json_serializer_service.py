@@ -272,6 +272,7 @@ class TestJsonSerializer(unittest.TestCase):
         self.assertEqual(result["account"]["number"], "ACCT-123")
         self.assertEqual(len(result["transactions"]), 1)
         self.assertEqual(len(result["chains"]), 1)
+        self.assertEqual(result["cost_basis_warnings"], [])
         txn_payload = result["transactions"][0]
         self.assertEqual(txn_payload["activity_date"], "2025-01-15")
         self.assertEqual(txn_payload["price"], "5")
@@ -302,6 +303,7 @@ class TestJsonSerializer(unittest.TestCase):
         self.assertEqual(len(result["chains"]), 1)
         self.assertEqual(result["chains"][0]["symbol"], "TSLA")
         self.assertEqual(result["chains"][0]["status"], "OPEN")
+        self.assertEqual(result["cost_basis_warnings"], [])
 
     def test_build_ingest_payload_minimal(self):
         """Test building ingest payload with minimal data."""
@@ -324,6 +326,7 @@ class TestJsonSerializer(unittest.TestCase):
         self.assertEqual(result["filters"]["open_only"], False)
         self.assertEqual(result["transactions"], [])
         self.assertEqual(result["chains"], [])
+        self.assertEqual(result["cost_basis_warnings"], [])
 
     def test_serialize_leg_portion(self):
         """Test serializing a LotFillPortion."""

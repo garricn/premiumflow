@@ -368,6 +368,58 @@ h1 {
   color: #065f46;
 }
 
+.warning-list {
+  margin: 0.5rem 0 0.25rem 1.5rem;
+  padding: 0;
+}
+
+.warning-list li {
+  margin-bottom: 0.25rem;
+}
+
+.warning-row {
+  background-color: rgba(239, 166, 1, 0.08);
+}
+
+.badge {
+  display: inline-block;
+  margin-left: 0.5rem;
+  padding: 0.1rem 0.5rem;
+  font-size: 0.75rem;
+  border-radius: 999px;
+  background-color: #efa601;
+  color: #ffffff;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.inline-form {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+  margin: 0.25rem 0;
+}
+
+.inline-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.85rem;
+}
+
+.inline-form input[type="text"] {
+  width: 6.5rem;
+  padding: 0.35rem 0.5rem;
+}
+
+.cost-basis-actions {
+  min-width: 22rem;
+}
+
+.resolve-form input[type="text"] {
+  width: 7.5rem;
+}
+
 @media (prefers-color-scheme: dark) {
   .status-open {
     background-color: #1e3a8a;

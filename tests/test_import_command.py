@@ -21,6 +21,10 @@ def _stub_store_import(monkeypatch):
         "premiumflow.cli.import_command.rebuild_assignment_stock_lots",
         lambda *args, **kwargs: None,
     )
+    monkeypatch.setattr(
+        "premiumflow.cli.import_command.get_due_transfer_basis_items",
+        lambda *args, **kwargs: [],
+    )
 
 
 def _write_sample_csv(tmp_path: Path) -> Path:

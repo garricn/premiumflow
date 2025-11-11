@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{ title }} • PremiumFlow Web UI</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='site.css') }}" />
+  </head>
+  <body>
+    <header>
+      <h1>{{ title }}</h1>
+      <nav class="top-nav">
+        <a href="{{ url_for('index') }}">Upload CSV</a>
+        <a href="{{ url_for('imports_history') }}">Import history</a>
+        <a href="{{ url_for('legs_view') }}">Matched legs</a>
+        <a href="{{ url_for('cashflow_view') }}">Cash Flow &amp; P&amp;L</a>
+        <a href="{{ url_for('stock_lots_view') }}">Stock lots</a>
+      </nav>
+      <p>
+        Track transfer rows that require manual cost basis entries and apply overrides to keep stock
+        lot and position summaries accurate.
+      </p>
+    </header>
+    <main>
+      {% if message %}
+      <section class="notice notice-{{ message.type }}">
+        <h2>{{ message.title }}</h2>
+        <p>{{ message.body }}</p>
+      </section>
+      {% endif %}
+
+      <section>
+        <h2>Pending overrides</h2>
+        {% if pending_items %}
+        <p>
+          Set basis totals or per-share amounts to resolve each transfer. At least one of the fields
+          is required; supplying both must match within one cent.
+        </p>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th scope="col">Account</th>
+              <th scope="col">Ticker</th>
+              <th scope="col">Shares</th>
+              <th scope="col">Activity date</th>
+              <th scope="col">Status</th>
+              <th scope="col">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in pending_items %}
+            <tr class="{% if item.id in due_ids %}warning-row{% endif %}">
+              <td>
+                {{ item.account_name }}
+                {% if item.account_number %}
+                <span class="account-number">({{ item.account_number }})</span>
+                {% endif %}
+              </td>
+              <td>{{ item.instrument }}</td>
+              <td>{{ item.shares }}</td>
+              <td>{{ item.activity_date }}</td>
+              <td>
+                {% if item.status == "pending" %}
+                Pending
+                {% else %}
+                Snoozed
+                {% endif %}
+                {% if item.id in due_ids %}
+                <span class="badge">due</span>
+                {% endif %}
+              </td>
+              <td class="cost-basis-actions">
+                <form
+                  method="post"
+                  action="{{ url_for('resolve_cost_basis', item_id=item.id) }}"
+                  class="inline-form resolve-form"
+                >
+                  <label>
+                    <span>Total</span>
+                    <input type="text" name="basis_total" inputmode="decimal" />
+                  </label>
+                  <label>
+                    <span>Per share</span>
+                    <input type="text" name="basis_per_share" inputmode="decimal" />
+                  </label>
+                  <button type="submit">Save</button>
+                </form>
+                <form
+                  method="post"
+                  action="{{ url_for('snooze_cost_basis', item_id=item.id) }}"
+                  class="inline-form"
+                >
+                  <input type="hidden" name="delay_days" value="1" />
+                  <button type="submit" class="link-button">Remind tomorrow</button>
+                </form>
+                <form
+                  method="post"
+                  action="{{ url_for('snooze_cost_basis', item_id=item.id) }}"
+                  class="inline-form"
+                >
+                  <input type="hidden" name="delay_days" value="7" />
+                  <button type="submit" class="link-button">Remind in 7&nbsp;days</button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <p class="empty-state">
+          All transfer rows have recorded cost basis details. Great job keeping things tidy!
+        </p>
+        {% endif %}
+      </section>
+
+      <section>
+        <h2>Resolved overrides</h2>
+        {% if resolved_items %}
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th scope="col">Account</th>
+              <th scope="col">Ticker</th>
+              <th scope="col">Shares</th>
+              <th scope="col">Activity date</th>
+              <th scope="col">Total basis</th>
+              <th scope="col">Per-share basis</th>
+              <th scope="col">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in resolved_items %}
+            <tr>
+              <td>
+                {{ item.account_name }}
+                {% if item.account_number %}
+                <span class="account-number">({{ item.account_number }})</span>
+                {% endif %}
+              </td>
+              <td>{{ item.instrument }}</td>
+              <td>{{ item.shares }}</td>
+              <td>{{ item.activity_date }}</td>
+              <td>{{ format_currency(item.basis_total) }}</td>
+              <td>{{ format_currency(item.basis_per_share) }}</td>
+              <td class="cost-basis-actions">
+                <form
+                  method="post"
+                  action="{{ url_for('reopen_cost_basis', item_id=item.id) }}"
+                  class="inline-form"
+                >
+                  <button type="submit" class="link-button">Reopen</button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <p class="empty-state">No resolved overrides yet. Submit a transfer basis to populate this list.</p>
+        {% endif %}
+      </section>
+    </main>
+  </body>
+</html>
+

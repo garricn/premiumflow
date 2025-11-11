@@ -11,7 +11,11 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 from fastapi.testclient import TestClient
 
-from premiumflow.core.parser import NormalizedOptionTransaction, ParsedImportResult
+from premiumflow.core.parser import (
+    NormalizedOptionTransaction,
+    ParsedImportResult,
+    load_option_transactions,
+)
 from premiumflow.persistence import repository as repository_module
 from premiumflow.persistence import storage as storage_module
 from premiumflow.persistence.storage import store_import_result
@@ -171,6 +175,31 @@ def _seed_assignment_stock_lots(tmp_path: Path) -> None:
         repository,
         account_name="Lot Account",
         account_number="LOTS-1",
+    )
+
+
+def _seed_transfer_with_missing_basis(tmp_path: Path) -> None:
+    """Insert a stock transfer that requires a manual cost basis override."""
+
+    csv_path = tmp_path / "transfer.csv"
+    csv_path.write_text(
+        "Activity Date,Process Date,Settle Date,Instrument,Description,Trans Code,Quantity,Price,Amount\n"
+        "09/05/2025,09/05/2025,09/05/2025,VTI,ACATS Transfer In,ACATI,577,,\n",
+        encoding="utf-8",
+    )
+
+    parsed = load_option_transactions(
+        str(csv_path),
+        account_name="Transfer Account",
+        account_number="XFER-123",
+    )
+    store_import_result(
+        parsed,
+        source_path=str(csv_path),
+        options_only=False,
+        ticker=None,
+        strategy=None,
+        open_only=False,
     )
 
 
@@ -797,6 +826,40 @@ def test_stock_lots_view_empty_state(client_with_storage):
 
     assert response.status_code == 200
     assert "No stock lots found for the selected filters." in response.text
+
+
+def test_cost_basis_view_lists_pending_items(client_with_storage, tmp_path):
+    _seed_transfer_with_missing_basis(tmp_path)
+
+    response = client_with_storage.get("/cost-basis")
+
+    assert response.status_code == 200
+    assert "Transfer Account" in response.text
+    assert "VTI" in response.text
+    assert "Pending overrides" in response.text
+
+
+def test_cost_basis_resolve_submission_updates_entry(client_with_storage, tmp_path):
+    _seed_transfer_with_missing_basis(tmp_path)
+    repository = repository_module.SQLiteRepository()
+    pending = repository.list_transfer_basis_items()
+    assert pending, "Expected a pending cost basis entry."
+    item = pending[0]
+
+    response = client_with_storage.post(
+        f"/cost-basis/{item.id}/resolve",
+        data={"basis_total": "96321.00", "basis_per_share": ""},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    follow = client_with_storage.get(response.headers["location"])
+    assert "Cost basis recorded" in follow.text
+
+    resolved = repository.list_transfer_basis_items(statuses=("resolved",))
+    assert resolved
+    refreshed = resolved[0]
+    assert refreshed.basis_total == Decimal("96321.00")
 
 
 def test_legs_view_empty_state(client_with_storage):

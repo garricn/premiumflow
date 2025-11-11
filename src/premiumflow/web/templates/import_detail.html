@@ -12,6 +12,8 @@
       <nav class="top-nav">
         <a href="{{ url_for('imports_history') }}">Back to history</a>
         <a href="{{ url_for('index') }}">Upload CSV</a>
+        <a href="{{ url_for('legs_view') }}">Matched legs</a>
+        <a href="{{ url_for('cost_basis_view') }}">Cost basis overrides</a>
       </nav>
       <p>Account: {{ account_label }}</p>
     </header>
@@ -75,6 +77,68 @@
           </div>
         </dl>
       </section>
+      {% if pending_cost_basis %}
+      <section class="cost-basis-summary">
+        <h2>Pending transfer cost basis overrides</h2>
+        <p>
+          These transfer rows still require manual cost basis entries.
+          Manage overrides from the <a href="{{ url_for('cost_basis_view') }}">cost basis dashboard</a>.
+        </p>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th scope="col">Ticker</th>
+              <th scope="col">Shares</th>
+              <th scope="col">Activity date</th>
+              <th scope="col">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in pending_cost_basis %}
+            <tr class="{% if item.id in due_cost_basis_ids %}warning-row{% endif %}">
+              <td>{{ item.instrument }}</td>
+              <td>{{ item.shares }}</td>
+              <td>{{ item.activity_date }}</td>
+              <td>
+                {% if item.status == "pending" %}
+                Pending
+                {% else %}
+                Snoozed
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </section>
+      {% endif %}
+      {% if resolved_cost_basis %}
+      <section class="cost-basis-summary">
+        <h2>Resolved transfer cost basis overrides</h2>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th scope="col">Ticker</th>
+              <th scope="col">Shares</th>
+              <th scope="col">Activity date</th>
+              <th scope="col">Total basis</th>
+              <th scope="col">Basis per share</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in resolved_cost_basis %}
+            <tr>
+              <td>{{ item.instrument }}</td>
+              <td>{{ item.shares }}</td>
+              <td>{{ item.activity_date }}</td>
+              <td>{{ format_currency(item.basis_total) }}</td>
+              <td>{{ format_currency(item.basis_per_share) }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </section>
+      {% endif %}
       <section>
         <h2>Option Transactions</h2>
         <p class="section-note">

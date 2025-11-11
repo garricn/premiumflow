@@ -67,6 +67,18 @@ class NormalizedStockTransaction:
     raw: Dict[str, str]
 
 
+@dataclass(frozen=True)
+class MissingCostBasisEntry:
+    """Row describing a share transfer that requires a manual cost basis override."""
+
+    activity_date: date
+    instrument: str
+    shares: Decimal
+    trans_code: str
+    row_number: int
+    description: str
+
+
 @dataclass
 class ParsedImportResult:
     """Container for normalized import data and account metadata."""
@@ -75,6 +87,7 @@ class ParsedImportResult:
     account_number: Optional[str]
     transactions: List[NormalizedOptionTransaction]
     stock_transactions: List[NormalizedStockTransaction] = field(default_factory=list)
+    missing_cost_basis: List[MissingCostBasisEntry] = field(default_factory=list)
 
 
 def parse_date(date_str: str) -> datetime:
@@ -191,11 +204,14 @@ def load_option_transactions(
             if stock_row is not None:
                 normalized_stock.append(stock_row)
 
+    missing_cost_basis = _detect_missing_cost_basis(normalized_stock)
+
     return ParsedImportResult(
         account_name=normalized_account_name,
         account_number=normalized_account_number,
         transactions=normalized,
         stock_transactions=normalized_stock,
+        missing_cost_basis=missing_cost_basis,
     )
 
 
@@ -421,6 +437,45 @@ def _normalize_cash_transfer_row(
         action=action,
         raw=raw,
     )
+
+
+def _detect_missing_cost_basis(
+    stock_rows: List[NormalizedStockTransaction],
+) -> List[MissingCostBasisEntry]:
+    entries: List[MissingCostBasisEntry] = []
+    for txn in stock_rows:
+        if not _transfer_requires_basis(txn):
+            continue
+        raw_row_number = txn.raw.get(CSV_ROW_NUMBER_KEY) if txn.raw else None
+        try:
+            row_number = int(raw_row_number) if raw_row_number is not None else 0
+        except (TypeError, ValueError):
+            row_number = 0
+        entries.append(
+            MissingCostBasisEntry(
+                activity_date=txn.activity_date,
+                instrument=txn.instrument,
+                shares=txn.quantity,
+                trans_code=txn.trans_code,
+                row_number=row_number,
+                description=txn.description,
+            )
+        )
+    return entries
+
+
+def _transfer_requires_basis(txn: NormalizedStockTransaction) -> bool:
+    if not _is_transfer_code(txn.trans_code):
+        return False
+    if txn.action != "BUY":
+        return False
+    if txn.quantity == ZERO_DECIMAL:
+        return False
+    if txn.price != ZERO_DECIMAL:
+        return False
+    if txn.amount != ZERO_DECIMAL:
+        return False
+    return True
 
 
 def _is_transfer_code(trans_code: str) -> bool:

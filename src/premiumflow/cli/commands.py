@@ -10,6 +10,7 @@ import click
 
 from .analyze import analyze
 from .cashflow import cashflow
+from .cost_basis import cost_basis
 from .import_command import import_group
 from .legs import legs
 from .lookup import lookup
@@ -28,6 +29,7 @@ def main():
 main.add_command(analyze)
 main.add_command(cashflow)
 main.add_command(import_group)
+main.add_command(cost_basis)
 main.add_command(legs)
 main.add_command(lookup)
 main.add_command(trace)

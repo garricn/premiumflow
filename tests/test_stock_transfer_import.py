@@ -55,6 +55,12 @@ def test_transfer_and_ach_rows_are_normalized_and_persisted(tmp_path, monkeypatc
     assert ach_txn.price == Decimal("0")
     assert ach_txn.amount == Decimal("1500.00")
 
+    assert len(parsed.missing_cost_basis) == 1
+    missing_entry = parsed.missing_cost_basis[0]
+    assert missing_entry.instrument == "TSLA"
+    assert missing_entry.shares == Decimal("10")
+    assert missing_entry.trans_code == "ACATI"
+
     db_path = tmp_path / "premiumflow.db"
     monkeypatch.setenv(storage_module.DB_ENV_VAR, str(db_path))
 

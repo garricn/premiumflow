@@ -93,6 +93,7 @@ def build_ingest_payload(  # noqa: PLR0913
     ticker: Optional[str],
     strategy: Optional[str],
     open_only: bool,
+    cost_basis_warnings: Optional[Sequence[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """Build the complete payload for JSON output in ingest command."""
     transactions_payload = [serialize_normalized_transaction(txn) for txn in transactions]
@@ -119,6 +120,7 @@ def build_ingest_payload(  # noqa: PLR0913
         },
         "transactions": transactions_payload,
         "chains": filtered_chains,
+        "cost_basis_warnings": list(cost_basis_warnings or []),
     }
 
 

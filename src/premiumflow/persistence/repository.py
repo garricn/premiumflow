@@ -11,6 +11,7 @@ from .storage import SQLiteStorage, get_storage
 
 StoredStatusFilter = Literal["all", "open", "closed"]
 StockLotStatusFilter = Literal["all", "open", "closed"]
+TransferBasisStatus = Literal["pending", "snoozed", "resolved"]
 
 
 @dataclass(frozen=True)
@@ -102,6 +103,28 @@ class StoredStockLot:
     expiration: Optional[str]
     assignment_kind: Optional[str]
     source_transaction_id: Optional[int]
+    created_at: str
+    updated_at: str
+    transfer_basis_total: Optional[Decimal]
+    transfer_basis_per_share: Optional[Decimal]
+
+
+@dataclass(frozen=True)
+class StoredTransferBasisItem:
+    """Representation of a transfer-derived cost basis override entry."""
+
+    id: int
+    account_name: str
+    account_number: Optional[str]
+    instrument: str
+    activity_date: str
+    shares: Decimal
+    trans_code: str
+    description: str
+    basis_total: Optional[Decimal]
+    basis_per_share: Optional[Decimal]
+    status: TransferBasisStatus
+    remind_after: Optional[str]
     created_at: str
     updated_at: str
 
@@ -455,9 +478,16 @@ class SQLiteRepository:
             "  l.assignment_kind,",
             "  l.source_transaction_id,",
             "  l.created_at,",
-            "  l.updated_at",
+            "  l.updated_at,",
+            "  tbi.basis_total AS transfer_basis_total,",
+            "  tbi.basis_per_share AS transfer_basis_per_share",
             "FROM stock_lots AS l",
             "JOIN accounts AS a ON l.account_id = a.id",
+            "LEFT JOIN transfer_basis_items AS tbi ON",
+            "  tbi.account_id = l.account_id",
+            "  AND UPPER(tbi.instrument) = UPPER(l.symbol)",
+            "  AND tbi.activity_date = l.opened_at",
+            "  AND tbi.status = 'resolved'",
         ]
         clauses: list[str] = []
         params: list[object] = []
@@ -497,6 +527,185 @@ class SQLiteRepository:
         with self._storage._connect() as conn:  # type: ignore[attr-defined]
             rows = conn.execute(sql, params).fetchall()
         return [_row_to_stored_stock_lot(row) for row in rows]
+
+    def list_transfer_basis_items(
+        self,
+        *,
+        account_name: Optional[str] = None,
+        account_number: Optional[str] = None,
+        statuses: Optional[Sequence[TransferBasisStatus]] = None,
+        due_only: bool = False,
+    ) -> List[StoredTransferBasisItem]:
+        """Return transfer basis entries filtered by account, status, and reminder state."""
+
+        self._storage._ensure_initialized()  # type: ignore[attr-defined]
+        query = self._transfer_basis_select()
+        clauses: list[str] = []
+        params: list[object] = []
+
+        if account_name is not None:
+            clauses.append("a.name = ?")
+            params.append(account_name)
+        if account_number is not None:
+            clauses.append("IFNULL(a.number, '') = IFNULL(?, '')")
+            params.append(account_number)
+        if statuses:
+            placeholders = ", ".join("?" for _ in statuses)
+            clauses.append(f"t.status IN ({placeholders})")
+            params.extend(statuses)
+        if due_only:
+            now = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+            clauses.append("(t.remind_after IS NULL OR t.remind_after <= ?)")
+            params.append(now)
+
+        if clauses:
+            query.append("WHERE " + " AND ".join(clauses))
+
+        query.append("ORDER BY t.activity_date ASC, t.instrument ASC, t.id ASC")
+
+        sql = "\n".join(query)
+        with self._storage._connect() as conn:  # type: ignore[attr-defined]
+            rows = conn.execute(sql, params).fetchall()
+        return [_row_to_transfer_basis_item(row) for row in rows]
+
+    def find_transfer_basis_items(
+        self,
+        *,
+        account_name: str,
+        account_number: Optional[str],
+        instrument: str,
+        activity_date: date,
+        shares: Decimal,
+        include_resolved: bool = True,
+        trans_code: Optional[str] = None,
+    ) -> List[StoredTransferBasisItem]:
+        """Return transfer basis entries matching the provided identifying fields."""
+
+        self._storage._ensure_initialized()  # type: ignore[attr-defined]
+        query = self._transfer_basis_select()
+        clauses = [
+            "a.name = ?",
+            "IFNULL(a.number, '') = IFNULL(?, '')",
+            "t.instrument = ?",
+            "t.activity_date = ?",
+            "t.shares = ?",
+        ]
+        params: list[object] = [
+            account_name,
+            account_number,
+            instrument.strip().upper(),
+            activity_date.isoformat(),
+            self._decimal_to_text(shares),
+        ]
+
+        if not include_resolved:
+            clauses.append("t.status != 'resolved'")
+        if trans_code is not None:
+            clauses.append("t.trans_code = ?")
+            params.append(trans_code)
+
+        query.append("WHERE " + " AND ".join(clauses))
+        query.append("ORDER BY t.updated_at DESC")
+
+        sql = "\n".join(query)
+        with self._storage._connect() as conn:  # type: ignore[attr-defined]
+            rows = conn.execute(sql, params).fetchall()
+        return [_row_to_transfer_basis_item(row) for row in rows]
+
+    def get_transfer_basis_item_by_id(self, item_id: int) -> Optional[StoredTransferBasisItem]:
+        """Return a single transfer basis entry by identifier, if present."""
+
+        self._storage._ensure_initialized()  # type: ignore[attr-defined]
+        query = self._transfer_basis_select()
+        query.append("WHERE t.id = ?")
+        sql = "\n".join(query)
+        with self._storage._connect() as conn:  # type: ignore[attr-defined]
+            row = conn.execute(sql, (int(item_id),)).fetchone()
+        if row is None:
+            return None
+        return _row_to_transfer_basis_item(row)
+
+    def resolve_transfer_basis_item(
+        self,
+        item_id: int,
+        *,
+        basis_total: Decimal,
+        basis_per_share: Decimal,
+    ) -> bool:
+        """Mark a transfer basis entry as resolved with supplied basis details."""
+
+        self._storage._ensure_initialized()  # type: ignore[attr-defined]
+        timestamp = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+        with self._storage._connect() as conn:  # type: ignore[attr-defined]
+            cursor = conn.execute(
+                """
+                UPDATE transfer_basis_items
+                SET basis_total = ?,
+                    basis_per_share = ?,
+                    status = 'resolved',
+                    remind_after = NULL,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    self._decimal_to_text(basis_total),
+                    self._decimal_to_text(basis_per_share),
+                    timestamp,
+                    int(item_id),
+                ),
+            )
+            return (cursor.rowcount or 0) > 0
+
+    def snooze_transfer_basis_item(
+        self,
+        item_id: int,
+        *,
+        remind_after: datetime,
+    ) -> bool:
+        """Defer reminders for a transfer basis entry."""
+
+        self._storage._ensure_initialized()  # type: ignore[attr-defined]
+        timestamp = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+        remind_value = remind_after.isoformat(timespec="seconds") + "Z"
+        with self._storage._connect() as conn:  # type: ignore[attr-defined]
+            cursor = conn.execute(
+                """
+                UPDATE transfer_basis_items
+                SET status = 'snoozed',
+                    remind_after = ?,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    remind_value,
+                    timestamp,
+                    int(item_id),
+                ),
+            )
+            return (cursor.rowcount or 0) > 0
+
+    def reopen_transfer_basis_item(self, item_id: int) -> bool:
+        """Reset a transfer basis entry to pending and clear overrides."""
+
+        self._storage._ensure_initialized()  # type: ignore[attr-defined]
+        timestamp = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+        with self._storage._connect() as conn:  # type: ignore[attr-defined]
+            cursor = conn.execute(
+                """
+                UPDATE transfer_basis_items
+                SET basis_total = NULL,
+                    basis_per_share = NULL,
+                    status = 'pending',
+                    remind_after = NULL,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    timestamp,
+                    int(item_id),
+                ),
+            )
+            return (cursor.rowcount or 0) > 0
 
     def replace_assignment_stock_lots(
         self,
@@ -573,6 +782,28 @@ class SQLiteRepository:
                 """,
                 rows,
             )
+
+    @staticmethod
+    def _transfer_basis_select() -> list[str]:
+        return [
+            "SELECT",
+            "  t.id,",
+            "  a.name AS account_name,",
+            "  a.number AS account_number,",
+            "  t.instrument,",
+            "  t.activity_date,",
+            "  t.shares,",
+            "  t.trans_code,",
+            "  t.description,",
+            "  t.basis_total,",
+            "  t.basis_per_share,",
+            "  t.status,",
+            "  t.remind_after,",
+            "  t.created_at,",
+            "  t.updated_at",
+            "FROM transfer_basis_items AS t",
+            "JOIN accounts AS a ON t.account_id = a.id",
+        ]
 
     def _get_account_id(
         self,
@@ -672,6 +903,12 @@ def _row_to_stored_stock_lot(row) -> StoredStockLot:
     account_number = row["account_number"]
     option_type = row["option_type"]
     expiration = row["expiration"]
+    transfer_basis_total_value = (
+        row["transfer_basis_total"] if "transfer_basis_total" in row.keys() else None
+    )
+    transfer_basis_per_share_value = (
+        row["transfer_basis_per_share"] if "transfer_basis_per_share" in row.keys() else None
+    )
     return StoredStockLot(
         id=int(row["id"]),
         account_name=row["account_name"],
@@ -694,6 +931,36 @@ def _row_to_stored_stock_lot(row) -> StoredStockLot:
         expiration=expiration if expiration is not None else None,
         assignment_kind=row["assignment_kind"],
         source_transaction_id=int(source_id) if source_id is not None else None,
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+        transfer_basis_total=Decimal(transfer_basis_total_value)
+        if transfer_basis_total_value is not None
+        else None,
+        transfer_basis_per_share=Decimal(transfer_basis_per_share_value)
+        if transfer_basis_per_share_value is not None
+        else None,
+    )
+
+
+def _row_to_transfer_basis_item(row) -> StoredTransferBasisItem:
+    account_number = row["account_number"]
+    basis_total_value = row["basis_total"]
+    basis_per_share_value = row["basis_per_share"]
+    return StoredTransferBasisItem(
+        id=int(row["id"]),
+        account_name=row["account_name"],
+        account_number=account_number if account_number is not None else None,
+        instrument=row["instrument"],
+        activity_date=row["activity_date"],
+        shares=Decimal(row["shares"]),
+        trans_code=row["trans_code"],
+        description=row["description"],
+        basis_total=Decimal(basis_total_value) if basis_total_value is not None else None,
+        basis_per_share=(
+            Decimal(basis_per_share_value) if basis_per_share_value is not None else None
+        ),
+        status=row["status"],  # type: ignore[arg-type]
+        remind_after=row["remind_after"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )

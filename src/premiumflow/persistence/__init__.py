@@ -6,7 +6,9 @@ from .repository import (
     StoredImport,
     StoredStockLot,
     StoredStockTransaction,
+    StoredTransferBasisItem,
     StoredTransaction,
+    TransferBasisStatus,
 )
 from .storage import (
     DuplicateImportError,
@@ -24,8 +26,10 @@ __all__ = [
     "StoreResult",
     "StoredStockLot",
     "StoredStockTransaction",
+    "StoredTransferBasisItem",
     "StoredImport",
     "StoredTransaction",
+    "TransferBasisStatus",
     "get_storage",
     "store_import_result",
 ]

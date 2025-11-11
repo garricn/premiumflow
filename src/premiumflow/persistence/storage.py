@@ -11,9 +11,9 @@ from decimal import Decimal
 from functools import lru_cache
 from hashlib import sha256
 from pathlib import Path
-from typing import Literal, Optional, Union
+from typing import Literal, Optional, Sequence, Union
 
-from ..core.parser import CSV_ROW_NUMBER_KEY, ParsedImportResult
+from ..core.parser import CSV_ROW_NUMBER_KEY, MissingCostBasisEntry, ParsedImportResult
 
 STOCK_TRANSACTIONS_REQUIRED_COLUMNS = {
     "id",
@@ -53,6 +53,22 @@ STOCK_LOTS_REQUIRED_COLUMNS = {
     "net_credit_per_share",
     "assignment_kind",
     "status",
+    "created_at",
+    "updated_at",
+}
+
+TRANSFER_BASIS_REQUIRED_COLUMNS = {
+    "id",
+    "account_id",
+    "instrument",
+    "activity_date",
+    "shares",
+    "trans_code",
+    "description",
+    "basis_total",
+    "basis_per_share",
+    "status",
+    "remind_after",
     "created_at",
     "updated_at",
 }
@@ -222,12 +238,34 @@ class SQLiteStorage:
                     updated_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS transfer_basis_items (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+                    instrument TEXT NOT NULL,
+                    activity_date TEXT NOT NULL,
+                    shares TEXT NOT NULL,
+                    trans_code TEXT NOT NULL,
+                    description TEXT NOT NULL,
+                    basis_total TEXT,
+                    basis_per_share TEXT,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    remind_after TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(account_id, instrument, activity_date, shares, trans_code)
+                );
+
                 """
             )
             self._verify_table_schema(
                 conn, "stock_transactions", STOCK_TRANSACTIONS_REQUIRED_COLUMNS
             )
             self._verify_table_schema(conn, "stock_lots", STOCK_LOTS_REQUIRED_COLUMNS)
+            self._verify_table_schema(
+                conn,
+                "transfer_basis_items",
+                TRANSFER_BASIS_REQUIRED_COLUMNS,
+            )
             conn.execute(
                 """
                 CREATE INDEX IF NOT EXISTS idx_stock_transactions_import
@@ -256,6 +294,18 @@ class SQLiteStorage:
                 """
                 CREATE INDEX IF NOT EXISTS idx_stock_lots_account_status
                     ON stock_lots(account_id, status)
+                """
+            )
+            conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_transfer_basis_account_status
+                    ON transfer_basis_items(account_id, status)
+                """
+            )
+            conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_transfer_basis_account_activity
+                    ON transfer_basis_items(account_id, activity_date)
                 """
             )
             # Clean up any legacy duplicates that may exist from versions prior to
@@ -295,6 +345,50 @@ class SQLiteStorage:
                 f"Table {table} is missing columns {', '.join(sorted(missing))}. "
                 "Delete the existing database file to rebuild the schema."
             )
+
+    def _record_missing_cost_basis_entries(
+        self,
+        conn: sqlite3.Connection,
+        account_id: int,
+        entries: Sequence[MissingCostBasisEntry],
+    ) -> None:
+        if not entries:
+            return
+        timestamp = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+        rows = [
+            (
+                account_id,
+                entry.instrument.strip().upper(),
+                entry.activity_date.isoformat(),
+                _decimal_to_text(entry.shares),
+                entry.trans_code,
+                entry.description,
+                timestamp,
+                timestamp,
+            )
+            for entry in entries
+        ]
+        conn.executemany(
+            """
+            INSERT INTO transfer_basis_items (
+                account_id,
+                instrument,
+                activity_date,
+                shares,
+                trans_code,
+                description,
+                status,
+                created_at,
+                updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+            ON CONFLICT(account_id, instrument, activity_date, shares, trans_code)
+            DO UPDATE SET
+                description = excluded.description,
+                updated_at = excluded.updated_at
+            """,
+            rows,
+        )
 
     def store_import(  # noqa: C901
         self,
@@ -424,6 +518,13 @@ class SQLiteStorage:
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     stock_rows_to_insert,
+                )
+            missing_cost_basis_entries = getattr(parsed, "missing_cost_basis", []) or []
+            if missing_cost_basis_entries:
+                self._record_missing_cost_basis_entries(
+                    conn,
+                    account_id,
+                    missing_cost_basis_entries,
                 )
             status: StoreStatus = "replaced" if existing else "inserted"
         return StoreResult(import_id=int(import_id), status=status)

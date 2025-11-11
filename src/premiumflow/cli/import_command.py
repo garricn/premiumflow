@@ -27,6 +27,7 @@ from ..persistence import (
     store_import_result,
 )
 from ..services.chain_builder import detect_roll_chains
+from ..services.cost_basis import get_due_transfer_basis_items
 from ..services.cli_helpers import format_account_label
 from ..services.display import format_currency
 from ..services.json_serializer import build_ingest_payload
@@ -247,6 +248,8 @@ def _run_import(  # noqa: C901, PLR0913, PLR0911
     if emit_text:
         console.print(f"[blue]{console_label} {csv_file}...[/blue]")
 
+    repository = SQLiteRepository()
+
     try:
         store_result = store_import_result(
             parsed,
@@ -267,18 +270,31 @@ def _run_import(  # noqa: C901, PLR0913, PLR0911
                 f"[yellow]Warning: Failed to persist import data ({exc}). Continuing without storage.[/yellow]"
             )
 
+    pending_basis_items = get_due_transfer_basis_items(
+        repository,
+        account_name=parsed.account_name,
+        account_number=parsed.account_number,
+    )
+
     if emit_text and store_result.status == "skipped" and duplicate_strategy == "skip":
         console.print("[yellow]Import already persisted; skipping new storage.[/yellow]")
     elif emit_text and store_result.status == "replaced":
         console.print("[cyan]Existing persisted import replaced with new data.[/cyan]")
 
     if store_result.status != "skipped":
-        repository = SQLiteRepository()
         rebuild_assignment_stock_lots(
             repository,
             account_name=parsed.account_name,
             account_number=parsed.account_number,
         )
+
+    if emit_text and pending_basis_items:
+        console.print("[yellow]Missing cost basis overrides detected:[/yellow]")
+        for entry in pending_basis_items:
+            status_label = "snoozed" if entry.status == "snoozed" else "pending"
+            console.print(
+                f"  • {entry.instrument} • {entry.shares} shares on {entry.activity_date} ({status_label})"
+            )
 
     transactions = list(parsed.transactions)
     filtered_transactions = _filter_by_ticker(transactions, ticker_symbol)
@@ -329,6 +345,15 @@ def _run_import(  # noqa: C901, PLR0913, PLR0911
     chains_for_json = detect_roll_chains(chain_source_transactions)
 
     if json_output:
+        cost_basis_payload = [
+            {
+                "instrument": entry.instrument,
+                "activity_date": entry.activity_date,
+                "shares": format(entry.shares, "f"),
+                "status": entry.status,
+            }
+            for entry in pending_basis_items
+        ]
         payload = build_ingest_payload(
             csv_file=str(csv_file),
             account_name=parsed.account_name,
@@ -339,6 +364,7 @@ def _run_import(  # noqa: C901, PLR0913, PLR0911
             ticker=ticker_symbol,
             strategy=strategy,
             open_only=open_only,
+            cost_basis_warnings=cost_basis_payload,
         )
         console.print_json(data=payload)
         return

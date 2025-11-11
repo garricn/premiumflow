@@ -10,6 +10,16 @@ from .cash_flow import (
     generate_cash_flow_pnl_report,
 )
 from .chain_builder import detect_roll_chains
+from .cost_basis import (
+    CostBasisError,
+    CostBasisNotFoundError,
+    get_due_transfer_basis_items,
+    list_resolved_transfer_basis_items,
+    list_transfer_basis_items,
+    reopen_transfer_basis_item,
+    resolve_transfer_basis_override,
+    snooze_transfer_basis_item,
+)
 from .cli_helpers import (
     create_target_label,
     filter_open_chains,
@@ -58,6 +68,14 @@ __all__ = [
     "detect_roll_chains",
     "calculate_pnl",
     "calculate_breakeven",
+    "CostBasisError",
+    "CostBasisNotFoundError",
+    "get_due_transfer_basis_items",
+    "list_transfer_basis_items",
+    "list_resolved_transfer_basis_items",
+    "resolve_transfer_basis_override",
+    "snooze_transfer_basis_item",
+    "reopen_transfer_basis_item",
     "format_currency",
     "format_breakeven",
     "format_percent",

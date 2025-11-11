@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from typing import List, Optional
 
 from ..persistence import SQLiteRepository
@@ -106,6 +106,18 @@ def _summarize_lot(lot: StoredStockLot) -> StockLotSummary:
 
     basis_total = lot.share_price_total - (direction_sign * lot.net_credit_total)
     basis_per_share = basis_total / divisor
+
+    override_per_share = lot.transfer_basis_per_share
+    if override_per_share is None and lot.transfer_basis_total is not None:
+        override_per_share = (lot.transfer_basis_total / divisor).quantize(
+            Decimal("0.0001"), rounding=ROUND_HALF_UP
+        )
+
+    if override_per_share is not None:
+        basis_per_share = override_per_share
+        basis_total = (override_per_share * divisor).quantize(
+            Decimal("0.01"), rounding=ROUND_HALF_UP
+        )
 
     realized_total = lot.net_credit_total
     realized_per_share = realized_total / divisor

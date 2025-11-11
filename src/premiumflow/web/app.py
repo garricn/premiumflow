@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import re
 import sqlite3
-from datetime import date, datetime, timezone
-from decimal import Decimal
+from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Literal
@@ -31,6 +31,16 @@ from ..services.leg_matching import (
     _stored_to_normalized,
     group_fills_by_account,
     match_legs_with_errors,
+)
+from ..services.cost_basis import (
+    CostBasisError,
+    CostBasisNotFoundError,
+    get_due_transfer_basis_items,
+    list_resolved_transfer_basis_items,
+    list_transfer_basis_items,
+    reopen_transfer_basis_item,
+    resolve_transfer_basis_override,
+    snooze_transfer_basis_item,
 )
 from ..services.stock_lot_builder import rebuild_assignment_stock_lots
 from ..services.stock_lots import (
@@ -211,6 +221,26 @@ def _parse_lot_date(value: str | None) -> date | None:
     return parsed.date()
 
 
+def _cost_basis_redirect(
+    request: Request,
+    *,
+    notice_type: str,
+    notice_title: str,
+    notice_body: str,
+) -> RedirectResponse:
+    params = urlencode(
+        {
+            "notice_type": notice_type,
+            "notice_title": notice_title,
+            "notice_body": notice_body,
+        }
+    )
+    target = str(request.url_for("cost_basis_view"))
+    if params:
+        target = f"{target}?{params}"
+    return RedirectResponse(target, status_code=303)
+
+
 def create_app() -> FastAPI:  # noqa: C901
     """Construct and return the FastAPI application."""
     app = FastAPI(title="PremiumFlow Web UI")
@@ -256,6 +286,7 @@ def create_app() -> FastAPI:  # noqa: C901
         }
 
         message: dict[str, object] | None = None
+        cost_basis_warnings: list[object] = []
 
         if not csv_file.filename:
             message = {
@@ -452,6 +483,22 @@ def create_app() -> FastAPI:  # noqa: C901
                         "title": "Import stored",
                         "body": f"Imported {row_count} transactions for {parsed.account_name}.",
                     }
+                cost_basis_warnings = [
+                    {
+                        "id": entry.id,
+                        "instrument": entry.instrument,
+                        "shares": format(entry.shares, "f"),
+                        "activity_date": entry.activity_date,
+                        "status": entry.status,
+                        "account_name": entry.account_name,
+                        "account_number": entry.account_number,
+                    }
+                    for entry in get_due_transfer_basis_items(
+                        repository,
+                        account_name=parsed.account_name,
+                        account_number=parsed.account_number,
+                    )
+                ]
 
         return templates.TemplateResponse(
             request=request,
@@ -460,6 +507,7 @@ def create_app() -> FastAPI:  # noqa: C901
                 "title": "PremiumFlow Web UI",
                 "message": message,
                 "form": form_values,
+                "cost_basis_warnings": cost_basis_warnings,
             },
         )
 
@@ -636,6 +684,27 @@ def create_app() -> FastAPI:  # noqa: C901
             else f"{record.account_name} ({record.account_number})"
         )
 
+        pending_cost_basis = list_transfer_basis_items(
+            repository,
+            account_name=record.account_name,
+            account_number=record.account_number,
+            statuses=("pending", "snoozed"),
+            due_only=False,
+        )
+        resolved_cost_basis = list_resolved_transfer_basis_items(
+            repository,
+            account_name=record.account_name,
+            account_number=record.account_number,
+        )
+        due_cost_basis_ids = {
+            entry.id
+            for entry in get_due_transfer_basis_items(
+                repository,
+                account_name=record.account_name,
+                account_number=record.account_number,
+            )
+        }
+
         return templates.TemplateResponse(
             request=request,
             name="import_detail.html",
@@ -650,6 +719,10 @@ def create_app() -> FastAPI:  # noqa: C901
                 "activity_start": activity_start,
                 "activity_end": activity_end,
                 "default_page_size": DEFAULT_PAGE_SIZE,
+                "pending_cost_basis": pending_cost_basis,
+                "resolved_cost_basis": resolved_cost_basis,
+                "due_cost_basis_ids": due_cost_basis_ids,
+                "format_currency": format_currency,
             },
         )
 
@@ -880,6 +953,192 @@ def create_app() -> FastAPI:  # noqa: C901
                 "format_currency": format_currency,
                 "error_message": error_message,
             },
+        )
+
+    @app.get("/cost-basis", response_class=HTMLResponse, tags=["ui"])
+    async def cost_basis_view(
+        request: Request,
+        notice_type: str | None = Query(default=None),
+        notice_title: str | None = Query(default=None),
+        notice_body: str | None = Query(default=None),
+        repository: SQLiteRepository = Depends(get_repository),
+    ) -> HTMLResponse:
+        message: dict[str, object] | None = None
+        if notice_type and notice_body:
+            message = {
+                "type": notice_type,
+                "title": notice_title or "Cost basis update",
+                "body": notice_body,
+            }
+
+        pending_items = list_transfer_basis_items(
+            repository,
+            statuses=("pending", "snoozed"),
+            due_only=False,
+        )
+        due_ids = {
+            entry.id for entry in get_due_transfer_basis_items(repository)
+        }
+        resolved_items = list_resolved_transfer_basis_items(repository)
+
+        return templates.TemplateResponse(
+            request=request,
+            name="cost_basis.html",
+            context={
+                "title": "Cost Basis Overrides",
+                "message": message,
+                "pending_items": pending_items,
+                "resolved_items": resolved_items,
+                "due_ids": due_ids,
+                "format_currency": format_currency,
+            },
+        )
+
+    @app.post("/cost-basis/{item_id}/resolve", response_class=HTMLResponse, tags=["ui"])
+    async def resolve_cost_basis(
+        request: Request,
+        item_id: int,
+        basis_total: str = Form(default=""),
+        basis_per_share: str = Form(default=""),
+        repository: SQLiteRepository = Depends(get_repository),
+    ) -> RedirectResponse:
+        item = repository.get_transfer_basis_item_by_id(item_id)
+        if item is None:
+            raise HTTPException(status_code=404, detail="Transfer basis entry not found.")
+
+        total_decimal: Decimal | None = None
+        per_share_decimal: Decimal | None = None
+
+        if basis_total.strip():
+            try:
+                total_decimal = Decimal(basis_total.strip())
+            except InvalidOperation:
+                return _cost_basis_redirect(
+                    request,
+                    notice_type="error",
+                    notice_title="Invalid total basis",
+                    notice_body="Basis total must be a valid decimal amount.",
+                )
+        if basis_per_share.strip():
+            try:
+                per_share_decimal = Decimal(basis_per_share.strip())
+            except InvalidOperation:
+                return _cost_basis_redirect(
+                    request,
+                    notice_type="error",
+                    notice_title="Invalid per-share basis",
+                    notice_body="Per-share basis must be a valid decimal amount.",
+                )
+
+        if total_decimal is None and per_share_decimal is None:
+            return _cost_basis_redirect(
+                request,
+                notice_type="error",
+                notice_title="Basis required",
+                notice_body="Provide a total basis, per-share basis, or both.",
+            )
+
+        try:
+            activity_dt = date.fromisoformat(item.activity_date)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Stored activity date is invalid.")
+
+        try:
+            resolve_transfer_basis_override(
+                repository,
+                account_name=item.account_name,
+                account_number=item.account_number,
+                instrument=item.instrument,
+                activity_date=activity_dt,
+                shares=item.shares,
+                basis_total=total_decimal,
+                basis_per_share=per_share_decimal,
+                trans_code=item.trans_code,
+            )
+        except CostBasisError as exc:
+            return _cost_basis_redirect(
+                request,
+                notice_type="error",
+                notice_title="Unable to resolve entry",
+                notice_body=str(exc),
+            )
+
+        account_label = format_account_label(item.account_name, item.account_number)
+        return _cost_basis_redirect(
+            request,
+            notice_type="success",
+            notice_title="Cost basis recorded",
+            notice_body=(
+                f"Saved cost basis for {item.instrument} • {item.shares} shares on {item.activity_date} "
+                f"({account_label})."
+            ),
+        )
+
+    @app.post("/cost-basis/{item_id}/snooze", response_class=HTMLResponse, tags=["ui"])
+    async def snooze_cost_basis(
+        request: Request,
+        item_id: int,
+        delay_days: int = Form(default=1),
+        repository: SQLiteRepository = Depends(get_repository),
+    ) -> RedirectResponse:
+        item = repository.get_transfer_basis_item_by_id(item_id)
+        if item is None:
+            raise HTTPException(status_code=404, detail="Transfer basis entry not found.")
+
+        try:
+            days = max(1, int(delay_days))
+        except (TypeError, ValueError):
+            return _cost_basis_redirect(
+                request,
+                notice_type="error",
+                notice_title="Invalid reminder window",
+                notice_body="Reminder delay must be a whole number of days.",
+            )
+
+        remind_after = datetime.utcnow() + timedelta(days=days)
+        try:
+            snooze_transfer_basis_item(
+                repository,
+                item_id=item_id,
+                remind_after=remind_after,
+            )
+        except CostBasisNotFoundError:
+            raise HTTPException(status_code=404, detail="Transfer basis entry not found.")
+
+        account_label = format_account_label(item.account_name, item.account_number)
+        return _cost_basis_redirect(
+            request,
+            notice_type="success",
+            notice_title="Reminder scheduled",
+            notice_body=(
+                f"Snoozed {item.instrument} • {item.shares} shares on {item.activity_date} "
+                f"({account_label}) for {days} day(s)."
+            ),
+        )
+
+    @app.post("/cost-basis/{item_id}/reopen", response_class=HTMLResponse, tags=["ui"])
+    async def reopen_cost_basis(
+        request: Request,
+        item_id: int,
+        repository: SQLiteRepository = Depends(get_repository),
+    ) -> RedirectResponse:
+        try:
+            updated = reopen_transfer_basis_item(
+                repository,
+                item_id=item_id,
+            )
+        except CostBasisNotFoundError:
+            raise HTTPException(status_code=404, detail="Transfer basis entry not found.")
+
+        account_label = format_account_label(updated.account_name, updated.account_number)
+        return _cost_basis_redirect(
+            request,
+            notice_type="success",
+            notice_title="Cost basis reopened",
+            notice_body=(
+                f"Reopened {updated.instrument} • {updated.shares} shares on {updated.activity_date} "
+                f"({account_label})."
+            ),
         )
 
     @app.get("/cashflow", response_class=HTMLResponse, tags=["ui"])

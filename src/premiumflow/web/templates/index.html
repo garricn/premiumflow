@@ -14,6 +14,7 @@
         <a href="{{ url_for('legs_view') }}">View matched legs</a>
         <a href="{{ url_for('cashflow_view') }}">Cash Flow & P&L</a>
         <a href="{{ url_for('stock_lots_view') }}">View stock lots</a>
+        <a href="{{ url_for('cost_basis_view') }}">Cost basis overrides</a>
       </nav>
       <p>Welcome to the PremiumFlow web interface. Uploads and history views will appear here.</p>
     </header>
@@ -22,6 +23,29 @@
       <section class="notice notice-{{ message.type }}">
         <h2>{{ message.title }}</h2>
         <p>{{ message.body }}</p>
+      </section>
+      {% endif %}
+      {% if cost_basis_warnings %}
+      <section class="notice notice-warning">
+        <h2>Missing cost basis overrides</h2>
+        <p>
+          The following transfers still need manual cost basis entries.
+          <a href="{{ url_for('cost_basis_view') }}">Open the cost basis dashboard</a> to resolve them.
+        </p>
+        <ul class="warning-list">
+          {% for warning in cost_basis_warnings %}
+          <li>
+            {{ warning.account_name }}
+            {% if warning.account_number %}
+            ({{ warning.account_number }})
+            {% endif %}
+            • {{ warning.instrument }} • {{ warning.shares }} shares on {{ warning.activity_date }}
+            {% if warning.status == "snoozed" %}
+            <span class="badge">snoozed</span>
+            {% endif %}
+          </li>
+          {% endfor %}
+        </ul>
       </section>
       {% endif %}
       <section>
