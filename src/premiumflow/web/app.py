@@ -431,7 +431,9 @@ def create_app() -> FastAPI:  # noqa: C901
                     "body": str(exc),
                 }
             else:
-                row_count = len(parsed.transactions)
+                row_count = len(parsed.transactions) + len(
+                    getattr(parsed, "stock_transactions", [])
+                )
                 if store_result.status == "skipped":
                     message = {
                         "type": "warning",
@@ -624,6 +626,7 @@ def create_app() -> FastAPI:  # noqa: C901
             raise HTTPException(status_code=404, detail="Import not found")
 
         transactions = repository.fetch_transactions(import_ids=[import_id])
+        stock_transactions = repository.fetch_stock_transactions(import_ids=[import_id])
         activity_start, activity_end = repository.fetch_import_activity_ranges([import_id]).get(
             import_id, (None, None)
         )
@@ -642,6 +645,8 @@ def create_app() -> FastAPI:  # noqa: C901
                 "imported_at": _format_timestamp(record.imported_at),
                 "account_label": account_label,
                 "transactions": transactions,
+                "stock_transactions": stock_transactions,
+                "has_stock_transactions": bool(stock_transactions),
                 "activity_start": activity_start,
                 "activity_end": activity_end,
                 "default_page_size": DEFAULT_PAGE_SIZE,

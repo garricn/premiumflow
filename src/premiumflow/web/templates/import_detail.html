@@ -43,7 +43,11 @@
           </div>
           <div>
             <dt>Options only</dt>
+            {% if has_stock_transactions %}
+            <dd>No — stock &amp; transfer rows preserved</dd>
+            {% else %}
             <dd>{{ "Yes" if import_record.options_only else "No" }}</dd>
+            {% endif %}
           </div>
           <div>
             <dt>Open only</dt>
@@ -72,7 +76,10 @@
         </dl>
       </section>
       <section>
-        <h2>Transactions</h2>
+        <h2>Option Transactions</h2>
+        <p class="section-note">
+          Option rows include contract-specific fields such as strike, expiration, and option type.
+        </p>
         {% if transactions %}
         <table class="data-table">
           <thead>
@@ -101,7 +108,44 @@
           </tbody>
         </table>
         {% else %}
-        <p class="empty-state">This import did not persist any transactions.</p>
+        <p class="empty-state">This import did not persist option transactions.</p>
+        {% endif %}
+      </section>
+      <section>
+        <h2>Stock &amp; Transfer Transactions</h2>
+        <p class="section-note">
+          These rows come from the same CSV export but do not carry option contract details; they capture
+          cash and share movements like ACH deposits or ACAT transfers.
+        </p>
+        {% if stock_transactions %}
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th scope="col">Activity date</th>
+              <th scope="col">Instrument</th>
+              <th scope="col">Action</th>
+              <th scope="col">Quantity</th>
+              <th scope="col">Price</th>
+              <th scope="col">Amount</th>
+              <th scope="col">Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for txn in stock_transactions %}
+            <tr>
+              <td>{{ txn.activity_date }}</td>
+              <td>{{ txn.instrument }}</td>
+              <td>{{ txn.action }} ({{ txn.trans_code }})</td>
+              <td>{{ txn.quantity }}</td>
+              <td>{{ txn.price }}</td>
+              <td>{{ txn.amount }}</td>
+              <td>{{ txn.description }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <p class="empty-state">This import did not persist stock or transfer transactions.</p>
         {% endif %}
       </section>
     </main>
