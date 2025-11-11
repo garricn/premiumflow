@@ -11,7 +11,7 @@ from premiumflow.core.legs import (
 from premiumflow.core.parser import NormalizedOptionTransaction
 
 
-def _make_transaction(
+def _make_transaction(  # noqa: PLR0913
     *,
     activity_date: date,
     description: str,

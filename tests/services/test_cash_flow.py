@@ -49,7 +49,7 @@ def _make_parsed(
     )
 
 
-def _seed_import(
+def _seed_import(  # noqa: PLR0913
     tmp_dir,
     *,
     account_name: str = "Primary Account",
@@ -77,7 +77,7 @@ def _seed_import(
     )
 
 
-def _insert_stock_lot(
+def _insert_stock_lot(  # noqa: PLR0913
     repository,
     *,
     account_name: str,

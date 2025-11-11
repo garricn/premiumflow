@@ -189,7 +189,7 @@ def _apply_import_options(func):
     return func
 
 
-def _run_import(
+def _run_import(  # noqa: C901, PLR0913, PLR0911
     ctx: click.Context,
     *,
     options_only,
@@ -358,7 +358,7 @@ def _run_import(
 
 @click.group(name="import", invoke_without_command=True)
 @_apply_import_options
-def import_group(
+def import_group(  # noqa: PLR0913
     ctx,
     options_only,
     ticker_symbol,

@@ -396,7 +396,7 @@ def _parse_share_quantity(row: Dict[str, str], field: str, row_number: int) -> D
     return quantity * sign
 
 
-def _parse_money(
+def _parse_money(  # noqa: PLR0913
     row: Dict[str, str],
     field: str,
     row_number: int,

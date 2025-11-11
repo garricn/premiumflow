@@ -296,7 +296,7 @@ class SQLiteStorage:
                 "Delete the existing database file to rebuild the schema."
             )
 
-    def store_import(
+    def store_import(  # noqa: C901
         self,
         parsed: ParsedImportResult,
         context: ImportContext,
@@ -476,7 +476,7 @@ def get_storage() -> SQLiteStorage:
     return SQLiteStorage()
 
 
-def store_import_result(
+def store_import_result(  # noqa: PLR0913
     parsed: ParsedImportResult,
     *,
     source_path: str,

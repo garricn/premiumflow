@@ -75,7 +75,7 @@ def _make_parsed(
     )
 
 
-def _seed_import(
+def _seed_import(  # noqa: PLR0913
     tmp_dir: Path,
     *,
     account_name: str = "Primary Account",

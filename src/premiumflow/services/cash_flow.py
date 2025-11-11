@@ -114,7 +114,7 @@ def _empty_realized_breakdowns() -> Dict[RealizedView, RealizedViewTotals]:
     return breakdowns
 
 
-def _build_realized_breakdowns(
+def _build_realized_breakdowns(  # noqa: PLR0913
     *,
     options_profits_gross: Decimal,
     options_losses_gross: Decimal,
@@ -364,7 +364,7 @@ def _aggregate_cash_flow_by_period(
     return period_data
 
 
-def _collect_pnl_period_keys(
+def _collect_pnl_period_keys(  # noqa: PLR0913
     matched_legs: List[MatchedLeg],
     transactions: List[NormalizedOptionTransaction],
     period_type: PeriodType,
@@ -414,7 +414,7 @@ def _collect_pnl_period_keys(
     return all_period_keys
 
 
-def _aggregate_realized_pnl(
+def _aggregate_realized_pnl(  # noqa: C901, PLR0913
     matched_legs: List[MatchedLeg],
     period_type: PeriodType,
     period_data: Dict[str, Dict[str, Decimal]],
@@ -464,7 +464,7 @@ def _aggregate_realized_pnl(
                     period_data[period_key]["realized_pnl_net"] += net_realized
 
 
-def _aggregate_opening_fees(
+def _aggregate_opening_fees(  # noqa: C901, PLR0913
     matched_legs: List[MatchedLeg],
     period_type: PeriodType,
     period_data: Dict[str, Dict[str, Decimal]],
@@ -523,7 +523,7 @@ def _aggregate_closing_fees(
             period_data[period_key]["total_fees"] += close_fees
 
 
-def _aggregate_unrealized_exposure(
+def _aggregate_unrealized_exposure(  # noqa: PLR0913
     matched_legs: List[MatchedLeg],
     period_type: PeriodType,
     period_data: Dict[str, Dict[str, Decimal]],
@@ -619,7 +619,7 @@ def _aggregate_stock_realized_by_period(
     return period_data
 
 
-def _aggregate_pnl_by_period(
+def _aggregate_pnl_by_period(  # noqa: PLR0913
     matched_legs: List[MatchedLeg],
     transactions: List[NormalizedOptionTransaction],
     period_type: PeriodType,
@@ -915,7 +915,7 @@ def _calculate_totals(periods: List[PeriodMetrics]) -> PeriodMetrics:
     )
 
 
-def generate_cash_flow_pnl_report(
+def generate_cash_flow_pnl_report(  # noqa: PLR0913
     repository: SQLiteRepository,
     *,
     account_name: str,

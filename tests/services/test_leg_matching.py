@@ -19,7 +19,7 @@ from premiumflow.services.leg_matching import (
 )
 
 
-def _make_txn(
+def _make_txn(  # noqa: PLR0913
     *,
     activity_date: date,
     description: str,

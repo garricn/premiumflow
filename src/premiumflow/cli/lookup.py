@@ -54,7 +54,7 @@ def _build_results_table(position_spec: str, transactions: List[dict]) -> Table:
     show_default=True,
     help="CSV file to search",
 )
-def lookup(position_spec, csv_file):
+def lookup(position_spec, csv_file):  # noqa: C901
     """Look up a specific position in the CSV data."""
     console = Console()
 
