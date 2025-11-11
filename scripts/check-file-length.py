@@ -24,6 +24,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         try:
             with open(filename, "r") as f:
                 lines = f.readlines()
+                if any("# file-length-ignore" in line for line in lines[:5]):
+                    continue
                 if len(lines) > args.max_lines:
                     print(
                         f"{filename}: file is too long "
