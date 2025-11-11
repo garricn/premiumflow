@@ -100,7 +100,7 @@ open `htmlcov/index.html` after a run to verify the lines you just added are exe
 
 ### Web UI smoke test
 
-`tests/test_web_app.py` now contains a smoke test that boots the real FastAPI app against a temporary SQLite database before hitting `/` and `/cashflow`. The `client_with_storage` fixture configures the database via the `PREMIUMFLOW_DB_PATH` environment variable (exposed as `storage_module.DB_ENV_VAR`), clears the cached storage/repository instances, and overrides the FastAPI dependency to instantiate `SQLiteRepository`. When extending the smoke test, seed data through `_persist_import`/`store_import_result` and reuse the fixture so the same isolation guarantees (fresh DB file inside `tmp_path` plus cleared caches) are preserved.
+`tests/test_web_app.py` now contains smoke tests that boot the real FastAPI app against a temporary SQLite database before hitting `/`, `/cashflow`, `/imports`, `/imports/{import_id}`, `/legs`, and `/stock-lots`. The `client_with_storage` fixture configures the database via the `PREMIUMFLOW_DB_PATH` environment variable (exposed as `storage_module.DB_ENV_VAR`), clears the cached storage/repository instances, and overrides the FastAPI dependency to instantiate `SQLiteRepository`. When extending the smoke tests, seed data through `_persist_import`/`store_import_result`, reuse `_seed_assignment_stock_lots` for stock-lot scenarios, and always clear the singleton caches so the same isolation guarantees (fresh DB file inside `tmp_path` plus cleared caches) are preserved.
 
 To add or upgrade dependencies, edit `pyproject.toml` and regenerate the lockfile:
 

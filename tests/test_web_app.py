@@ -225,6 +225,45 @@ def test_smoke_web_app_serves_primary_ui_routes(client_with_storage, tmp_path):
     assert "Total Cash Flow" in cashflow_response.text
 
 
+def test_imports_and_legs_routes_render_with_real_data(client_with_storage, tmp_path):
+    """Smoke test for `/imports`, `/imports/{id}` and `/legs` using the real database."""
+
+    account_name = "Primed Account"
+    account_number = "PRIMED-1"
+    import_id = _persist_import(
+        tmp_path,
+        account_name=account_name,
+        account_number=account_number,
+        csv_name="imports-smoke.csv",
+        transactions=[_make_transaction()],
+        ticker="TSLA",
+        strategy="covered-call",
+    )
+
+    imports_response = client_with_storage.get("/imports")
+    assert imports_response.status_code == 200
+    assert "Import history" in imports_response.text
+    assert account_name in imports_response.text
+
+    detail_response = client_with_storage.get(f"/imports/{import_id}")
+    assert detail_response.status_code == 200
+    assert f"Import {import_id}" in detail_response.text
+
+    legs_response = client_with_storage.get("/legs")
+    assert legs_response.status_code == 200
+    # Allow either populated legs or the empty-state copy to prove the view still renders.
+    assert "Matched Legs" in legs_response.text or "No matched legs found" in legs_response.text
+
+
+def test_stock_lots_route_accepts_seeded_assignment(tmp_path, client_with_storage):
+    """Smoke test that renders `/stock-lots` after seeding assignment-driven lots."""
+
+    _seed_assignment_stock_lots(tmp_path)
+    stock_lots_response = client_with_storage.get("/stock-lots")
+    assert stock_lots_response.status_code == 200
+    assert "Stock Lots" in stock_lots_response.text
+
+
 def test_index_renders_placeholder_template():
     client = _make_client()
     response = client.get("/")
