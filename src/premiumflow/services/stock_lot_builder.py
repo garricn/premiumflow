@@ -52,36 +52,49 @@ def _build_assignment_records_from_leg(leg: MatchedLeg) -> List[AssignmentStockL
     return records
 
 
-def _lot_to_assignment_record(  # noqa: PLR0911
+def _validate_lot_for_assignment(
     lot: MatchedLegLot,
     assignment_portion,
-) -> Optional[AssignmentStockLotRecord]:
+    portion_contracts: Decimal,
+) -> tuple[bool, str | None]:
+    """Validate lot eligibility for assignment record creation."""
     option_type = lot.contract.option_type.upper()
-    if option_type not in {"CALL", "PUT"}:
-        return None
+    if option_type not in {"CALL", "PUT"} or lot.direction != "short":
+        return False, None
 
-    if lot.direction != "short":
-        return None
-
-    portion_contracts = Decimal(assignment_portion.quantity)
     share_count = portion_contracts * SHARES_PER_CONTRACT
     if share_count <= 0:
-        return None
+        return False, None
 
     raw_txn = assignment_portion.fill.transaction.raw or {}
     source_transaction_id = raw_txn.get("__transaction_id")
     if source_transaction_id is None:
+        return False, None
+
+    lot_contracts = Decimal(lot.quantity)
+    if lot_contracts <= 0 or lot_contracts * SHARES_PER_CONTRACT == 0:
+        return False, None
+
+    return True, source_transaction_id
+
+
+def _lot_to_assignment_record(
+    lot: MatchedLegLot,
+    assignment_portion,
+) -> Optional[AssignmentStockLotRecord]:
+    option_type = lot.contract.option_type.upper()
+    portion_contracts = Decimal(assignment_portion.quantity)
+    is_valid, source_transaction_id = _validate_lot_for_assignment(
+        lot, assignment_portion, portion_contracts
+    )
+    if not is_valid:
         return None
 
+    share_count = portion_contracts * SHARES_PER_CONTRACT
     strike_price = lot.contract.strike
     share_price_total = strike_price * share_count
 
     lot_contracts = Decimal(lot.quantity)
-    if lot_contracts <= 0:
-        return None
-    lot_total_shares = lot_contracts * SHARES_PER_CONTRACT
-    if lot_total_shares == 0:
-        return None
     ratio = portion_contracts / lot_contracts
 
     open_premium_total = (lot.open_premium * ratio).quantize(
@@ -106,6 +119,8 @@ def _lot_to_assignment_record(  # noqa: PLR0911
 
     opened_at = assignment_portion.activity_date
 
+    # source_transaction_id is guaranteed to be non-None by validation
+    assert source_transaction_id is not None
     return AssignmentStockLotRecord(
         symbol=lot.contract.symbol,
         opened_at=opened_at,
