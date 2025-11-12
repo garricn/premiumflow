@@ -10,6 +10,14 @@ from .cash_flow import (
     generate_cash_flow_pnl_report,
 )
 from .chain_builder import detect_roll_chains
+from .cli_helpers import (
+    create_target_label,
+    filter_open_chains,
+    format_account_label,
+    format_expiration_date,
+    is_open_chain,
+    parse_target_range,
+)
 from .cost_basis import (
     CostBasisError,
     CostBasisNotFoundError,
@@ -19,14 +27,6 @@ from .cost_basis import (
     reopen_transfer_basis_item,
     resolve_transfer_basis_override,
     snooze_transfer_basis_item,
-)
-from .cli_helpers import (
-    create_target_label,
-    filter_open_chains,
-    format_account_label,
-    format_expiration_date,
-    is_open_chain,
-    parse_target_range,
 )
 from .display import (
     calculate_target_price_range,
@@ -41,6 +41,12 @@ from .display import (
     format_target_close_prices,
     prepare_chain_display,
     prepare_transactions_for_display,
+)
+from .external_tax_lots import (
+    ExternalTaxLotImportError,
+    ExternalTaxLotImportResult,
+    ExternalTaxLotRecord,
+    import_external_tax_lot_snapshot,
 )
 from .json_serializer import (
     build_ingest_payload,
@@ -117,4 +123,8 @@ __all__ = [
     "PeriodType",
     "AssignmentHandling",
     "RealizedView",
+    "ExternalTaxLotImportError",
+    "ExternalTaxLotImportResult",
+    "ExternalTaxLotRecord",
+    "import_external_tax_lot_snapshot",
 ]

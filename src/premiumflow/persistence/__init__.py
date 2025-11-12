@@ -3,11 +3,12 @@
 from .repository import (
     AssignmentStockLotRecord,
     SQLiteRepository,
+    StoredExternalTaxLot,
     StoredImport,
     StoredStockLot,
     StoredStockTransaction,
-    StoredTransferBasisItem,
     StoredTransaction,
+    StoredTransferBasisItem,
     TransferBasisStatus,
 )
 from .storage import (
@@ -24,6 +25,7 @@ __all__ = [
     "SQLiteRepository",
     "SQLiteStorage",
     "StoreResult",
+    "StoredExternalTaxLot",
     "StoredStockLot",
     "StoredStockTransaction",
     "StoredTransferBasisItem",

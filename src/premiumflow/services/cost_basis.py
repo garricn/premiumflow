@@ -87,7 +87,7 @@ def list_resolved_transfer_basis_items(
     )
 
 
-def resolve_transfer_basis_override(
+def resolve_transfer_basis_override(  # noqa: PLR0913
     repository: SQLiteRepository,
     *,
     account_name: str,
@@ -224,4 +224,3 @@ def _quantize_currency(value: Decimal) -> Decimal:
 
 def _quantize_per_share(value: Decimal) -> Decimal:
     return value.quantize(_PER_SHARE_QUANTIZER, rounding=ROUND_HALF_UP)
-

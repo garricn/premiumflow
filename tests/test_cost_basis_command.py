@@ -94,6 +94,7 @@ def test_cost_basis_set_reports_service_error(monkeypatch):
         "premiumflow.cli.cost_basis.SQLiteRepository",
         lambda: object(),
     )
+
     def _raise(*args, **kwargs):
         raise CostBasisError("No matching entry.")
 
@@ -123,4 +124,3 @@ def test_cost_basis_set_reports_service_error(monkeypatch):
 
     assert result.exit_code != 0
     assert "No matching entry." in result.output
-

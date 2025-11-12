@@ -4,11 +4,16 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
+from pathlib import Path
 
 import click
 
 from ..persistence import SQLiteRepository
 from ..services.cost_basis import CostBasisError, resolve_transfer_basis_override
+from ..services.external_tax_lots import (
+    ExternalTaxLotImportError,
+    import_external_tax_lot_snapshot,
+)
 
 
 def _parse_decimal(ctx: click.Context, value: str, label: str) -> Decimal:
@@ -118,3 +123,70 @@ def set_cost_basis(  # noqa: PLR0913
         f"total {resolved.basis_total} / per-share {resolved.basis_per_share}"
     )
 
+
+@cost_basis.command("import-lots")
+@click.argument("pdf_path", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.option("--account-name", required=True, help="Account name attached to the import.")
+@click.option(
+    "--account-number",
+    help="Account identifier attached to the import (required when set during import).",
+)
+@click.option(
+    "--snapshot-label",
+    help="Optional label to identify this snapshot (defaults to the PDF file name).",
+)
+@click.pass_context
+def import_lots(  # noqa: PLR0913
+    ctx: click.Context,
+    pdf_path: Path,
+    *,
+    account_name: str,
+    account_number: str | None,
+    snapshot_label: str | None,
+) -> None:
+    """Import an external tax-lot PDF snapshot and apply basis overrides."""
+
+    repository = SQLiteRepository()
+    account_name = account_name.strip()
+    account_number = account_number.strip() if account_number else None
+
+    try:
+        result = import_external_tax_lot_snapshot(
+            repository,
+            pdf_path=pdf_path,
+            account_name=account_name,
+            account_number=account_number,
+            snapshot_label=snapshot_label,
+        )
+    except ExternalTaxLotImportError as exc:
+        ctx.fail(str(exc))
+        return
+
+    click.echo(
+        f"Imported {result.stored_snapshot_lots} tax lots from '{pdf_path.name}' "
+        f"(snapshot '{snapshot_label or pdf_path.stem}')."
+    )
+    click.echo(f"Resolved {result.resolved_transfer_items} transfer basis entries automatically.")
+
+    if result.unresolved_transfer_items:
+        click.echo("\nUnresolved transfer entries:")
+        for item in result.unresolved_transfer_items:
+            click.echo(
+                f"  - {item.instrument} - {item.shares} shares on {item.activity_date} "
+                f"(status {item.status})"
+            )
+
+    if result.ambiguous_transfer_items:
+        click.echo("\nAmbiguous matches (manual intervention required):")
+        for item, matches in result.ambiguous_transfer_items:
+            click.echo(
+                f"  - {item.instrument} - {item.shares} shares on {item.activity_date} "
+                f"- found {len(matches)} external lots"
+            )
+
+    if result.resolution_errors:
+        click.echo("\nErrors while applying basis overrides:")
+        for item, message in result.resolution_errors:
+            click.echo(
+                f"  - {item.instrument} - {item.shares} shares on {item.activity_date}: {message}"
+            )

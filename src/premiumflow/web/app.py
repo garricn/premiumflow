@@ -25,13 +25,6 @@ from ..persistence import (
 )
 from ..services.cash_flow import generate_cash_flow_pnl_report
 from ..services.cli_helpers import format_account_label
-from ..services.display import format_currency
-from ..services.json_serializer import serialize_cash_flow_pnl_report, serialize_leg
-from ..services.leg_matching import (
-    _stored_to_normalized,
-    group_fills_by_account,
-    match_legs_with_errors,
-)
 from ..services.cost_basis import (
     CostBasisError,
     CostBasisNotFoundError,
@@ -41,6 +34,13 @@ from ..services.cost_basis import (
     reopen_transfer_basis_item,
     resolve_transfer_basis_override,
     snooze_transfer_basis_item,
+)
+from ..services.display import format_currency
+from ..services.json_serializer import serialize_cash_flow_pnl_report, serialize_leg
+from ..services.leg_matching import (
+    _stored_to_normalized,
+    group_fills_by_account,
+    match_legs_with_errors,
 )
 from ..services.stock_lot_builder import rebuild_assignment_stock_lots
 from ..services.stock_lots import (
@@ -976,9 +976,7 @@ def create_app() -> FastAPI:  # noqa: C901
             statuses=("pending", "snoozed"),
             due_only=False,
         )
-        due_ids = {
-            entry.id for entry in get_due_transfer_basis_items(repository)
-        }
+        due_ids = {entry.id for entry in get_due_transfer_basis_items(repository)}
         resolved_items = list_resolved_transfer_basis_items(repository)
 
         return templates.TemplateResponse(
@@ -1040,8 +1038,8 @@ def create_app() -> FastAPI:  # noqa: C901
 
         try:
             activity_dt = date.fromisoformat(item.activity_date)
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Stored activity date is invalid.")
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Stored activity date is invalid.") from exc
 
         try:
             resolve_transfer_basis_override(
@@ -1102,8 +1100,8 @@ def create_app() -> FastAPI:  # noqa: C901
                 item_id=item_id,
                 remind_after=remind_after,
             )
-        except CostBasisNotFoundError:
-            raise HTTPException(status_code=404, detail="Transfer basis entry not found.")
+        except CostBasisNotFoundError as exc:
+            raise HTTPException(status_code=404, detail="Transfer basis entry not found.") from exc
 
         account_label = format_account_label(item.account_name, item.account_number)
         return _cost_basis_redirect(
@@ -1127,8 +1125,8 @@ def create_app() -> FastAPI:  # noqa: C901
                 repository,
                 item_id=item_id,
             )
-        except CostBasisNotFoundError:
-            raise HTTPException(status_code=404, detail="Transfer basis entry not found.")
+        except CostBasisNotFoundError as exc:
+            raise HTTPException(status_code=404, detail="Transfer basis entry not found.") from exc
 
         account_label = format_account_label(updated.account_name, updated.account_number)
         return _cost_basis_redirect(

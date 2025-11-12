@@ -7,11 +7,11 @@ import os
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from functools import lru_cache
 from hashlib import sha256
 from pathlib import Path
-from typing import Literal, Optional, Sequence, Union
+from typing import Literal, Mapping, Optional, Sequence, Union
 
 from ..core.parser import CSV_ROW_NUMBER_KEY, MissingCostBasisEntry, ParsedImportResult
 
@@ -69,6 +69,26 @@ TRANSFER_BASIS_REQUIRED_COLUMNS = {
     "basis_per_share",
     "status",
     "remind_after",
+    "created_at",
+    "updated_at",
+}
+
+EXTERNAL_TAX_LOTS_REQUIRED_COLUMNS = {
+    "id",
+    "account_id",
+    "snapshot_label",
+    "security_id",
+    "ticker",
+    "description",
+    "open_date",
+    "hold_date",
+    "shares",
+    "price",
+    "book_cost",
+    "wash_adjustment",
+    "tax_cost",
+    "lot_status",
+    "imported_at",
     "created_at",
     "updated_at",
 }
@@ -255,6 +275,26 @@ class SQLiteStorage:
                     UNIQUE(account_id, instrument, activity_date, shares, trans_code)
                 );
 
+                CREATE TABLE IF NOT EXISTS external_tax_lots (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+                    snapshot_label TEXT NOT NULL,
+                    security_id TEXT,
+                    ticker TEXT NOT NULL,
+                    description TEXT NOT NULL,
+                    open_date TEXT NOT NULL,
+                    hold_date TEXT NOT NULL,
+                    shares TEXT NOT NULL,
+                    price TEXT,
+                    book_cost TEXT,
+                    wash_adjustment TEXT,
+                    tax_cost TEXT NOT NULL,
+                    lot_status TEXT,
+                    imported_at TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
                 """
             )
             self._verify_table_schema(
@@ -265,6 +305,11 @@ class SQLiteStorage:
                 conn,
                 "transfer_basis_items",
                 TRANSFER_BASIS_REQUIRED_COLUMNS,
+            )
+            self._verify_table_schema(
+                conn,
+                "external_tax_lots",
+                EXTERNAL_TAX_LOTS_REQUIRED_COLUMNS,
             )
             conn.execute(
                 """
@@ -306,6 +351,18 @@ class SQLiteStorage:
                 """
                 CREATE INDEX IF NOT EXISTS idx_transfer_basis_account_activity
                     ON transfer_basis_items(account_id, activity_date)
+                """
+            )
+            conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_external_tax_lots_account_ticker
+                    ON external_tax_lots(account_id, ticker)
+                """
+            )
+            conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_external_tax_lots_account_open_date
+                    ON external_tax_lots(account_id, open_date)
                 """
             )
             # Clean up any legacy duplicates that may exist from versions prior to
@@ -389,6 +446,94 @@ class SQLiteStorage:
             """,
             rows,
         )
+
+    def replace_external_tax_lots_for_account(
+        self,
+        *,
+        account_name: str,
+        account_number: Optional[str],
+        snapshot_label: str,
+        lots: Sequence[Mapping[str, object]],
+    ) -> None:
+        """Replace external tax lots for an account with data from a snapshot."""
+
+        self._ensure_initialized()
+
+        def _coerce_decimal(value: object) -> Optional[str]:
+            if value is None:
+                return None
+            if isinstance(value, (Decimal, int, float)):
+                return _decimal_to_text(value)
+
+            if isinstance(value, str):
+                candidate = value.strip()
+                if not candidate:
+                    return None
+            else:
+                candidate = str(value)
+
+            try:
+                return _decimal_to_text(Decimal(candidate))
+            except (InvalidOperation, ValueError):
+                return candidate
+
+        timestamp = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+        with self._connect() as conn:
+            account_id = self._get_or_create_account(conn, account_name, account_number)
+            conn.execute(
+                "DELETE FROM external_tax_lots WHERE account_id = ?",
+                (account_id,),
+            )
+            if not lots:
+                return
+
+            rows_to_insert: list[tuple[object, ...]] = []
+            for lot in lots:
+                rows_to_insert.append(
+                    (
+                        account_id,
+                        snapshot_label,
+                        lot.get("security_id"),
+                        lot.get("ticker"),
+                        lot.get("description"),
+                        lot.get("open_date"),
+                        lot.get("hold_date"),
+                        _coerce_decimal(lot.get("shares")),
+                        _coerce_decimal(lot.get("price")),
+                        _coerce_decimal(lot.get("book_cost")),
+                        _coerce_decimal(lot.get("wash_adjustment")),
+                        _coerce_decimal(lot.get("tax_cost")),
+                        lot.get("lot_status"),
+                        timestamp,
+                        timestamp,
+                        timestamp,
+                    )
+                )
+
+            conn.executemany(
+                """
+                INSERT INTO external_tax_lots (
+                    account_id,
+                    snapshot_label,
+                    security_id,
+                    ticker,
+                    description,
+                    open_date,
+                    hold_date,
+                    shares,
+                    price,
+                    book_cost,
+                    wash_adjustment,
+                    tax_cost,
+                    lot_status,
+                    imported_at,
+                    created_at,
+                    updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                rows_to_insert,
+            )
 
     def store_import(  # noqa: C901
         self,

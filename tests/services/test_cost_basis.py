@@ -145,4 +145,3 @@ def test_snooze_transfer_basis_item_defers_warning(repository, tmp_path):
         account_number="XFER-123",
     )
     assert still_due == []
-

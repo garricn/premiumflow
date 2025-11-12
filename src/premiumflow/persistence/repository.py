@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Dict, List, Literal, Optional, Sequence, Tuple
+from typing import Dict, List, Literal, Mapping, Optional, Sequence, Tuple
 
 from .storage import SQLiteStorage, get_storage
 
@@ -125,6 +125,30 @@ class StoredTransferBasisItem:
     basis_per_share: Optional[Decimal]
     status: TransferBasisStatus
     remind_after: Optional[str]
+    created_at: str
+    updated_at: str
+
+
+@dataclass(frozen=True)
+class StoredExternalTaxLot:
+    """Representation of an external tax lot snapshot entry."""
+
+    id: int
+    account_name: str
+    account_number: Optional[str]
+    snapshot_label: str
+    security_id: Optional[str]
+    ticker: str
+    description: str
+    open_date: str
+    hold_date: str
+    shares: Decimal
+    price: Optional[Decimal]
+    book_cost: Optional[Decimal]
+    wash_adjustment: Optional[Decimal]
+    tax_cost: Decimal
+    lot_status: Optional[str]
+    imported_at: str
     created_at: str
     updated_at: str
 
@@ -568,7 +592,7 @@ class SQLiteRepository:
             rows = conn.execute(sql, params).fetchall()
         return [_row_to_transfer_basis_item(row) for row in rows]
 
-    def find_transfer_basis_items(
+    def find_transfer_basis_items(  # noqa: PLR0913
         self,
         *,
         account_name: str,
@@ -706,6 +730,134 @@ class SQLiteRepository:
                 ),
             )
             return (cursor.rowcount or 0) > 0
+
+    def replace_external_tax_lots(
+        self,
+        *,
+        account_name: str,
+        account_number: Optional[str],
+        snapshot_label: str,
+        lots: Sequence[Mapping[str, object]],
+    ) -> None:
+        """Replace external tax lots for an account with the provided snapshot."""
+
+        self._storage.replace_external_tax_lots_for_account(
+            account_name=account_name,
+            account_number=account_number,
+            snapshot_label=snapshot_label,
+            lots=lots,
+        )
+
+    def list_external_tax_lots(
+        self,
+        *,
+        account_name: Optional[str] = None,
+        account_number: Optional[str] = None,
+        ticker: Optional[str] = None,
+        snapshot_label: Optional[str] = None,
+    ) -> List[StoredExternalTaxLot]:
+        """Return external tax lots filtered by the provided parameters."""
+
+        self._storage._ensure_initialized()  # type: ignore[attr-defined]
+        query = [
+            "SELECT",
+            "  l.id,",
+            "  a.name AS account_name,",
+            "  a.number AS account_number,",
+            "  l.snapshot_label,",
+            "  l.security_id,",
+            "  l.ticker,",
+            "  l.description,",
+            "  l.open_date,",
+            "  l.hold_date,",
+            "  l.shares,",
+            "  l.price,",
+            "  l.book_cost,",
+            "  l.wash_adjustment,",
+            "  l.tax_cost,",
+            "  l.lot_status,",
+            "  l.imported_at,",
+            "  l.created_at,",
+            "  l.updated_at",
+            "FROM external_tax_lots AS l",
+            "JOIN accounts AS a ON l.account_id = a.id",
+        ]
+        clauses: list[str] = []
+        params: list[object] = []
+
+        if account_name is not None:
+            clauses.append("a.name = ?")
+            params.append(account_name)
+        if account_number is not None:
+            clauses.append("IFNULL(a.number, '') = IFNULL(?, '')")
+            params.append(account_number)
+        if ticker is not None:
+            clauses.append("UPPER(l.ticker) = UPPER(?)")
+            params.append(ticker)
+        if snapshot_label is not None:
+            clauses.append("l.snapshot_label = ?")
+            params.append(snapshot_label)
+
+        if clauses:
+            query.append("WHERE " + " AND ".join(clauses))
+
+        query.append("ORDER BY l.open_date ASC, l.ticker ASC, l.shares ASC")
+
+        sql = "\n".join(query)
+        with self._storage._connect() as conn:  # type: ignore[attr-defined]
+            rows = conn.execute(sql, params).fetchall()
+        return [_row_to_external_tax_lot(row) for row in rows]
+
+    def find_external_tax_lots(
+        self,
+        *,
+        account_name: str,
+        account_number: Optional[str],
+        ticker: str,
+        open_date: str,
+        shares: Decimal,
+    ) -> List[StoredExternalTaxLot]:
+        """Return external tax lot entries matching the provided key attributes."""
+
+        self._storage._ensure_initialized()  # type: ignore[attr-defined]
+        sql = """
+            SELECT
+                l.id,
+                a.name AS account_name,
+                a.number AS account_number,
+                l.snapshot_label,
+                l.security_id,
+                l.ticker,
+                l.description,
+                l.open_date,
+                l.hold_date,
+                l.shares,
+                l.price,
+                l.book_cost,
+                l.wash_adjustment,
+                l.tax_cost,
+                l.lot_status,
+                l.imported_at,
+                l.created_at,
+                l.updated_at
+            FROM external_tax_lots AS l
+            JOIN accounts AS a ON l.account_id = a.id
+            WHERE a.name = ?
+              AND IFNULL(a.number, '') = IFNULL(?, '')
+              AND UPPER(l.ticker) = UPPER(?)
+              AND l.open_date = ?
+              AND l.shares = ?
+        """
+        params = [
+            account_name,
+            account_number,
+            ticker,
+            open_date,
+            format(shares, "f"),
+        ]
+        with self._storage._connect() as conn:  # type: ignore[attr-defined]
+            rows = conn.execute(sql, params).fetchall()
+        return [_row_to_external_tax_lot(row) for row in rows]
 
     def replace_assignment_stock_lots(
         self,
@@ -853,6 +1005,41 @@ def _row_to_stored_import(row) -> StoredImport:
     )
 
 
+def _optional_decimal(value) -> Optional[Decimal]:
+    if value is None:
+        return None
+    if isinstance(value, Decimal):
+        return value
+    text = str(value).strip()
+    if not text:
+        return None
+    return Decimal(text)
+
+
+def _row_to_external_tax_lot(row) -> StoredExternalTaxLot:
+    account_number = row["account_number"]
+    return StoredExternalTaxLot(
+        id=int(row["id"]),
+        account_name=row["account_name"],
+        account_number=account_number if account_number is not None else None,
+        snapshot_label=row["snapshot_label"],
+        security_id=row["security_id"],
+        ticker=row["ticker"],
+        description=row["description"],
+        open_date=row["open_date"],
+        hold_date=row["hold_date"],
+        shares=Decimal(row["shares"]),
+        price=_optional_decimal(row["price"]),
+        book_cost=_optional_decimal(row["book_cost"]),
+        wash_adjustment=_optional_decimal(row["wash_adjustment"]),
+        tax_cost=Decimal(row["tax_cost"]),
+        lot_status=row["lot_status"],
+        imported_at=row["imported_at"],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+    )
+
+
 def _row_to_stored_transaction(row) -> StoredTransaction:
     return StoredTransaction(
         id=int(row["id"]),
@@ -933,12 +1120,14 @@ def _row_to_stored_stock_lot(row) -> StoredStockLot:
         source_transaction_id=int(source_id) if source_id is not None else None,
         created_at=row["created_at"],
         updated_at=row["updated_at"],
-        transfer_basis_total=Decimal(transfer_basis_total_value)
-        if transfer_basis_total_value is not None
-        else None,
-        transfer_basis_per_share=Decimal(transfer_basis_per_share_value)
-        if transfer_basis_per_share_value is not None
-        else None,
+        transfer_basis_total=(
+            Decimal(transfer_basis_total_value) if transfer_basis_total_value is not None else None
+        ),
+        transfer_basis_per_share=(
+            Decimal(transfer_basis_per_share_value)
+            if transfer_basis_per_share_value is not None
+            else None
+        ),
     )
 
 
