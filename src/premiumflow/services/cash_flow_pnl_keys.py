@@ -32,9 +32,7 @@ def _collect_pnl_period_keys(
     *,
     options: Optional[PnlPeriodCollectionOptions] = None,
 ) -> Set[str]:
-    """
-    Collect the universe of period keys required for P&L aggregation upfront.
-    """
+    """Collect the set of period keys that matter for P&L aggregation."""
     if options is None:
         options = PnlPeriodCollectionOptions()
 
