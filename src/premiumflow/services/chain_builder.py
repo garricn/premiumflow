@@ -71,13 +71,65 @@ def _extract_contract_details(description: str) -> Dict[str, Any]:
     }
 
 
-def detect_rolls(transactions: List[Dict[str, str]]) -> List[Dict[str, Any]]:  # noqa: C901
-    """Detect individual roll transactions (BTC + STO on same day)."""
+def _is_valid_sto_for_roll(
+    sto: Dict[str, str],
+    btc_details: Dict[str, Any],
+    btc_qty: int,
+    btc_instrument: str,
+) -> Tuple[bool, Optional[Dict[str, Any]], Optional[int]]:
+    """Check if an STO transaction matches the BTC for a roll and return contract details."""
+    if (btc_instrument or "").strip() != (sto.get("Instrument") or "").strip():
+        return False, None, None
 
-    rolls = []
+    sto_desc = sto.get("Description", "") or ""
+    sto_details = _extract_contract_details(sto_desc)
+    if not sto_details:
+        return False, None, None
+
+    if btc_details["option_label"] != sto_details["option_label"]:
+        return False, None, None
+
+    sto_qty = abs(_parse_quantity(sto.get("Quantity")))
+    if btc_qty != sto_qty or not sto_qty:
+        return False, None, None
+
+    same_contract = (
+        btc_details["strike"] == sto_details["strike"]
+        and btc_details["expiration"] == sto_details["expiration"]
+    )
+    if same_contract:
+        return False, None, None
+
+    return True, sto_details, sto_qty
+
+
+def _find_matching_sto(
+    sto_txns: List[Dict[str, str]],
+    used_open_indices: Set[int],
+    btc: Dict[str, str],
+    btc_details: Dict[str, Any],
+    btc_qty: int,
+) -> Tuple[Optional[Dict[str, str]], Optional[Dict[str, Any]]]:
+    """Find a matching STO transaction for a given BTC transaction."""
+    btc_instrument = btc.get("Instrument", "")
+
+    for idx, sto in enumerate(sto_txns):
+        if idx in used_open_indices:
+            continue
+
+        is_match, sto_details, _ = _is_valid_sto_for_roll(sto, btc_details, btc_qty, btc_instrument)
+        if is_match:
+            return sto, sto_details
+
+    return None, None
+
+
+def _track_position_origins(
+    transactions: List[Dict[str, str]],
+) -> Tuple[Dict[tuple, deque], Dict[int, List[datetime]]]:
+    """Track when positions are opened and closed."""
     open_codes = {"STO", "BTO"}
     close_codes = {"BTC", "STC"}
-
     open_positions: Dict[tuple, deque] = defaultdict(deque)
     close_origin_dates: Dict[int, List[datetime]] = {}
 
@@ -106,81 +158,90 @@ def detect_rolls(transactions: List[Dict[str, str]]) -> List[Dict[str, Any]]:  #
                 if open_positions[key]:
                     assigned.append(open_positions[key].popleft())
 
+    return open_positions, close_origin_dates
+
+
+def _process_rolls_for_date(
+    date: str,
+    txns: List[Dict[str, str]],
+    close_origin_dates: Dict[int, List[datetime]],
+) -> List[Dict[str, Any]]:
+    """Process rolls that occur on a specific date."""
+    rolls = []
+    open_codes = {"STO", "BTO"}
+    close_codes = {"BTC", "STC"}
+
+    btc_txns = [t for t in txns if (t.get("Trans Code") or "").strip().upper() in close_codes]
+    sto_txns = [t for t in txns if (t.get("Trans Code") or "").strip().upper() in open_codes]
+
+    close_entries = []
+    for btc in btc_txns:
+        origin_dates = close_origin_dates.get(id(btc), [])
+        origin_dates.sort()
+        open_date = origin_dates[0] if origin_dates else None
+        close_entries.append((open_date, parse_date(btc.get("Activity Date", "")), btc))
+
+    close_entries.sort(key=lambda entry: (entry[0] or parse_date("12/31/2999"), entry[1]))
+
+    used_open_indices: Set[int] = set()
+
+    for open_date, _, btc in close_entries:
+        if open_date is None:
+            continue
+
+        btc_desc = btc.get("Description", "") or ""
+        btc_details = _extract_contract_details(btc_desc)
+        if not btc_details:
+            continue
+
+        btc_qty = abs(_parse_quantity(btc.get("Quantity")))
+        if not btc_qty:
+            continue
+
+        sto, sto_details = _find_matching_sto(
+            sto_txns, used_open_indices, btc, btc_details, btc_qty
+        )
+        if not sto or not sto_details:
+            continue
+
+        sto_desc = sto.get("Description", "") or ""
+        sto_idx = sto_txns.index(sto)
+        used_open_indices.add(sto_idx)
+        rolls.append(
+            {
+                "date": date,
+                "ticker": btc.get("Instrument", ""),
+                "btc_desc": btc_desc,
+                "sto_desc": sto_desc,
+                "btc_strike": btc_details["strike"],
+                "sto_strike": sto_details["strike"],
+                "btc_expiration": btc_details["expiration"],
+                "sto_expiration": sto_details["expiration"],
+                "option_label": btc_details["option_label"],
+                "quantity": btc_qty,
+            }
+        )
+
+    return rolls
+
+
+def detect_rolls(transactions: List[Dict[str, str]]) -> List[Dict[str, Any]]:
+    """Detect individual roll transactions (BTC + STO on same day)."""
+    rolls = []
+
+    # Track position origins
+    _, close_origin_dates = _track_position_origins(transactions)
+
+    # Group transactions by date
     by_date: Dict[str, List[Dict[str, str]]] = {}
     for txn in transactions:
         date = txn.get("Activity Date", "")
         by_date.setdefault(date, []).append(txn)
 
+    # Process rolls for each date
     for date, txns in by_date.items():
-        btc_txns = [t for t in txns if (t.get("Trans Code") or "").strip().upper() in close_codes]
-        sto_txns = [t for t in txns if (t.get("Trans Code") or "").strip().upper() in open_codes]
-
-        close_entries = []
-        for btc in btc_txns:
-            origin_dates = close_origin_dates.get(id(btc), [])
-            origin_dates.sort()
-            open_date = origin_dates[0] if origin_dates else None
-            close_entries.append((open_date, parse_date(btc.get("Activity Date", "")), btc))
-
-        close_entries.sort(key=lambda entry: (entry[0] or parse_date("12/31/2999"), entry[1]))
-
-        used_open_indices: Set[int] = set()
-
-        for open_date, _, btc in close_entries:
-            if open_date is None:
-                continue
-
-            btc_desc = btc.get("Description", "") or ""
-            btc_details = _extract_contract_details(btc_desc)
-            if not btc_details:
-                continue
-
-            btc_qty = abs(_parse_quantity(btc.get("Quantity")))
-            if not btc_qty:
-                continue
-
-            for idx, sto in enumerate(sto_txns):
-                if idx in used_open_indices:
-                    continue
-
-                if (btc.get("Instrument") or "").strip() != (sto.get("Instrument") or "").strip():
-                    continue
-
-                sto_desc = sto.get("Description", "") or ""
-                sto_details = _extract_contract_details(sto_desc)
-                if not sto_details:
-                    continue
-
-                if btc_details["option_label"] != sto_details["option_label"]:
-                    continue
-
-                sto_qty = abs(_parse_quantity(sto.get("Quantity")))
-                if btc_qty != sto_qty or not sto_qty:
-                    continue
-
-                same_contract = (
-                    btc_details["strike"] == sto_details["strike"]
-                    and btc_details["expiration"] == sto_details["expiration"]
-                )
-                if same_contract:
-                    continue
-
-                used_open_indices.add(idx)
-                rolls.append(
-                    {
-                        "date": date,
-                        "ticker": btc.get("Instrument", ""),
-                        "btc_desc": btc_desc,
-                        "sto_desc": sto_desc,
-                        "btc_strike": btc_details["strike"],
-                        "sto_strike": sto_details["strike"],
-                        "btc_expiration": btc_details["expiration"],
-                        "sto_expiration": sto_details["expiration"],
-                        "option_label": btc_details["option_label"],
-                        "quantity": btc_qty,
-                    }
-                )
-                break
+        date_rolls = _process_rolls_for_date(date, txns, close_origin_dates)
+        rolls.extend(date_rolls)
 
     return rolls
 
