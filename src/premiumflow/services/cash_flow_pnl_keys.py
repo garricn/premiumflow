@@ -24,9 +24,7 @@ def _collect_pnl_period_keys(  # noqa: PLR0913
     until: Optional[date] = None,
     clamp_periods_to_range: bool = True,
 ) -> Set[str]:
-    """
-    Collect the set of period keys that matter for P&L aggregation.
-    """
+    """Collect the set of period keys that matter for P&L aggregation."""
     all_period_keys: Set[str] = set()
 
     for txn in transactions:
