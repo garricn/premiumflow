@@ -12,6 +12,16 @@ from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Dict, List, Optional
 
+
+@dataclass
+class MoneyParsingOptions:
+    """Options for parsing monetary values from CSV fields."""
+
+    allow_negative: bool
+    required: bool = True
+    allow_parenthesized_positive: bool = False
+
+
 ALLOWED_OPTION_CODES = {"STO", "STC", "BTO", "BTC", "OASGN", "OEXP"}
 CSV_ROW_NUMBER_KEY = "__row_number"
 STOCK_BUY_CODES = {"BUY"}
@@ -215,15 +225,19 @@ def _normalize_option_row(
     settle_date = _parse_optional_date_field(row, "Settle Date", row_number)
     instrument = _require_field(row, "Instrument", row_number)
     description = _normalize_description(row, row_number)
-    amount = _parse_money(row, "Amount", row_number, allow_negative=True, required=False)
+    amount = _parse_money(
+        row,
+        "Amount",
+        row_number,
+        options=MoneyParsingOptions(allow_negative=True, required=False),
+    )
     quantity = _parse_quantity(row, "Quantity", row_number)
 
     price_value = _parse_money(
         row,
         "Price",
         row_number,
-        allow_negative=False,
-        required=False,
+        options=MoneyParsingOptions(allow_negative=False, required=False),
     )
     if price_value is None:
         price = _infer_price_from_amount(amount, quantity, trans_code, row_number)
@@ -285,10 +299,20 @@ def _normalize_standard_stock_row(
     instrument = _require_field(row, "Instrument", row_number).strip().upper()
     description = (row.get("Description") or "").strip()
     quantity = _parse_share_quantity(row, "Quantity", row_number)
-    price = _parse_money(row, "Price", row_number, allow_negative=False, required=True)
+    price = _parse_money(
+        row,
+        "Price",
+        row_number,
+        options=MoneyParsingOptions(allow_negative=False, required=True),
+    )
     if price is None:
         raise ImportValidationError('Column "Price" cannot be blank.')
-    amount = _parse_money(row, "Amount", row_number, allow_negative=True, required=True)
+    amount = _parse_money(
+        row,
+        "Amount",
+        row_number,
+        options=MoneyParsingOptions(allow_negative=True, required=True),
+    )
     if amount is None:
         raise ImportValidationError('Column "Amount" cannot be blank.')
 
@@ -335,15 +359,13 @@ def _normalize_share_transfer_row(
         row,
         "Price",
         row_number,
-        allow_negative=False,
-        required=False,
+        options=MoneyParsingOptions(allow_negative=False, required=False),
     )
     amount_value = _parse_money(
         row,
         "Amount",
         row_number,
-        allow_negative=True,
-        required=False,
+        options=MoneyParsingOptions(allow_negative=True, required=False),
     )
     price = price_value if price_value is not None else ZERO_DECIMAL
     amount = amount_value if amount_value is not None else ZERO_DECIMAL
@@ -382,9 +404,11 @@ def _normalize_cash_transfer_row(
         row,
         "Amount",
         row_number,
-        allow_negative=True,
-        required=False,
-        allow_parenthesized_positive=True,
+        options=MoneyParsingOptions(
+            allow_negative=True,
+            required=False,
+            allow_parenthesized_positive=True,
+        ),
     )
     amount = amount_value if amount_value is not None else ZERO_DECIMAL
 
@@ -392,8 +416,7 @@ def _normalize_cash_transfer_row(
         row,
         "Price",
         row_number,
-        allow_negative=False,
-        required=False,
+        options=MoneyParsingOptions(allow_negative=False, required=False),
     )
     price = price_value if price_value is not None else ZERO_DECIMAL
 
@@ -529,24 +552,22 @@ def _parse_share_quantity(row: Dict[str, str], field: str, row_number: int) -> D
     return quantity * sign
 
 
-def _parse_money(  # noqa: PLR0913
+def _parse_money(
     row: Dict[str, str],
     field: str,
     row_number: int,
     *,
-    allow_negative: bool,
-    required: bool = True,
-    allow_parenthesized_positive: bool = False,
+    options: MoneyParsingOptions,
 ) -> Optional[Decimal]:
     raw_value = row.get(field)
     if raw_value is None:
-        if required:
+        if options.required:
             raise ImportValidationError(f'Missing required column "{field}".')
         return None
 
     stripped = raw_value.strip()
     if not stripped:
-        if required:
+        if options.required:
             raise ImportValidationError(f'Column "{field}" cannot be blank.')
         return None
 
@@ -564,8 +585,8 @@ def _parse_money(  # noqa: PLR0913
     if negative:
         value = -value
 
-    if not allow_negative and value < 0:
-        if negative and allow_parenthesized_positive:
+    if not options.allow_negative and value < 0:
+        if negative and options.allow_parenthesized_positive:
             return abs(value)
         raise ImportValidationError(f'Column "{field}" must be non-negative.')
 
