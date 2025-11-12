@@ -15,7 +15,7 @@ from .cash_flow_periods import (
     _lot_overlaps_date_range,
     _lot_was_open_during_period,
 )
-from .cash_flow_pnl_keys import _collect_pnl_period_keys
+from .cash_flow_pnl_keys import PnlPeriodCollectionOptions, _collect_pnl_period_keys
 from .leg_matching import MatchedLeg
 
 
@@ -167,13 +167,16 @@ def _aggregate_pnl_by_period(  # noqa: PLR0913
     clamp_periods_to_range: bool = True,
     assignment_handling: Literal["include", "exclude"] = "include",
 ) -> Dict[str, Dict[str, Decimal]]:
+    options = PnlPeriodCollectionOptions(
+        since=since,
+        until=until,
+        clamp_periods_to_range=clamp_periods_to_range,
+    )
     all_period_keys = _collect_pnl_period_keys(
         matched_legs,
         transactions,
         period_type,
-        since=since,
-        until=until,
-        clamp_periods_to_range=clamp_periods_to_range,
+        options=options,
     )
 
     period_data: Dict[str, Dict[str, Decimal]] = {}

@@ -349,16 +349,20 @@ def _run_import(
         if not opts.json_output:
             console.print(f"[yellow]No options transactions found for ticker {ticker_key}[/yellow]")
         else:
+            from ..services.json_serializer import IngestPayloadOptions
+
             payload = build_ingest_payload(
-                csv_file=str(opts.csv_file),
-                account_name=parsed.account_name,
-                account_number=parsed.account_number,
+                options=IngestPayloadOptions(
+                    csv_file=str(opts.csv_file),
+                    account_name=parsed.account_name,
+                    account_number=parsed.account_number,
+                    options_only=opts.options_only,
+                    ticker=opts.ticker_symbol,
+                    strategy=opts.strategy,
+                    open_only=opts.open_only,
+                ),
                 transactions=[],
                 chains=[],
-                options_only=opts.options_only,
-                ticker=opts.ticker_symbol,
-                strategy=opts.strategy,
-                open_only=opts.open_only,
             )
             console.print_json(data=payload)
         return
@@ -367,16 +371,20 @@ def _run_import(
     chains_for_json = detect_roll_chains(chain_source_transactions)
 
     if opts.json_output:
+        from ..services.json_serializer import IngestPayloadOptions
+
         payload = build_ingest_payload(
-            csv_file=str(opts.csv_file),
-            account_name=parsed.account_name,
-            account_number=parsed.account_number,
+            options=IngestPayloadOptions(
+                csv_file=str(opts.csv_file),
+                account_name=parsed.account_name,
+                account_number=parsed.account_number,
+                options_only=opts.options_only,
+                ticker=opts.ticker_symbol,
+                strategy=opts.strategy,
+                open_only=opts.open_only,
+            ),
             transactions=filtered_transactions,
             chains=chains_for_json,
-            options_only=opts.options_only,
-            ticker=opts.ticker_symbol,
-            strategy=opts.strategy,
-            open_only=opts.open_only,
         )
         console.print_json(data=payload)
         return

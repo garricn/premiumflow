@@ -252,16 +252,20 @@ class TestJsonSerializer(unittest.TestCase):
             }
         ]
 
+        from premiumflow.services.json_serializer import IngestPayloadOptions
+
         result = build_ingest_payload(
-            csv_file="test.csv",
-            account_name="Test Account",
-            account_number="ACCT-123",
+            options=IngestPayloadOptions(
+                csv_file="test.csv",
+                account_name="Test Account",
+                account_number="ACCT-123",
+                options_only=True,
+                ticker="TSLA",
+                strategy="calls",
+                open_only=False,
+            ),
             transactions=[txn],
             chains=chains,
-            options_only=True,
-            ticker="TSLA",
-            strategy="calls",
-            open_only=False,
         )
 
         self.assertEqual(result["source_file"], "test.csv")
@@ -287,16 +291,20 @@ class TestJsonSerializer(unittest.TestCase):
             {"symbol": "AAPL", "status": "CLOSED", "transactions": []},
         ]
 
+        from premiumflow.services.json_serializer import IngestPayloadOptions
+
         result = build_ingest_payload(
-            csv_file="test.csv",
-            account_name="Test Account",
-            account_number=None,
+            options=IngestPayloadOptions(
+                csv_file="test.csv",
+                account_name="Test Account",
+                account_number=None,
+                options_only=False,
+                ticker=None,
+                strategy=None,
+                open_only=True,
+            ),
             transactions=[],
             chains=chains,
-            options_only=False,
-            ticker=None,
-            strategy=None,
-            open_only=True,
         )
 
         # Should only include the OPEN chain
@@ -306,16 +314,20 @@ class TestJsonSerializer(unittest.TestCase):
 
     def test_build_ingest_payload_minimal(self):
         """Test building ingest payload with minimal data."""
+        from premiumflow.services.json_serializer import IngestPayloadOptions
+
         result = build_ingest_payload(
-            csv_file="test.csv",
-            account_name="Test Account",
-            account_number=None,
+            options=IngestPayloadOptions(
+                csv_file="test.csv",
+                account_name="Test Account",
+                account_number=None,
+                options_only=False,
+                ticker=None,
+                strategy=None,
+                open_only=False,
+            ),
             transactions=[],
             chains=[],
-            options_only=False,
-            ticker=None,
-            strategy=None,
-            open_only=False,
         )
 
         self.assertEqual(result["source_file"], "test.csv")

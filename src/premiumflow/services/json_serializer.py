@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence
 
@@ -11,6 +12,19 @@ from .leg_matching import LotFillPortion, MatchedLeg, MatchedLegLot
 
 if TYPE_CHECKING:
     from .cash_flow import CashFlowPnlReport, PeriodMetrics
+
+
+@dataclass
+class IngestPayloadOptions:
+    """Options for building ingest payload."""
+
+    csv_file: str
+    account_name: str
+    account_number: Optional[str]
+    options_only: bool
+    ticker: Optional[str]
+    strategy: Optional[str]
+    open_only: bool
 
 
 def is_open_chain(chain: Dict[str, Any]) -> bool:
@@ -82,22 +96,16 @@ def serialize_chain(chain: Dict[str, Any], chain_id: str) -> Dict[str, Any]:
     }
 
 
-def build_ingest_payload(  # noqa: PLR0913
+def build_ingest_payload(
     *,
-    csv_file: str,
-    account_name: str,
-    account_number: Optional[str],
+    options: IngestPayloadOptions,
     transactions: Sequence[NormalizedOptionTransaction],
     chains: List[Dict[str, Any]],
-    options_only: bool,
-    ticker: Optional[str],
-    strategy: Optional[str],
-    open_only: bool,
 ) -> Dict[str, Any]:
     """Build the complete payload for JSON output in ingest command."""
     transactions_payload = [serialize_normalized_transaction(txn) for txn in transactions]
 
-    if open_only:
+    if options.open_only:
         # Filter chains to only include open ones
         chains = [chain for chain in chains if is_open_chain(chain)]
 
@@ -106,16 +114,16 @@ def build_ingest_payload(  # noqa: PLR0913
         filtered_chains.append(serialize_chain(chain, f"chain-{idx}"))
 
     return {
-        "source_file": csv_file,
+        "source_file": options.csv_file,
         "filters": {
-            "options_only": options_only,
-            "ticker": ticker,
-            "strategy": strategy,
-            "open_only": open_only,
+            "options_only": options.options_only,
+            "ticker": options.ticker,
+            "strategy": options.strategy,
+            "open_only": options.open_only,
         },
         "account": {
-            "name": account_name,
-            "number": account_number,
+            "name": options.account_name,
+            "number": options.account_number,
         },
         "transactions": transactions_payload,
         "chains": filtered_chains,
