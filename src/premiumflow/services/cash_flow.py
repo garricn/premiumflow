@@ -16,10 +16,12 @@ from typing import Dict, List, Literal, Optional
 
 from ..core.parser import NormalizedOptionTransaction
 from ..persistence import SQLiteRepository
-from .cash_flow_aggregations import ZERO, _aggregate_cash_flow_by_period
-from .cash_flow_periods import (
+from .cash_flow.helpers import (
+    ZERO,
     PeriodType,
+    _aggregate_cash_flow_by_period,
     _clamp_period_to_range,
+    _collect_pnl_period_keys,
     _date_in_range,
     _group_date_to_period_key,
     _lot_closed_by_assignment,
@@ -162,56 +164,6 @@ def _sum_realized_breakdown(periods: List[PeriodMetrics], view: RealizedView) ->
         losses_net=Decimal(sum(p.realized_breakdowns[view].losses_net for p in periods)),
         net_net=Decimal(sum(p.realized_breakdowns[view].net_net for p in periods)),
     )
-
-
-def _collect_pnl_period_keys(  # noqa: PLR0913
-    matched_legs: List[MatchedLeg],
-    transactions: List[NormalizedOptionTransaction],
-    period_type: PeriodType,
-    *,
-    since: Optional[date] = None,
-    until: Optional[date] = None,
-    clamp_periods_to_range: bool = True,
-) -> set[str]:
-    """
-    Collect all period keys that will be needed for P&L aggregation.
-
-    Collects period keys from transactions and matched_legs (from closed lots'
-    closed_at dates and open lots' opened_at dates) to ensure all periods are
-    initialized upfront.
-
-    Parameters
-    ----------
-    clamp_periods_to_range
-        If True, clamp unrealized exposure periods to the first period in the
-        range when positions were opened before the range start.
-    """
-    all_period_keys: set[str] = set()
-
-    # Collect period keys from transactions
-    for txn in transactions:
-        period_key, _ = _group_date_to_period_key(txn.activity_date, period_type)
-        all_period_keys.add(period_key)
-
-    # Collect period keys from matched_legs
-    # - From closed lots: period when they were closed (if within date range)
-    # - From lots that were open during the period: period when they were opened (if overlapping date range)
-    for leg in matched_legs:
-        for lot in leg.lots:
-            if lot.is_closed and lot.realized_pnl is not None:
-                if lot.closed_at and _date_in_range(lot.closed_at, since, until):
-                    period_key, _ = _group_date_to_period_key(lot.closed_at, period_type)
-                    all_period_keys.add(period_key)
-            # Include lots that were open during the period (currently open or closed after period end)
-            if _lot_was_open_during_period(lot, until):
-                if lot.opened_at and _lot_overlaps_date_range(lot.opened_at, until):
-                    period_key, _ = _group_date_to_period_key(lot.opened_at, period_type)
-                    # Clamp period if needed
-                    if clamp_periods_to_range:
-                        period_key = _clamp_period_to_range(period_key, period_type, since)
-                    all_period_keys.add(period_key)
-
-    return all_period_keys
 
 
 def _aggregate_realized_pnl(  # noqa: C901, PLR0913
