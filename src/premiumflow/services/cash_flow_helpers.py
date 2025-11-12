@@ -11,6 +11,7 @@ from .cash_flow_periods import (
     _lot_was_open_during_period,
     _parse_period_key_to_date,
 )
+from .cash_flow_pnl_aggregators import _aggregate_pnl_by_period, _empty_period_entry
 from .cash_flow_pnl_keys import _collect_pnl_period_keys
 
 __all__ = [
@@ -25,4 +26,6 @@ __all__ = [
     "ZERO",
     "_aggregate_cash_flow_by_period",
     "_collect_pnl_period_keys",
+    "_aggregate_pnl_by_period",
+    "_empty_period_entry",
 ]

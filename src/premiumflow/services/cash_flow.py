@@ -20,16 +20,12 @@ from .cash_flow_helpers import (
     ZERO,
     PeriodType,
     _aggregate_cash_flow_by_period,
-    _clamp_period_to_range,
-    _collect_pnl_period_keys,
+    _aggregate_pnl_by_period,
     _date_in_range,
+    _empty_period_entry,
     _group_date_to_period_key,
-    _lot_closed_by_assignment,
-    _lot_overlaps_date_range,
-    _lot_was_open_during_period,
     _parse_period_key_to_date,
 )
-from .leg_matching import MatchedLeg
 from .stock_lots import StockLotSummary, fetch_stock_lot_summaries
 from .transaction_loader import (
     fetch_normalized_transactions,
@@ -166,298 +162,6 @@ def _sum_realized_breakdown(periods: List[PeriodMetrics], view: RealizedView) ->
     )
 
 
-def _aggregate_realized_pnl(  # noqa: C901, PLR0913
-    matched_legs: List[MatchedLeg],
-    period_type: PeriodType,
-    period_data: Dict[str, Dict[str, Decimal]],
-    *,
-    since: Optional[date] = None,
-    until: Optional[date] = None,
-    assignment_handling: AssignmentHandling = "include",
-) -> None:
-    """
-    Aggregate realized P&L (gross and net) from closed lots into period_data.
-
-    Realized P&L is attributed to the period when the lot was closed.
-    Only includes lots closed within the date range (if filtering).
-    """
-    for leg in matched_legs:
-        for lot in leg.lots:
-            if lot.is_closed and lot.realized_pnl is not None and lot.closed_at:
-                if not _date_in_range(lot.closed_at, since, until):
-                    continue
-
-                period_key, _ = _group_date_to_period_key(lot.closed_at, period_type)
-
-                is_assignment_close = _lot_closed_by_assignment(lot)
-                include_assignment = not (is_assignment_close and assignment_handling == "exclude")
-
-                gross_realized = Decimal(lot.realized_pnl)
-                if is_assignment_close:
-                    period_data[period_key]["assignment_realized_gross"] += gross_realized
-                if include_assignment:
-                    if gross_realized >= ZERO:
-                        period_data[period_key]["realized_profits_gross"] += gross_realized
-                    else:
-                        period_data[period_key]["realized_losses_gross"] += -gross_realized
-                    period_data[period_key]["realized_pnl_gross"] += gross_realized
-
-                if lot.net_pnl is None:
-                    continue
-
-                net_realized = Decimal(lot.net_pnl)
-                if is_assignment_close:
-                    period_data[period_key]["assignment_realized_net"] += net_realized
-                if include_assignment:
-                    if net_realized >= ZERO:
-                        period_data[period_key]["realized_profits_net"] += net_realized
-                    else:
-                        period_data[period_key]["realized_losses_net"] += -net_realized
-                    period_data[period_key]["realized_pnl_net"] += net_realized
-
-
-def _aggregate_opening_fees(  # noqa: C901, PLR0913
-    matched_legs: List[MatchedLeg],
-    period_type: PeriodType,
-    period_data: Dict[str, Dict[str, Decimal]],
-    *,
-    since: Optional[date] = None,
-    until: Optional[date] = None,
-    clamp_periods_to_range: bool = True,
-) -> None:
-    """Aggregate opening fees by the period in which each lot was opened."""
-    for leg in matched_legs:
-        for lot in leg.lots:
-            if lot.opened_at is None:
-                continue
-            if since is not None and lot.closed_at and lot.closed_at < since:
-                # Lot lifetime ends before the requested window—skip entirely
-                continue
-
-            period_key, _ = _group_date_to_period_key(lot.opened_at, period_type)
-            if since is not None and lot.opened_at < since:
-                if not clamp_periods_to_range:
-                    continue
-                period_key = _clamp_period_to_range(period_key, period_type, since)
-            elif not _date_in_range(lot.opened_at, since, until):
-                continue
-
-            open_fees = Decimal(lot.open_fees)
-            if open_fees == ZERO:
-                continue
-            if period_key not in period_data:
-                if not clamp_periods_to_range:
-                    continue
-                period_data[period_key] = _empty_period_entry()
-            period_data[period_key]["opening_fees"] += open_fees
-            period_data[period_key]["total_fees"] += open_fees
-
-
-def _aggregate_closing_fees(
-    matched_legs: List[MatchedLeg],
-    period_type: PeriodType,
-    period_data: Dict[str, Dict[str, Decimal]],
-    *,
-    since: Optional[date] = None,
-    until: Optional[date] = None,
-) -> None:
-    """Aggregate closing fees by the period in which each lot was closed."""
-    for leg in matched_legs:
-        for lot in leg.lots:
-            if not lot.is_closed or lot.closed_at is None:
-                continue
-            if not _date_in_range(lot.closed_at, since, until):
-                continue
-
-            period_key, _ = _group_date_to_period_key(lot.closed_at, period_type)
-            close_fees = Decimal(lot.close_fees)
-            period_data[period_key]["closing_fees"] += close_fees
-            period_data[period_key]["total_fees"] += close_fees
-
-
-def _aggregate_unrealized_exposure(  # noqa: PLR0913
-    matched_legs: List[MatchedLeg],
-    period_type: PeriodType,
-    period_data: Dict[str, Dict[str, Decimal]],
-    *,
-    since: Optional[date] = None,
-    until: Optional[date] = None,
-    clamp_periods_to_range: bool = True,
-) -> None:
-    """
-    Aggregate unrealized exposure from lots that were open during the period.
-
-    Unrealized exposure (credit at risk) is attributed to the period when each
-    individual lot was opened. Includes lots whose lifetime overlaps the date
-    range (opened before or during the range). Also includes lots that were
-    open during the period but closed afterwards (for historical reports).
-
-    Note: This represents the premium collected that could be retained if the
-    position expires worthless, not the mark-to-market unrealized P&L.
-
-    Parameters
-    ----------
-    clamp_periods_to_range
-        If True, clamp unrealized exposure periods to the first period in the
-        range when positions were opened before the range start.
-    """
-    for leg in matched_legs:
-        for lot in leg.lots:
-            # Include lots that were open during the period (currently open or closed after period end)
-            if _lot_was_open_during_period(lot, until):
-                if lot.opened_at and _lot_overlaps_date_range(lot.opened_at, until):
-                    period_key, _ = _group_date_to_period_key(lot.opened_at, period_type)
-                    # Clamp period if needed
-                    if clamp_periods_to_range:
-                        period_key = _clamp_period_to_range(period_key, period_type, since)
-                    # Use open_premium for unrealized exposure (credit_remaining is 0 for closed lots)
-                    # For open lots, credit_remaining equals open_premium, so this works for both
-                    exposure = lot.credit_remaining if lot.is_open else lot.open_premium
-                    period_data[period_key]["unrealized_exposure"] += exposure
-
-
-def _parse_stock_lot_closed_date(value: Optional[str]) -> Optional[date]:
-    """Parse a persisted stock lot closed_at timestamp into a date."""
-    if not value:
-        return None
-    normalized = value
-    if normalized.endswith("Z"):
-        normalized = normalized[:-1] + "+00:00"
-    try:
-        parsed = datetime.fromisoformat(normalized)
-    except ValueError:
-        try:
-            return date.fromisoformat(value.split("T")[0])
-        except (ValueError, IndexError):
-            return None
-    return parsed.date()
-
-
-def _empty_stock_realized_entry() -> Dict[str, Decimal]:
-    """Return a zeroed-out holder for stock realized P&L components."""
-    return {"profits": ZERO, "losses": ZERO, "net": ZERO}
-
-
-def _aggregate_stock_realized_by_period(
-    stock_lots: List[StockLotSummary],
-    period_type: PeriodType,
-    *,
-    since: Optional[date] = None,
-    until: Optional[date] = None,
-) -> Dict[str, Dict[str, Decimal]]:
-    """Aggregate realized stock P&L by lot closing period."""
-    period_data: Dict[str, Dict[str, Decimal]] = {}
-
-    for lot in stock_lots:
-        if lot.status.lower() != "closed":
-            continue
-
-        closed_date = _parse_stock_lot_closed_date(lot.closed_at)
-        if closed_date is None:
-            continue
-        if not _date_in_range(closed_date, since, until):
-            continue
-
-        period_key, _ = _group_date_to_period_key(closed_date, period_type)
-        entry = period_data.setdefault(period_key, _empty_stock_realized_entry())
-
-        realized_total = Decimal(lot.realized_pnl_total)
-        if realized_total >= ZERO:
-            entry["profits"] += realized_total
-        else:
-            entry["losses"] += -realized_total
-        entry["net"] += realized_total
-
-    return period_data
-
-
-def _aggregate_pnl_by_period(  # noqa: PLR0913
-    matched_legs: List[MatchedLeg],
-    transactions: List[NormalizedOptionTransaction],
-    period_type: PeriodType,
-    *,
-    since: Optional[date] = None,
-    until: Optional[date] = None,
-    clamp_periods_to_range: bool = True,
-    assignment_handling: AssignmentHandling = "include",
-) -> Dict[str, Dict[str, Decimal]]:
-    """
-    Aggregate gross/net realized P&L and unrealized exposure by time period.
-
-    Parameters
-    ----------
-    matched_legs
-        All matched legs (from full account history for proper matching)
-    transactions
-        Filtered transactions (for period initialization)
-    period_type
-        Time period type for grouping
-    since
-        Optional start date filter - only include P&L within this range
-    until
-        Optional end date filter - only include P&L within this range
-    clamp_periods_to_range
-        If True, clamp unrealized exposure periods to the first period in the
-        range when positions were opened before the range start.
-    assignment_handling
-        Whether assignment-driven realized P&L should be included in the main
-        realized totals ("include") or tracked separately ("exclude").
-
-    Returns
-    -------
-    Dict[str, Dict[str, Decimal]]
-        Dictionary mapping period_key to realized profit/loss, exposure, and fee data.
-    """
-    # Pre-populate period_data with all relevant period keys from both
-    # transactions and matched_legs to ensure all periods are initialized upfront
-    all_period_keys = _collect_pnl_period_keys(
-        matched_legs,
-        transactions,
-        period_type,
-        since=since,
-        until=until,
-        clamp_periods_to_range=clamp_periods_to_range,
-    )
-
-    # Initialize all periods upfront
-    period_data: Dict[str, Dict[str, Decimal]] = {}
-    for period_key in all_period_keys:
-        period_data[period_key] = _empty_period_entry()
-
-    # Aggregate realized P&L from closed lots
-    _aggregate_realized_pnl(
-        matched_legs,
-        period_type,
-        period_data,
-        since=since,
-        until=until,
-        assignment_handling=assignment_handling,
-    )
-
-    # Aggregate fees
-    _aggregate_opening_fees(
-        matched_legs,
-        period_type,
-        period_data,
-        since=since,
-        until=until,
-        clamp_periods_to_range=clamp_periods_to_range,
-    )
-    _aggregate_closing_fees(matched_legs, period_type, period_data, since=since, until=until)
-
-    # Aggregate unrealized exposure from lots that were open during the period
-    _aggregate_unrealized_exposure(
-        matched_legs,
-        period_type,
-        period_data,
-        since=since,
-        until=until,
-        clamp_periods_to_range=clamp_periods_to_range,
-    )
-
-    return period_data
-
-
 def _create_empty_report(
     account_name: str,
     account_number: Optional[str],
@@ -532,6 +236,61 @@ def _generate_period_label(
         return label
 
     return period_key
+
+
+def _parse_stock_lot_closed_date(value: Optional[str]) -> Optional[date]:
+    """Parse a persisted stock lot closed_at timestamp into a date."""
+    if not value:
+        return None
+    normalized = value
+    if normalized.endswith("Z"):
+        normalized = normalized[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        try:
+            return date.fromisoformat(value.split("T")[0])
+        except (ValueError, IndexError):
+            return None
+    return parsed.date()
+
+
+def _empty_stock_realized_entry() -> Dict[str, Decimal]:
+    """Return a zeroed-out holder for stock realized P&L components."""
+    return {"profits": ZERO, "losses": ZERO, "net": ZERO}
+
+
+def _aggregate_stock_realized_by_period(
+    stock_lots: List[StockLotSummary],
+    period_type: PeriodType,
+    *,
+    since: Optional[date] = None,
+    until: Optional[date] = None,
+) -> Dict[str, Dict[str, Decimal]]:
+    """Aggregate realized stock P&L by lot closing period."""
+    period_data: Dict[str, Dict[str, Decimal]] = {}
+
+    for lot in stock_lots:
+        if lot.status.lower() != "closed":
+            continue
+
+        closed_date = _parse_stock_lot_closed_date(lot.closed_at)
+        if closed_date is None:
+            continue
+        if not _date_in_range(closed_date, since, until):
+            continue
+
+        period_key, _ = _group_date_to_period_key(closed_date, period_type)
+        entry = period_data.setdefault(period_key, _empty_stock_realized_entry())
+
+        realized_total = Decimal(lot.realized_pnl_total)
+        if realized_total >= ZERO:
+            entry["profits"] += realized_total
+        else:
+            entry["losses"] += -realized_total
+        entry["net"] += realized_total
+
+    return period_data
 
 
 def _build_period_metrics(
@@ -775,21 +534,3 @@ def generate_cash_flow_pnl_report(  # noqa: PLR0913
         periods=periods,
         totals=totals,
     )
-
-
-def _empty_period_entry() -> Dict[str, Decimal]:
-    """Return a zeroed-out holder for per-period P&L components."""
-    return {
-        "realized_profits_gross": ZERO,
-        "realized_losses_gross": ZERO,
-        "realized_pnl_gross": ZERO,
-        "realized_profits_net": ZERO,
-        "realized_losses_net": ZERO,
-        "realized_pnl_net": ZERO,
-        "assignment_realized_gross": ZERO,
-        "assignment_realized_net": ZERO,
-        "unrealized_exposure": ZERO,
-        "opening_fees": ZERO,
-        "closing_fees": ZERO,
-        "total_fees": ZERO,
-    }

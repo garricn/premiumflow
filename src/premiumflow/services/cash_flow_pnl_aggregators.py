@@ -1,0 +1,216 @@
+from __future__ import annotations
+
+from datetime import date
+from decimal import Decimal
+from typing import Dict, List, Literal, Optional
+
+from ..core.parser import NormalizedOptionTransaction
+from .cash_flow_aggregations import ZERO
+from .cash_flow_periods import (
+    PeriodType,
+    _clamp_period_to_range,
+    _date_in_range,
+    _group_date_to_period_key,
+    _lot_closed_by_assignment,
+    _lot_overlaps_date_range,
+    _lot_was_open_during_period,
+)
+from .cash_flow_pnl_keys import _collect_pnl_period_keys
+from .leg_matching import MatchedLeg
+
+
+def _empty_period_entry() -> Dict[str, Decimal]:
+    """Return a zeroed-out holder for per-period P&L components."""
+    return {
+        "realized_profits_gross": ZERO,
+        "realized_losses_gross": ZERO,
+        "realized_pnl_gross": ZERO,
+        "realized_profits_net": ZERO,
+        "realized_losses_net": ZERO,
+        "realized_pnl_net": ZERO,
+        "assignment_realized_gross": ZERO,
+        "assignment_realized_net": ZERO,
+        "unrealized_exposure": ZERO,
+        "opening_fees": ZERO,
+        "closing_fees": ZERO,
+        "total_fees": ZERO,
+    }
+
+
+def _aggregate_realized_pnl(  # noqa: C901, PLR0913
+    matched_legs: List[MatchedLeg],
+    period_type: PeriodType,
+    period_data: Dict[str, Dict[str, Decimal]],
+    *,
+    since: Optional[date] = None,
+    until: Optional[date] = None,
+    assignment_handling: Literal["include", "exclude"] = "include",
+) -> None:
+    for leg in matched_legs:
+        for lot in leg.lots:
+            if lot.is_closed and lot.realized_pnl is not None and lot.closed_at:
+                if not _date_in_range(lot.closed_at, since, until):
+                    continue
+
+                period_key, _ = _group_date_to_period_key(lot.closed_at, period_type)
+
+                is_assignment_close = _lot_closed_by_assignment(lot)
+                include_assignment = not (is_assignment_close and assignment_handling == "exclude")
+
+                gross_realized = Decimal(lot.realized_pnl)
+                if is_assignment_close:
+                    period_data[period_key]["assignment_realized_gross"] += gross_realized
+                if include_assignment:
+                    if gross_realized >= ZERO:
+                        period_data[period_key]["realized_profits_gross"] += gross_realized
+                    else:
+                        period_data[period_key]["realized_losses_gross"] += -gross_realized
+                    period_data[period_key]["realized_pnl_gross"] += gross_realized
+
+                if lot.net_pnl is None:
+                    continue
+
+                net_realized = Decimal(lot.net_pnl)
+                if is_assignment_close:
+                    period_data[period_key]["assignment_realized_net"] += net_realized
+                if include_assignment:
+                    if net_realized >= ZERO:
+                        period_data[period_key]["realized_profits_net"] += net_realized
+                    else:
+                        period_data[period_key]["realized_losses_net"] += -net_realized
+                    period_data[period_key]["realized_pnl_net"] += net_realized
+
+
+def _aggregate_opening_fees(  # noqa: C901, PLR0913
+    matched_legs: List[MatchedLeg],
+    period_type: PeriodType,
+    period_data: Dict[str, Dict[str, Decimal]],
+    *,
+    since: Optional[date] = None,
+    until: Optional[date] = None,
+    clamp_periods_to_range: bool = True,
+) -> None:
+    for leg in matched_legs:
+        for lot in leg.lots:
+            if lot.opened_at is None:
+                continue
+            if since is not None and lot.closed_at and lot.closed_at < since:
+                continue
+
+            period_key, _ = _group_date_to_period_key(lot.opened_at, period_type)
+            if since is not None and lot.opened_at < since:
+                if not clamp_periods_to_range:
+                    continue
+                period_key = _clamp_period_to_range(period_key, period_type, since)
+            elif not _date_in_range(lot.opened_at, since, until):
+                continue
+
+            open_fees = Decimal(lot.open_fees)
+            if open_fees == ZERO:
+                continue
+            if period_key not in period_data:
+                if not clamp_periods_to_range:
+                    continue
+                period_data[period_key] = _empty_period_entry()
+            period_data[period_key]["opening_fees"] += open_fees
+            period_data[period_key]["total_fees"] += open_fees
+
+
+def _aggregate_closing_fees(
+    matched_legs: List[MatchedLeg],
+    period_type: PeriodType,
+    period_data: Dict[str, Dict[str, Decimal]],
+    *,
+    since: Optional[date] = None,
+    until: Optional[date] = None,
+) -> None:
+    for leg in matched_legs:
+        for lot in leg.lots:
+            if not lot.is_closed or lot.closed_at is None:
+                continue
+            if not _date_in_range(lot.closed_at, since, until):
+                continue
+
+            period_key, _ = _group_date_to_period_key(lot.closed_at, period_type)
+            close_fees = Decimal(lot.close_fees)
+            period_data[period_key]["closing_fees"] += close_fees
+            period_data[period_key]["total_fees"] += close_fees
+
+
+def _aggregate_unrealized_exposure(  # noqa: PLR0913
+    matched_legs: List[MatchedLeg],
+    period_type: PeriodType,
+    period_data: Dict[str, Dict[str, Decimal]],
+    *,
+    since: Optional[date] = None,
+    until: Optional[date] = None,
+    clamp_periods_to_range: bool = True,
+) -> None:
+    for leg in matched_legs:
+        for lot in leg.lots:
+            if _lot_was_open_during_period(lot, until):
+                if lot.opened_at and _lot_overlaps_date_range(lot.opened_at, until):
+                    period_key, _ = _group_date_to_period_key(lot.opened_at, period_type)
+                    if clamp_periods_to_range:
+                        period_key = _clamp_period_to_range(period_key, period_type, since)
+                    exposure = lot.credit_remaining if lot.is_open else lot.open_premium
+                    period_data[period_key]["unrealized_exposure"] += exposure
+
+
+def _aggregate_pnl_by_period(  # noqa: PLR0913
+    matched_legs: List[MatchedLeg],
+    transactions: List[NormalizedOptionTransaction],
+    period_type: PeriodType,
+    *,
+    since: Optional[date] = None,
+    until: Optional[date] = None,
+    clamp_periods_to_range: bool = True,
+    assignment_handling: Literal["include", "exclude"] = "include",
+) -> Dict[str, Dict[str, Decimal]]:
+    all_period_keys = _collect_pnl_period_keys(
+        matched_legs,
+        transactions,
+        period_type,
+        since=since,
+        until=until,
+        clamp_periods_to_range=clamp_periods_to_range,
+    )
+
+    period_data: Dict[str, Dict[str, Decimal]] = {}
+    for period_key in all_period_keys:
+        period_data[period_key] = _empty_period_entry()
+
+    _aggregate_realized_pnl(
+        matched_legs,
+        period_type,
+        period_data,
+        since=since,
+        until=until,
+        assignment_handling=assignment_handling,
+    )
+
+    _aggregate_opening_fees(
+        matched_legs,
+        period_type,
+        period_data,
+        since=since,
+        until=until,
+        clamp_periods_to_range=clamp_periods_to_range,
+    )
+    _aggregate_closing_fees(matched_legs, period_type, period_data, since=since, until=until)
+    _aggregate_unrealized_exposure(
+        matched_legs,
+        period_type,
+        period_data,
+        since=since,
+        until=until,
+        clamp_periods_to_range=clamp_periods_to_range,
+    )
+
+    return period_data
+
+
+__all__ = [
+    "_aggregate_pnl_by_period",
+    "_empty_period_entry",
+]
