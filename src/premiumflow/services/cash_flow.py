@@ -16,6 +16,7 @@ from typing import Dict, List, Literal, Optional
 
 from ..core.parser import NormalizedOptionTransaction
 from ..persistence import SQLiteRepository
+from .cash_flow_aggregations import ZERO, _aggregate_cash_flow_by_period
 from .cash_flow_periods import (
     PeriodType,
     _clamp_period_to_range,
@@ -33,26 +34,8 @@ from .transaction_loader import (
     match_legs_from_transactions,
 )
 
-CONTRACT_MULTIPLIER = Decimal("100")
-ZERO = Decimal("0")
 AssignmentHandling = Literal["include", "exclude"]
 RealizedView = Literal["options", "stock", "combined"]
-
-
-def _calculate_cash_value(txn: NormalizedOptionTransaction) -> Decimal:
-    """
-    Determine the gross cash value of a transaction.
-
-    Prefer broker-supplied ``Amount`` values when available since they already
-    include the contract multiplier and reflect the actual cash movement. When
-    ``Amount`` is missing (e.g., synthetic fixtures), fall back to
-    ``price * quantity * 100`` to approximate the same behaviour.
-    """
-    if txn.amount is not None:
-        return txn.amount
-
-    base_value = txn.price * Decimal(txn.quantity) * CONTRACT_MULTIPLIER
-    return base_value if txn.action == "SELL" else -base_value
 
 
 @dataclass(frozen=True)
@@ -179,35 +162,6 @@ def _sum_realized_breakdown(periods: List[PeriodMetrics], view: RealizedView) ->
         losses_net=Decimal(sum(p.realized_breakdowns[view].losses_net for p in periods)),
         net_net=Decimal(sum(p.realized_breakdowns[view].net_net for p in periods)),
     )
-
-
-def _aggregate_cash_flow_by_period(
-    transactions: List[NormalizedOptionTransaction],
-    period_type: PeriodType,
-) -> Dict[str, Dict[str, Decimal]]:
-    """
-    Aggregate cash flow (credits/debits) by time period.
-
-    Returns
-    -------
-    Dict[str, Dict[str, Decimal]]
-        Dictionary mapping period_key to a dict with 'credits' and 'debits' keys.
-    """
-    period_data: Dict[str, Dict[str, Decimal]] = {}
-
-    for txn in transactions:
-        cash_value = _calculate_cash_value(txn)
-        period_key, _ = _group_date_to_period_key(txn.activity_date, period_type)
-
-        if period_key not in period_data:
-            period_data[period_key] = {"credits": ZERO, "debits": ZERO}
-
-        if cash_value >= ZERO:
-            period_data[period_key]["credits"] += cash_value
-        else:
-            period_data[period_key]["debits"] += -cash_value
-
-    return period_data
 
 
 def _collect_pnl_period_keys(  # noqa: PLR0913
