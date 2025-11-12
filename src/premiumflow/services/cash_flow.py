@@ -21,8 +21,9 @@ from .cash_flow_helpers import (
     PeriodType,
     _aggregate_cash_flow_by_period,
     _aggregate_pnl_by_period,
+    _build_period_metrics,
+    _calculate_totals,
     _date_in_range,
-    _empty_period_entry,
     _group_date_to_period_key,
     _parse_period_key_to_date,
 )
@@ -291,139 +292,6 @@ def _aggregate_stock_realized_by_period(
         entry["net"] += realized_total
 
     return period_data
-
-
-def _build_period_metrics(
-    cash_flow_by_period: Dict[str, Dict[str, Decimal]],
-    pnl_by_period: Dict[str, Dict[str, Decimal]],
-    stock_realized_by_period: Dict[str, Dict[str, Decimal]],
-    filtered_transactions: List[NormalizedOptionTransaction],
-    period_type: PeriodType,
-) -> List[PeriodMetrics]:
-    """Combine cash flow and P&L data into PeriodMetrics objects."""
-    all_period_keys = (
-        set(cash_flow_by_period.keys())
-        | set(pnl_by_period.keys())
-        | set(stock_realized_by_period.keys())
-    )
-    periods: List[PeriodMetrics] = []
-
-    for period_key in sorted(all_period_keys):
-        period_label = _generate_period_label(period_key, filtered_transactions, period_type)
-
-        cash_flow = cash_flow_by_period.get(period_key, {"credits": ZERO, "debits": ZERO})
-        pnl = pnl_by_period.get(period_key, _empty_period_entry())
-        stock_realized = stock_realized_by_period.get(period_key, _empty_stock_realized_entry())
-
-        credits = Decimal(cash_flow["credits"])
-        debits = Decimal(cash_flow["debits"])
-        net_cash_flow = credits - debits
-        realized_profits_gross = Decimal(pnl["realized_profits_gross"])
-        realized_losses_gross = Decimal(pnl["realized_losses_gross"])
-        realized_pnl_gross = Decimal(pnl["realized_pnl_gross"])
-        realized_profits_net = Decimal(pnl["realized_profits_net"])
-        realized_losses_net = Decimal(pnl["realized_losses_net"])
-        realized_pnl_net = Decimal(pnl["realized_pnl_net"])
-        assignment_realized_gross = Decimal(pnl["assignment_realized_gross"])
-        assignment_realized_net = Decimal(pnl["assignment_realized_net"])
-        unrealized_exposure = Decimal(pnl["unrealized_exposure"])
-        opening_fees = Decimal(pnl["opening_fees"])
-        closing_fees = Decimal(pnl["closing_fees"])
-        total_fees = Decimal(pnl["total_fees"])
-        stock_profits = Decimal(stock_realized["profits"])
-        stock_losses = Decimal(stock_realized["losses"])
-        stock_net = Decimal(stock_realized["net"])
-
-        realized_breakdowns = _build_realized_breakdowns(
-            options_profits_gross=realized_profits_gross,
-            options_losses_gross=realized_losses_gross,
-            options_pnl_gross=realized_pnl_gross,
-            options_profits_net=realized_profits_net,
-            options_losses_net=realized_losses_net,
-            options_pnl_net=realized_pnl_net,
-            stock_profits=stock_profits,
-            stock_losses=stock_losses,
-            stock_net=stock_net,
-        )
-
-        periods.append(
-            PeriodMetrics(
-                period_key=period_key,
-                period_label=period_label,
-                credits=credits,
-                debits=debits,
-                net_cash_flow=net_cash_flow,
-                realized_profits_gross=realized_profits_gross,
-                realized_losses_gross=realized_losses_gross,
-                realized_pnl_gross=realized_pnl_gross,
-                realized_profits_net=realized_profits_net,
-                realized_losses_net=realized_losses_net,
-                realized_pnl_net=realized_pnl_net,
-                assignment_realized_gross=assignment_realized_gross,
-                assignment_realized_net=assignment_realized_net,
-                unrealized_exposure=unrealized_exposure,
-                opening_fees=opening_fees,
-                closing_fees=closing_fees,
-                total_fees=total_fees,
-                realized_breakdowns=realized_breakdowns,
-            )
-        )
-
-    return periods
-
-
-def _calculate_totals(periods: List[PeriodMetrics]) -> PeriodMetrics:
-    """Calculate grand totals across all periods."""
-    total_credits = Decimal(sum(p.credits for p in periods))
-    total_debits = Decimal(sum(p.debits for p in periods))
-    total_realized_profits_gross = Decimal(sum(p.realized_profits_gross for p in periods))
-    total_realized_losses_gross = Decimal(sum(p.realized_losses_gross for p in periods))
-    total_realized_pnl_gross = Decimal(sum(p.realized_pnl_gross for p in periods))
-    total_realized_profits_net = Decimal(sum(p.realized_profits_net for p in periods))
-    total_realized_losses_net = Decimal(sum(p.realized_losses_net for p in periods))
-    total_realized_pnl_net = Decimal(sum(p.realized_pnl_net for p in periods))
-    total_assignment_realized_gross = Decimal(sum(p.assignment_realized_gross for p in periods))
-    total_assignment_realized_net = Decimal(sum(p.assignment_realized_net for p in periods))
-    total_unrealized_exposure = Decimal(sum(p.unrealized_exposure for p in periods))
-    total_opening_fees = Decimal(sum(p.opening_fees for p in periods))
-    total_closing_fees = Decimal(sum(p.closing_fees for p in periods))
-    total_fees = total_opening_fees + total_closing_fees
-    stock_totals = _sum_realized_breakdown(periods, "stock")
-    combined_totals = _sum_realized_breakdown(periods, "combined")
-    options_totals = RealizedViewTotals(
-        profits_gross=total_realized_profits_gross,
-        losses_gross=total_realized_losses_gross,
-        net_gross=total_realized_pnl_gross,
-        profits_net=total_realized_profits_net,
-        losses_net=total_realized_losses_net,
-        net_net=total_realized_pnl_net,
-    )
-    realized_breakdowns: Dict[RealizedView, RealizedViewTotals] = {
-        "options": options_totals,
-        "stock": stock_totals,
-        "combined": combined_totals,
-    }
-
-    return PeriodMetrics(
-        period_key="total",
-        period_label="Total",
-        credits=total_credits,
-        debits=total_debits,
-        net_cash_flow=total_credits - total_debits,
-        realized_profits_gross=total_realized_profits_gross,
-        realized_losses_gross=total_realized_losses_gross,
-        realized_pnl_gross=total_realized_pnl_gross,
-        realized_profits_net=total_realized_profits_net,
-        realized_losses_net=total_realized_losses_net,
-        realized_pnl_net=total_realized_pnl_net,
-        assignment_realized_gross=total_assignment_realized_gross,
-        assignment_realized_net=total_assignment_realized_net,
-        unrealized_exposure=total_unrealized_exposure,
-        opening_fees=total_opening_fees,
-        closing_fees=total_closing_fees,
-        total_fees=total_fees,
-        realized_breakdowns=realized_breakdowns,
-    )
 
 
 def generate_cash_flow_pnl_report(  # noqa: PLR0913

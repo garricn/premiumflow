@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from .cash_flow_aggregations import ZERO, _aggregate_cash_flow_by_period
+from .cash_flow_period_metrics import _build_period_metrics, _calculate_totals
 from .cash_flow_periods import (
     PeriodType,
     _clamp_period_to_range,
@@ -28,4 +29,6 @@ __all__ = [
     "_collect_pnl_period_keys",
     "_aggregate_pnl_by_period",
     "_empty_period_entry",
+    "_build_period_metrics",
+    "_calculate_totals",
 ]
