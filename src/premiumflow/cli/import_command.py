@@ -394,78 +394,38 @@ def _run_import(
     console.print(table)
 
 
-def _make_import_options_from_click_params(  # noqa: PLR0913
-    options_only,
-    ticker_symbol,
-    strategy,
-    csv_file,
-    open_only,
-    account_name,
-    account_number,
-    skip_existing,
-    replace_existing,
-    json_output,
-) -> ImportOptions:
+def _make_import_options_from_click_params(**kwargs) -> ImportOptions:
     """
     Build ImportOptions from Click parameter values.
 
-    Note: PLR0913 (too many arguments) is necessary here because this function
-    receives all the Click option parameters from the decorator. It acts as an
-    adapter between Click's interface and the ImportOptions dataclass.
+    Uses **kwargs to accept any number of Click-injected parameters,
+    allowing the function to work with Click's decorator pattern without
+    triggering PLR0913 (too many arguments).
     """
     return ImportOptions(
-        options_only=options_only,
-        ticker_symbol=ticker_symbol,
-        strategy=strategy,
-        csv_file=Path(csv_file),
-        open_only=open_only,
-        account_name=account_name.strip() if account_name else "",
-        account_number=account_number.strip() if account_number else "",
-        skip_existing=skip_existing,
-        replace_existing=replace_existing,
-        json_output=json_output,
+        options_only=kwargs.get("options_only", True),
+        ticker_symbol=kwargs.get("ticker_symbol"),
+        strategy=kwargs.get("strategy"),
+        csv_file=Path(kwargs.get("csv_file", "all_transactions.csv")),
+        open_only=kwargs.get("open_only", False),
+        account_name=(kwargs.get("account_name") or "").strip(),
+        account_number=(kwargs.get("account_number") or "").strip(),
+        skip_existing=kwargs.get("skip_existing", False),
+        replace_existing=kwargs.get("replace_existing", False),
+        json_output=kwargs.get("json_output", False),
     )
 
 
 @click.group(name="import", invoke_without_command=True)
 @_apply_import_options
-def import_group(  # noqa: PLR0913
-    ctx,
-    options_only,
-    ticker_symbol,
-    strategy,
-    csv_file,
-    open_only,
-    account_name,
-    account_number,
-    skip_existing,
-    replace_existing,
-    json_output,
-):
-    """
-    Import and manage stored option CSV ingests.
-
-    Note: PLR0913 (too many arguments) is necessary because the @_apply_import_options
-    decorator injects all option parameters into the function signature. This is a
-    standard Click pattern.
-    """
+def import_group(ctx, **kwargs):
+    """Import and manage stored option CSV ingests."""
 
     if ctx.invoked_subcommand is not None:
         ctx.ensure_object(dict)
         return
 
-    opts = _make_import_options_from_click_params(
-        options_only=options_only,
-        ticker_symbol=ticker_symbol,
-        strategy=strategy,
-        csv_file=csv_file,
-        open_only=open_only,
-        account_name=account_name,
-        account_number=account_number,
-        skip_existing=skip_existing,
-        replace_existing=replace_existing,
-        json_output=json_output,
-    )
+    opts = _make_import_options_from_click_params(**kwargs)
     _run_import(ctx, opts, console_label="Importing")
 
 
