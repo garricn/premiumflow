@@ -36,34 +36,34 @@ def filter_transactions_by_option_type(
     return transactions
 
 
-def filter_open_positions(  # noqa: C901
-    transactions: Iterable[Dict[str, Any]],
-) -> List[Dict[str, Any]]:
-    """Filter transactions to show only positions that are still open (net quantity > 0)."""
-    transactions = list(transactions)
+def _txn_key(txn: Dict[str, Any]) -> Tuple[str, str]:
+    """Extract transaction key (instrument + description) for grouping."""
+    return (
+        (txn.get("Instrument") or "").strip().upper(),
+        (txn.get("Description") or "").strip(),
+    )
+
+
+def _parse_quantity(quantity_str: str) -> int:
+    """Parse quantity string, handling negative values in parentheses."""
+    if not quantity_str:
+        return 0
+    cleaned = quantity_str.replace(",", "").strip()
+    if cleaned.startswith("(") and cleaned.endswith(")"):
+        cleaned = f"-{cleaned[1:-1]}"
+    try:
+        return int(float(cleaned))
+    except (ValueError, TypeError):
+        return 0
+
+
+def _aggregate_position_quantities(
+    transactions: List[Dict[str, Any]],
+) -> Dict[Tuple[str, str], int]:
+    """Build a dict of net quantities for each position based on opening/closing codes."""
     closing_codes = {"STC", "BTC"}
     opening_codes = {"STO", "BTO"}
-
-    def _txn_key(txn: Dict[str, Any]) -> Tuple[str, str]:
-        return (
-            (txn.get("Instrument") or "").strip().upper(),
-            (txn.get("Description") or "").strip(),
-        )
-
-    def _parse_quantity(quantity_str: str) -> int:
-        """Parse quantity string, handling negative values in parentheses."""
-        if not quantity_str:
-            return 0
-        cleaned = quantity_str.replace(",", "").strip()
-        if cleaned.startswith("(") and cleaned.endswith(")"):
-            cleaned = f"-{cleaned[1:-1]}"
-        try:
-            return int(float(cleaned))
-        except (ValueError, TypeError):
-            return 0
-
-    # Group transactions by position (instrument + description)
-    position_quantities = {}
+    position_quantities: Dict[Tuple[str, str], int] = {}
 
     for txn in transactions:
         trans_code = (txn.get("Trans Code") or "").strip().upper()
@@ -77,51 +77,70 @@ def filter_open_positions(  # noqa: C901
             position_quantities[key] = 0
 
         if trans_code in opening_codes:
-            # Opening transactions: BTO adds positive quantity (long), STO adds negative quantity (short)
+            # Opening: BTO adds positive (long), STO adds negative (short)
             if trans_code == "BTO":
-                position_quantities[key] += quantity  # Long position: positive quantity
+                position_quantities[key] += quantity
             elif trans_code == "STO":
-                position_quantities[key] -= quantity  # Short position: negative quantity
+                position_quantities[key] -= quantity
         elif trans_code in closing_codes:
-            # Closing transactions: STC subtracts quantity (closes long), BTC adds quantity (closes short)
+            # Closing: STC subtracts (closes long), BTC adds (closes short)
             if trans_code == "STC":
-                position_quantities[key] -= quantity  # Close long: subtract quantity
+                position_quantities[key] -= quantity
             elif trans_code == "BTC":
-                position_quantities[key] += quantity  # Close short: add quantity
+                position_quantities[key] += quantity
 
-    # Return aggregated opening transactions for positions that are still open (net quantity != 0)
+    return position_quantities
+
+
+def _build_aggregated_transaction(
+    txn: Dict[str, Any],
+    net_quantity: int,
+    trans_code: str,
+) -> Dict[str, Any]:
+    """Create aggregated transaction with net quantity and recalculated amount."""
+    aggregated_txn = dict(txn)
+    aggregated_txn["Quantity"] = str(net_quantity)
+
+    price_str = txn.get("Price", "0").replace("$", "").replace(",", "")
+    try:
+        price = float(price_str)
+        if price > 0:
+            total_amount = net_quantity * price
+            aggregated_txn["Amount"] = (
+                f"(${total_amount:.2f})" if trans_code == "BTO" else f"${total_amount:.2f}"
+            )
+    except (ValueError, TypeError):
+        pass
+
+    return aggregated_txn
+
+
+def filter_open_positions(
+    transactions: Iterable[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Filter transactions to show only positions that are still open (net quantity != 0)."""
+    transactions = list(transactions)
+    opening_codes = {"STO", "BTO"}
+
+    # Calculate net quantities for all positions
+    position_quantities = _aggregate_position_quantities(transactions)
+
+    # Collect aggregated transactions for open positions
     open_positions = []
     processed_positions = set()
 
     for txn in transactions:
         trans_code = (txn.get("Trans Code") or "").strip().upper()
-        if trans_code in opening_codes:
-            key = _txn_key(txn)
-            net_quantity = position_quantities.get(key, 0)
+        if trans_code not in opening_codes:
+            continue
 
-            if net_quantity != 0 and key not in processed_positions:
-                # Create aggregated entry for this position
-                aggregated_txn = dict(txn)  # Copy the transaction
-                aggregated_txn["Quantity"] = str(net_quantity)  # Set net quantity
+        key = _txn_key(txn)
+        net_quantity = position_quantities.get(key, 0)
 
-                # Recalculate amount based on net quantity and average price
-                # For simplicity, we'll use the last transaction's price
-                # In a more sophisticated implementation, you might want to calculate weighted average
-                price_str = txn.get("Price", "0").replace("$", "").replace(",", "")
-                try:
-                    price = float(price_str)
-                    if price > 0:
-                        total_amount = net_quantity * price
-                        aggregated_txn["Amount"] = (
-                            f"(${total_amount:.2f})"
-                            if trans_code == "BTO"
-                            else f"${total_amount:.2f}"
-                        )
-                except (ValueError, TypeError):
-                    pass  # Keep original amount if price parsing fails
-
-                open_positions.append(aggregated_txn)
-                processed_positions.add(key)
+        if net_quantity != 0 and key not in processed_positions:
+            aggregated_txn = _build_aggregated_transaction(txn, net_quantity, trans_code)
+            open_positions.append(aggregated_txn)
+            processed_positions.add(key)
 
     return open_positions
 
