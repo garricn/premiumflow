@@ -29,6 +29,7 @@ from .cash_flow_helpers import (
     _lot_was_open_during_period,
     _parse_period_key_to_date,
 )
+from .cash_flow_pnl_keys import PnlPeriodCollectionOptions
 from .leg_matching import MatchedLeg
 from .stock_lots import StockLotSummary, fetch_stock_lot_summaries
 from .transaction_loader import (
@@ -414,9 +415,11 @@ def _aggregate_pnl_by_period(  # noqa: PLR0913
         matched_legs,
         transactions,
         period_type,
-        since=since,
-        until=until,
-        clamp_periods_to_range=clamp_periods_to_range,
+        options=PnlPeriodCollectionOptions(
+            since=since,
+            until=until,
+            clamp_periods_to_range=clamp_periods_to_range,
+        ),
     )
 
     # Initialize all periods upfront
