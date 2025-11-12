@@ -119,6 +119,8 @@ def _lot_to_assignment_record(
 
     opened_at = assignment_portion.activity_date
 
+    # source_transaction_id is guaranteed to be non-None by validation
+    assert source_transaction_id is not None
     return AssignmentStockLotRecord(
         symbol=lot.contract.symbol,
         opened_at=opened_at,
