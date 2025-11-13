@@ -141,6 +141,20 @@ class StockLotFilters:
     offset: int = 0
 
 
+@dataclass
+class StockTransactionFilters:
+    """Bundle optional filter parameters for stock transaction queries."""
+
+    account_name: Optional[str] = None
+    account_number: Optional[str] = None
+    import_ids: Optional[Sequence[int]] = None
+    ticker: Optional[str] = None
+    since: Optional[date] = None
+    until: Optional[date] = None
+    limit: Optional[int] = None
+    offset: int = 0
+
+
 class SQLiteRepository:
     """High-level read accessors for the SQLite persistence layer."""
 
@@ -351,20 +365,50 @@ class SQLiteRepository:
             rows = conn.execute(sql, params).fetchall()
         return [_row_to_stored_transaction(row) for row in rows]
 
-    def fetch_stock_transactions(  # noqa: C901, PLR0913
+    def fetch_stock_transactions(
         self,
-        *,
-        account_name: Optional[str] = None,
-        account_number: Optional[str] = None,
-        import_ids: Optional[Sequence[int]] = None,
-        ticker: Optional[str] = None,
-        since: Optional[date] = None,
-        until: Optional[date] = None,
-        limit: Optional[int] = None,
-        offset: int = 0,
+        **kwargs: object,
     ) -> List[StoredStockTransaction]:
-        """Return persisted stock transactions for the requested filters."""
+        """Return persisted stock transactions for the requested filters.
 
+        Parameters
+        ----------
+        **kwargs
+            account_name (str): Filter by account name
+            account_number (str): Filter by account number
+            import_ids (Sequence[int]): Filter by import IDs
+            ticker (str): Filter by ticker symbol
+            since (date): Filter by start date
+            until (date): Filter by end date
+            limit (int): Maximum number of results to return
+            offset (int): Number of results to skip - default: 0
+        """
+        account_name: Optional[str] = kwargs.get("account_name")  # type: ignore[assignment]
+        account_number: Optional[str] = kwargs.get("account_number")  # type: ignore[assignment]
+        import_ids: Optional[Sequence[int]] = kwargs.get("import_ids")  # type: ignore[assignment]
+        ticker: Optional[str] = kwargs.get("ticker")  # type: ignore[assignment]
+        since: Optional[date] = kwargs.get("since")  # type: ignore[assignment]
+        until: Optional[date] = kwargs.get("until")  # type: ignore[assignment]
+        limit: Optional[int] = kwargs.get("limit")  # type: ignore[assignment]
+        offset: int = kwargs.get("offset", 0)  # type: ignore[assignment]
+
+        filters = StockTransactionFilters(
+            account_name=account_name,
+            account_number=account_number,
+            import_ids=import_ids,
+            ticker=ticker,
+            since=since,
+            until=until,
+            limit=limit,
+            offset=offset,
+        )
+        return self._fetch_stock_transactions_impl(filters)
+
+    def _fetch_stock_transactions_impl(  # noqa: C901
+        self,
+        filters: StockTransactionFilters,
+    ) -> List[StoredStockTransaction]:
+        """Internal implementation for fetching stock transactions."""
         self._storage._ensure_initialized()  # type: ignore[attr-defined]
         query = [
             "SELECT",
@@ -391,40 +435,40 @@ class SQLiteRepository:
         clauses: list[str] = []
         params: list[object] = []
 
-        if account_name is not None:
+        if filters.account_name is not None:
             clauses.append("a.name = ?")
-            params.append(account_name)
-        if account_number is not None:
+            params.append(filters.account_name)
+        if filters.account_number is not None:
             clauses.append("IFNULL(a.number, '') = IFNULL(?, '')")
-            params.append(account_number)
-        if import_ids:
-            placeholders = ", ".join("?" for _ in import_ids)
+            params.append(filters.account_number)
+        if filters.import_ids:
+            placeholders = ", ".join("?" for _ in filters.import_ids)
             clauses.append(f"t.import_id IN ({placeholders})")
-            params.extend(int(import_id) for import_id in import_ids)
-        if ticker is not None:
+            params.extend(int(import_id) for import_id in filters.import_ids)
+        if filters.ticker is not None:
             clauses.append("UPPER(t.instrument) = ?")
-            params.append(ticker.strip().upper())
-        if since is not None:
+            params.append(filters.ticker.strip().upper())
+        if filters.since is not None:
             clauses.append("t.activity_date >= ?")
-            params.append(since.isoformat())
-        if until is not None:
+            params.append(filters.since.isoformat())
+        if filters.until is not None:
             clauses.append("t.activity_date <= ?")
-            params.append(until.isoformat())
+            params.append(filters.until.isoformat())
 
         if clauses:
             query.append("WHERE " + " AND ".join(clauses))
 
         query.append("ORDER BY t.activity_date ASC, t.row_index ASC, t.id ASC")
 
-        if limit is not None:
+        if filters.limit is not None:
             query.append("LIMIT ?")
-            params.append(limit)
-            if offset:
+            params.append(filters.limit)
+            if filters.offset:
                 query.append("OFFSET ?")
-                params.append(offset)
-        elif offset:
+                params.append(filters.offset)
+        elif filters.offset:
             query.append("LIMIT -1 OFFSET ?")
-            params.append(offset)
+            params.append(filters.offset)
 
         sql = "\n".join(query)
         with self._storage._connect() as conn:  # type: ignore[attr-defined]
