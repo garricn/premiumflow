@@ -1,26 +1,30 @@
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import TYPE_CHECKING, Dict, List
+from typing import Dict, List
 
 from ..core.parser import NormalizedOptionTransaction
 from .cash_flow_aggregations import ZERO
-from .cash_flow_periods import _group_date_to_period_key, _parse_period_key_to_date
+from .cash_flow_models import (
+    PeriodMetrics,
+    RealizedView,
+    RealizedViewTotals,
+    _build_realized_breakdowns,
+    _OptionsRealizedTotals,
+    _StockRealizedTotals,
+)
+from .cash_flow_periods import (
+    PeriodType,
+    _group_date_to_period_key,
+    _parse_period_key_to_date,
+)
 from .cash_flow_pnl_aggregators import _empty_period_entry
-
-if TYPE_CHECKING:
-    from .cash_flow import (
-        PeriodMetrics,
-        PeriodType,
-        RealizedView,
-        RealizedViewTotals,
-    )
 
 
 def _generate_period_label(
     period_key: str,
     transactions: List["NormalizedOptionTransaction"],
-    period_type: "PeriodType",
+    period_type: PeriodType,
 ) -> str:
     """Generate a human-readable label for a period key."""
     if period_key == "total":
@@ -43,12 +47,8 @@ def _empty_stock_realized_entry() -> Dict[str, Decimal]:
     return {"profits": ZERO, "losses": ZERO, "net": ZERO}
 
 
-def _sum_realized_breakdown(
-    periods: List["PeriodMetrics"], view: "RealizedView"
-) -> "RealizedViewTotals":
+def _sum_realized_breakdown(periods: List[PeriodMetrics], view: RealizedView) -> RealizedViewTotals:
     """Sum realized breakdowns across all periods for the given view."""
-    from .cash_flow import RealizedViewTotals
-
     decimal_zero = Decimal(0)
     return RealizedViewTotals(
         profits_gross=sum(
@@ -75,16 +75,9 @@ def _build_period_metrics(
     pnl_by_period: Dict[str, Dict[str, Decimal]],
     stock_realized_by_period: Dict[str, Dict[str, Decimal]],
     filtered_transactions: List["NormalizedOptionTransaction"],
-    period_type: "PeriodType",
-) -> List["PeriodMetrics"]:
+    period_type: PeriodType,
+) -> List[PeriodMetrics]:
     """Combine cash flow, P&L, and stock data into `PeriodMetrics` objects."""
-    from .cash_flow import (
-        PeriodMetrics,
-        _build_realized_breakdowns,
-        _OptionsRealizedTotals,
-        _StockRealizedTotals,
-    )
-
     all_period_keys = (
         set(cash_flow_by_period.keys())
         | set(pnl_by_period.keys())
@@ -160,10 +153,8 @@ def _build_period_metrics(
     return periods
 
 
-def _calculate_totals(periods: List["PeriodMetrics"]) -> "PeriodMetrics":
+def _calculate_totals(periods: List[PeriodMetrics]) -> PeriodMetrics:
     """Calculate grand totals across periods."""
-    from .cash_flow import PeriodMetrics, RealizedViewTotals
-
     decimal_zero = Decimal(0)
     total_credits = sum((Decimal(p.credits) for p in periods), decimal_zero)
     total_debits = sum((Decimal(p.debits) for p in periods), decimal_zero)
