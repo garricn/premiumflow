@@ -16,12 +16,8 @@ from rich.console import Console
 from rich.table import Table
 
 from ..persistence import SQLiteRepository
-from ..services.cash_flow import (
-    AssignmentHandling,
-    CashFlowPnlReport,
-    RealizedView,
-    generate_cash_flow_pnl_report,
-)
+from ..services.cash_flow_models import AssignmentHandling, CashFlowPnlReport, RealizedView
+from ..services.cash_flow_report import generate_cash_flow_pnl_report
 from ..services.cli_helpers import format_account_label
 from ..services.display import format_currency
 from ..services.json_serializer import serialize_cash_flow_pnl_report

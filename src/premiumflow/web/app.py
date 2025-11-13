@@ -24,7 +24,7 @@ from ..persistence import (
     get_storage,
     store_import_result,
 )
-from ..services.cash_flow import generate_cash_flow_pnl_report
+from ..services.cash_flow_report import generate_cash_flow_pnl_report
 from ..services.cli_helpers import format_account_label
 from ..services.display import format_currency
 from ..services.json_serializer import serialize_cash_flow_pnl_report, serialize_leg

@@ -17,7 +17,7 @@ from premiumflow.core.parser import (
 )
 from premiumflow.persistence import storage as storage_module
 from premiumflow.persistence.storage import store_import_result
-from premiumflow.services.cash_flow import (
+from premiumflow.services.cash_flow_models import (
     CashFlowPnlReport,
     PeriodMetrics,
     RealizedViewTotals,
