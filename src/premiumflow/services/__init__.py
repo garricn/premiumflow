@@ -1,7 +1,6 @@
 """Services for roll chain analysis."""
 
 from .analyzer import calculate_breakeven, calculate_pnl
-from .cash_flow import generate_cash_flow_pnl_report
 from .cash_flow_helpers import PeriodType
 from .cash_flow_models import (
     AssignmentHandling,
@@ -9,6 +8,7 @@ from .cash_flow_models import (
     PeriodMetrics,
     RealizedView,
 )
+from .cash_flow_report import generate_cash_flow_pnl_report
 from .chain_builder import detect_roll_chains
 from .cli_helpers import (
     create_target_label,

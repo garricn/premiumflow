@@ -11,10 +11,8 @@ import pytest
 from premiumflow.core.parser import NormalizedOptionTransaction, ParsedImportResult
 from premiumflow.persistence import repository as repository_module
 from premiumflow.persistence import storage as storage_module
-from premiumflow.services.cash_flow import (
-    _group_date_to_period_key,
-    generate_cash_flow_pnl_report,
-)
+from premiumflow.services.cash_flow_helpers import _group_date_to_period_key
+from premiumflow.services.cash_flow_report import generate_cash_flow_pnl_report
 
 
 def _make_transaction(**overrides) -> NormalizedOptionTransaction:
