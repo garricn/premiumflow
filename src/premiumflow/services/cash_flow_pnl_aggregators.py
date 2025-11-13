@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 from typing import Dict, List, Literal, Optional
@@ -17,6 +18,15 @@ from .cash_flow_periods import (
 )
 from .cash_flow_pnl_keys import PnlPeriodCollectionOptions, _collect_pnl_period_keys
 from .leg_matching import MatchedLeg
+
+
+@dataclass
+class _UnrealizedExposureOptions:
+    """Bundle optional parameters for unrealized exposure aggregation."""
+
+    since: Optional[date] = None
+    until: Optional[date] = None
+    clamp_periods_to_range: bool = True
 
 
 def _empty_period_entry() -> Dict[str, Decimal]:
@@ -137,22 +147,21 @@ def _aggregate_closing_fees(
             period_data[period_key]["total_fees"] += close_fees
 
 
-def _aggregate_unrealized_exposure(  # noqa: PLR0913
+def _aggregate_unrealized_exposure(
     matched_legs: List[MatchedLeg],
     period_type: PeriodType,
     period_data: Dict[str, Dict[str, Decimal]],
-    *,
-    since: Optional[date] = None,
-    until: Optional[date] = None,
-    clamp_periods_to_range: bool = True,
+    options: Optional[_UnrealizedExposureOptions] = None,
 ) -> None:
+    if options is None:
+        options = _UnrealizedExposureOptions()
     for leg in matched_legs:
         for lot in leg.lots:
-            if _lot_was_open_during_period(lot, until):
-                if lot.opened_at and _lot_overlaps_date_range(lot.opened_at, until):
+            if _lot_was_open_during_period(lot, options.until):
+                if lot.opened_at and _lot_overlaps_date_range(lot.opened_at, options.until):
                     period_key, _ = _group_date_to_period_key(lot.opened_at, period_type)
-                    if clamp_periods_to_range:
-                        period_key = _clamp_period_to_range(period_key, period_type, since)
+                    if options.clamp_periods_to_range:
+                        period_key = _clamp_period_to_range(period_key, period_type, options.since)
                     exposure = lot.credit_remaining if lot.is_open else lot.open_premium
                     period_data[period_key]["unrealized_exposure"] += exposure
 
@@ -201,13 +210,16 @@ def _aggregate_pnl_by_period(  # noqa: PLR0913
         clamp_periods_to_range=clamp_periods_to_range,
     )
     _aggregate_closing_fees(matched_legs, period_type, period_data, since=since, until=until)
+    exposure_options = _UnrealizedExposureOptions(
+        since=since,
+        until=until,
+        clamp_periods_to_range=clamp_periods_to_range,
+    )
     _aggregate_unrealized_exposure(
         matched_legs,
         period_type,
         period_data,
-        since=since,
-        until=until,
-        clamp_periods_to_range=clamp_periods_to_range,
+        exposure_options,
     )
 
     return period_data
