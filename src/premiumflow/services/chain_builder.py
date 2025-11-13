@@ -109,8 +109,12 @@ def _find_matching_sto(
     btc: Dict[str, str],
     btc_details: Dict[str, Any],
     btc_qty: int,
-) -> Tuple[Optional[Dict[str, str]], Optional[Dict[str, Any]]]:
-    """Find a matching STO transaction for a given BTC transaction."""
+) -> Tuple[Optional[Dict[str, str]], Optional[Dict[str, Any]], Optional[int]]:
+    """Find a matching STO transaction for a given BTC transaction.
+
+    Returns (sto_txn, sto_details, index) where index is the position in sto_txns.
+    Using the enumeration index ensures correct tracking when STOs have identical values.
+    """
     btc_instrument = btc.get("Instrument", "")
 
     for idx, sto in enumerate(sto_txns):
@@ -119,9 +123,9 @@ def _find_matching_sto(
 
         is_match, sto_details, _ = _is_valid_sto_for_roll(sto, btc_details, btc_qty, btc_instrument)
         if is_match:
-            return sto, sto_details
+            return sto, sto_details, idx
 
-    return None, None
+    return None, None, None
 
 
 def _track_position_origins(
@@ -198,14 +202,13 @@ def _process_rolls_for_date(
         if not btc_qty:
             continue
 
-        sto, sto_details = _find_matching_sto(
+        sto, sto_details, sto_idx = _find_matching_sto(
             sto_txns, used_open_indices, btc, btc_details, btc_qty
         )
-        if not sto or not sto_details:
+        if not sto or not sto_details or sto_idx is None:
             continue
 
         sto_desc = sto.get("Description", "") or ""
-        sto_idx = sto_txns.index(sto)
         used_open_indices.add(sto_idx)
         rolls.append(
             {
