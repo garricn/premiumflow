@@ -11,7 +11,7 @@ from .display import ensure_display_name
 from .leg_matching import LotFillPortion, MatchedLeg, MatchedLegLot
 
 if TYPE_CHECKING:
-    from .cash_flow import CashFlowPnlReport, PeriodMetrics
+    from .cash_flow_models import CashFlowPnlReport, PeriodMetrics
 
 
 @dataclass
