@@ -359,51 +359,81 @@ def _expand_chain_with_related_transactions(
         chain_txns.sort(key=lambda t: parse_date(t.get("Activity Date", "")))
 
 
-def build_chain(initial_open, all_txns, rolls, used_txns):  # noqa: C901
-    """Build a roll chain starting from an initial opening position."""
-    chain_txns = [initial_open]
+def _find_roll_for_position(
+    rolls: List[Dict[str, Any]],
+    ticker: str,
+    current_position: str,
+    all_txns: List[Dict[str, str]],
+    used_txns: Set[int],
+) -> Optional[Dict[str, Any]]:
+    """Find a roll matching the current position."""
+    for roll in rolls:
+        if (
+            roll["ticker"] == ticker
+            and roll.get("btc_desc") == current_position
+            and id(get_txn_by_desc_date(all_txns, current_position, roll["date"], "BTC"))
+            not in used_txns
+        ):
+            return roll
+    return None
+
+
+def _find_close_transaction(
+    ticker: str,
+    current_position: str,
+    all_txns: List[Dict[str, str]],
+    used_txns: Set[int],
+) -> Optional[Dict[str, str]]:
+    """Find a simple close transaction (BTC/STC/OASGN without roll)."""
+    for txn in all_txns:
+        if (
+            txn.get("Instrument") == ticker
+            and txn.get("Trans Code") in {"BTC", "STC", "OASGN"}
+            and txn.get("Description") == current_position
+            and id(txn) not in used_txns
+        ):
+            return txn
+    return None
+
+
+def _build_chain_from_rolls(
+    initial_open: Dict[str, str],
+    all_txns: List[Dict[str, str]],
+    rolls: List[Dict[str, Any]],
+    used_txns: Set[int],
+) -> List[Dict[str, str]]:
+    """Build chain by following rolls until no more rolls are found."""
+    chain_txns: List[Dict[str, str]] = [initial_open]
     current_position = initial_open.get("Description", "")
     ticker = initial_open.get("Instrument", "").strip()
 
     while True:
-        is_roll = False
-
-        # Check if there's a roll involving the current position
-        for roll in rolls:
-            if (
-                roll["ticker"] == ticker
-                and roll.get("btc_desc") == current_position
-                and id(get_txn_by_desc_date(all_txns, current_position, roll["date"], "BTC"))
-                not in used_txns
-            ):
-                btc_txn = get_txn_by_desc_date(all_txns, current_position, roll["date"], "BTC")
-                sto_txn = get_txn_by_desc_date(all_txns, roll["sto_desc"], roll["date"], "STO")
-
-                if btc_txn and sto_txn:
-                    chain_txns.append(btc_txn)
-                    chain_txns.append(sto_txn)
-                    current_position = roll["sto_desc"]
-                    is_roll = True
-                    break
-
-        if not is_roll:
-            # Look for a simple close (BTC without corresponding STO)
-            for txn in all_txns:
-                if (
-                    txn.get("Instrument") == ticker
-                    and txn.get("Trans Code") in {"BTC", "STC", "OASGN"}
-                    and txn.get("Description") == current_position
-                    and id(txn) not in used_txns
-                ):
-                    chain_txns.append(txn)
-                    break
+        roll = _find_roll_for_position(rolls, ticker, current_position, all_txns, used_txns)
+        if not roll:
             break
 
-    if len(chain_txns) < 2:
-        return None
+        btc_txn = get_txn_by_desc_date(all_txns, current_position, roll["date"], "BTC")
+        sto_txn = get_txn_by_desc_date(all_txns, roll["sto_desc"], roll["date"], "STO")
 
-    _expand_chain_with_related_transactions(chain_txns, all_txns, used_txns)
+        if btc_txn and sto_txn:
+            chain_txns.append(btc_txn)
+            chain_txns.append(sto_txn)
+            current_position = roll["sto_desc"]
+        else:
+            break
 
+    # Look for a simple close if no more rolls
+    close_txn = _find_close_transaction(ticker, current_position, all_txns, used_txns)
+    if close_txn:
+        chain_txns.append(close_txn)
+
+    return chain_txns
+
+
+def _aggregate_chain_pnl(
+    chain_txns: List[Dict[str, str]],
+) -> Tuple[Decimal, Decimal, int]:
+    """Aggregate P&L metrics from chain transactions."""
     total_credits = Decimal("0")
     total_debits = Decimal("0")
     net_contracts = 0
@@ -429,6 +459,28 @@ def build_chain(initial_open, all_txns, rolls, used_txns):  # noqa: C901
         elif code == "OASGN":
             net_contracts += qty
 
+    return total_credits, total_debits, net_contracts
+
+
+def _count_rolls_in_chain(chain_txns: List[Dict[str, str]]) -> int:
+    """Count the number of rolls in the chain."""
+    roll_count = 0
+    for idx in range(len(chain_txns) - 1):
+        current_code = (chain_txns[idx].get("Trans Code") or "").strip().upper()
+        next_code = (chain_txns[idx + 1].get("Trans Code") or "").strip().upper()
+        if current_code in {"BTC", "STC"} and next_code in {"STO", "BTO"}:
+            roll_count += 1
+    return roll_count
+
+
+def _build_chain_data_dict(
+    chain_txns: List[Dict[str, str]],
+    ticker: str,
+    total_credits: Decimal,
+    total_debits: Decimal,
+    net_contracts: int,
+) -> Dict[str, Any]:
+    """Build the chain data dictionary with all metrics."""
     net_pnl = total_credits - total_debits
     status = "OPEN" if net_contracts != 0 else "CLOSED"
 
@@ -445,12 +497,7 @@ def build_chain(initial_open, all_txns, rolls, used_txns):  # noqa: C901
         breakeven_price = (total_credits - total_debits) / (open_contracts * 100)
         breakeven_direction = "or less" if net_contracts < 0 else "or more"
 
-    roll_count = 0
-    for idx in range(len(chain_txns) - 1):
-        current_code = (chain_txns[idx].get("Trans Code") or "").strip().upper()
-        next_code = (chain_txns[idx + 1].get("Trans Code") or "").strip().upper()
-        if current_code in {"BTC", "STC"} and next_code in {"STO", "BTO"}:
-            roll_count += 1
+    roll_count = _count_rolls_in_chain(chain_txns)
 
     chain_data: Dict[str, Any] = {
         "transactions": chain_txns,
@@ -496,6 +543,21 @@ def build_chain(initial_open, all_txns, rolls, used_txns):  # noqa: C901
         chain_data["breakeven_direction"] = None
 
     return chain_data
+
+
+def build_chain(initial_open, all_txns, rolls, used_txns):
+    """Build a roll chain starting from an initial opening position."""
+    chain_txns = _build_chain_from_rolls(initial_open, all_txns, rolls, used_txns)
+
+    if len(chain_txns) < 2:
+        return None
+
+    _expand_chain_with_related_transactions(chain_txns, all_txns, used_txns)
+
+    ticker = initial_open.get("Instrument", "").strip()
+    total_credits, total_debits, net_contracts = _aggregate_chain_pnl(chain_txns)
+
+    return _build_chain_data_dict(chain_txns, ticker, total_credits, total_debits, net_contracts)
 
 
 def detect_roll_chains(transactions: List[Dict[str, str]]) -> List[Dict[str, Any]]:
