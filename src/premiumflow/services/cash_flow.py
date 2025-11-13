@@ -84,6 +84,17 @@ class RealizedViewTotals:
     net_net: Decimal
 
 
+@dataclass
+class _CashFlowPnlReportParams:
+    """Bundle all filtering and behavioral options for cash flow P&L reports."""
+
+    ticker: Optional[str] = None
+    since: Optional[date] = None
+    until: Optional[date] = None
+    clamp_periods_to_range: bool = True
+    assignment_handling: AssignmentHandling = "include"
+
+
 def _zero_realized_view_totals() -> RealizedViewTotals:
     """Return a zeroed-out RealizedViewTotals instance."""
     return RealizedViewTotals(
@@ -308,17 +319,12 @@ def _aggregate_stock_realized_by_period(
     return period_data
 
 
-def generate_cash_flow_pnl_report(  # noqa: PLR0913
+def _generate_cash_flow_pnl_report_impl(
     repository: SQLiteRepository,
-    *,
     account_name: str,
-    account_number: Optional[str] = None,
-    period_type: PeriodType = "total",
-    ticker: Optional[str] = None,
-    since: Optional[date] = None,
-    until: Optional[date] = None,
-    clamp_periods_to_range: bool = True,
-    assignment_handling: AssignmentHandling = "include",
+    account_number: Optional[str],
+    period_type: PeriodType,
+    params: _CashFlowPnlReportParams,
 ) -> CashFlowPnlReport:
     """
     Generate account-level cash flow and P&L report with time-based grouping.
@@ -333,22 +339,9 @@ def generate_cash_flow_pnl_report(  # noqa: PLR0913
         Optional account number for disambiguation
     period_type
         Time period for grouping: "daily", "weekly", "monthly", or "total"
-    ticker
-        Optional ticker symbol to filter by
-    since
-        Optional start date for filtering
-    until
-        Optional end date for filtering
-    clamp_periods_to_range
-        If True (default), clamp unrealized exposure periods to the first period
-        in the range when positions were opened before the range start. This
-        ensures that reports only show periods within the requested date range.
-        Set to False to show all periods with relevant data, including periods
-        before the range start for unrealized exposure.
-    assignment_handling
-        Whether to include (default) or exclude assignment-derived realized P&L
-        from the realized totals. When set to "exclude", assignment premiums are
-        tracked separately for reconciliation.
+    params
+        All filtering and behavioral options (ticker, date range, clamping,
+        assignment handling)
 
     Returns
     -------
@@ -360,7 +353,7 @@ def generate_cash_flow_pnl_report(  # noqa: PLR0913
         repository,
         account_name=account_name,
         account_number=account_number,
-        ticker=ticker,
+        ticker=params.ticker,
     )
 
     if not all_normalized_txns:
@@ -370,21 +363,23 @@ def generate_cash_flow_pnl_report(  # noqa: PLR0913
     matched_legs = match_legs_from_transactions(all_normalized_txns)
 
     # Filter transactions by date range for cash flow aggregation
-    filtered_txns = _filter_transactions_by_date(all_normalized_txns, since=since, until=until)
+    filtered_txns = _filter_transactions_by_date(
+        all_normalized_txns, since=params.since, until=params.until
+    )
 
     # Aggregate realized stock P&L from closed lots
     stock_lot_summaries = fetch_stock_lot_summaries(
         repository,
         account_name=account_name,
         account_number=account_number,
-        ticker=ticker,
+        ticker=params.ticker,
         status="closed",
     )
     stock_realized_by_period = _aggregate_stock_realized_by_period(
         stock_lot_summaries,
         period_type,
-        since=since,
-        until=until,
+        since=params.since,
+        until=params.until,
     )
 
     # Aggregate cash flow and P&L by period
@@ -393,10 +388,10 @@ def generate_cash_flow_pnl_report(  # noqa: PLR0913
         matched_legs,
         filtered_txns,
         period_type,
-        since=since,
-        until=until,
-        clamp_periods_to_range=clamp_periods_to_range,
-        assignment_handling=assignment_handling,
+        since=params.since,
+        until=params.until,
+        clamp_periods_to_range=params.clamp_periods_to_range,
+        assignment_handling=params.assignment_handling,
     )
 
     # Build period metrics and calculate totals
@@ -415,4 +410,68 @@ def generate_cash_flow_pnl_report(  # noqa: PLR0913
         period_type=period_type,
         periods=periods,
         totals=totals,
+    )
+
+
+def generate_cash_flow_pnl_report(  # noqa: PLR0913
+    repository: SQLiteRepository,
+    *,
+    account_name: str,
+    account_number: Optional[str] = None,
+    period_type: PeriodType = "total",
+    ticker: Optional[str] = None,
+    since: Optional[date] = None,
+    until: Optional[date] = None,
+    clamp_periods_to_range: bool = True,
+    assignment_handling: AssignmentHandling = "include",
+) -> CashFlowPnlReport:
+    """
+    Generate account-level cash flow and P&L report (public wrapper).
+
+    This is the main entry point for cash flow and P&L reporting. It accepts
+    keyword arguments with sensible defaults to reduce parameter count.
+
+    Parameters
+    ----------
+    repository
+        SQLite repository for fetching transactions
+    account_name
+        Account name to filter by
+    account_number
+        Optional account number for disambiguation (default: None)
+    period_type
+        Time period for grouping: "daily", "weekly", "monthly", or "total"
+        (default: "total")
+    ticker
+        Optional ticker symbol to filter by (default: None)
+    since
+        Optional start date for filtering (default: None)
+    until
+        Optional end date for filtering (default: None)
+    clamp_periods_to_range
+        If True, clamp unrealized exposure periods to the first period in
+        the range when positions were opened before the range start
+        (default: True)
+    assignment_handling
+        Whether to include or exclude assignment-derived realized P&L from
+        totals (default: "include")
+
+    Returns
+    -------
+    CashFlowPnlReport
+        Complete report with period-based metrics and totals
+    """
+    params = _CashFlowPnlReportParams(
+        ticker=ticker,
+        since=since,
+        until=until,
+        clamp_periods_to_range=clamp_periods_to_range,
+        assignment_handling=assignment_handling,
+    )
+    return _generate_cash_flow_pnl_report_impl(
+        repository=repository,
+        account_name=account_name,
+        account_number=account_number,
+        period_type=period_type,
+        params=params,
     )
