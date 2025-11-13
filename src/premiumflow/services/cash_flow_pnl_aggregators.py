@@ -29,6 +29,16 @@ class _UnrealizedExposureOptions:
     clamp_periods_to_range: bool = True
 
 
+@dataclass
+class _PnlAggregationOptions:
+    """Bundle optional parameters for P&L period aggregation."""
+
+    since: Optional[date] = None
+    until: Optional[date] = None
+    clamp_periods_to_range: bool = True
+    assignment_handling: Literal["include", "exclude"] = "include"
+
+
 def _empty_period_entry() -> Dict[str, Decimal]:
     """Return a zeroed-out holder for per-period P&L components."""
     return {
@@ -165,26 +175,25 @@ def _aggregate_unrealized_exposure(
                     period_data[period_key]["unrealized_exposure"] += exposure
 
 
-def _aggregate_pnl_by_period(  # noqa: PLR0913
+def _aggregate_pnl_by_period(
     matched_legs: List[MatchedLeg],
     transactions: List[NormalizedOptionTransaction],
     period_type: PeriodType,
-    *,
-    since: Optional[date] = None,
-    until: Optional[date] = None,
-    clamp_periods_to_range: bool = True,
-    assignment_handling: Literal["include", "exclude"] = "include",
+    options: Optional[_PnlAggregationOptions] = None,
 ) -> Dict[str, Dict[str, Decimal]]:
-    options = PnlPeriodCollectionOptions(
-        since=since,
-        until=until,
-        clamp_periods_to_range=clamp_periods_to_range,
+    if options is None:
+        options = _PnlAggregationOptions()
+
+    collection_options = PnlPeriodCollectionOptions(
+        since=options.since,
+        until=options.until,
+        clamp_periods_to_range=options.clamp_periods_to_range,
     )
     all_period_keys = _collect_pnl_period_keys(
         matched_legs,
         transactions,
         period_type,
-        options=options,
+        options=collection_options,
     )
 
     period_data: Dict[str, Dict[str, Decimal]] = {}
@@ -195,15 +204,15 @@ def _aggregate_pnl_by_period(  # noqa: PLR0913
         matched_legs,
         period_type,
         period_data,
-        since=since,
-        until=until,
-        assignment_handling=assignment_handling,
+        since=options.since,
+        until=options.until,
+        assignment_handling=options.assignment_handling,
     )
 
     opening_fees_options = _UnrealizedExposureOptions(
-        since=since,
-        until=until,
-        clamp_periods_to_range=clamp_periods_to_range,
+        since=options.since,
+        until=options.until,
+        clamp_periods_to_range=options.clamp_periods_to_range,
     )
     _aggregate_opening_fees(
         matched_legs,
@@ -211,11 +220,13 @@ def _aggregate_pnl_by_period(  # noqa: PLR0913
         period_data,
         opening_fees_options,
     )
-    _aggregate_closing_fees(matched_legs, period_type, period_data, since=since, until=until)
+    _aggregate_closing_fees(
+        matched_legs, period_type, period_data, since=options.since, until=options.until
+    )
     exposure_options = _UnrealizedExposureOptions(
-        since=since,
-        until=until,
-        clamp_periods_to_range=clamp_periods_to_range,
+        since=options.since,
+        until=options.until,
+        clamp_periods_to_range=options.clamp_periods_to_range,
     )
     _aggregate_unrealized_exposure(
         matched_legs,

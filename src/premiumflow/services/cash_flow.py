@@ -26,6 +26,7 @@ from .cash_flow_helpers import (
     _date_in_range,
     _group_date_to_period_key,
     _parse_period_key_to_date,
+    _PnlAggregationOptions,
 )
 from .stock_lots import StockLotSummary, fetch_stock_lot_summaries
 from .transaction_loader import (
@@ -384,14 +385,17 @@ def _generate_cash_flow_pnl_report_impl(
 
     # Aggregate cash flow and P&L by period
     cash_flow_by_period = _aggregate_cash_flow_by_period(filtered_txns, period_type)
-    pnl_by_period = _aggregate_pnl_by_period(
-        matched_legs,
-        filtered_txns,
-        period_type,
+    pnl_options = _PnlAggregationOptions(
         since=params.since,
         until=params.until,
         clamp_periods_to_range=params.clamp_periods_to_range,
         assignment_handling=params.assignment_handling,
+    )
+    pnl_by_period = _aggregate_pnl_by_period(
+        matched_legs,
+        filtered_txns,
+        period_type,
+        pnl_options,
     )
 
     # Build period metrics and calculate totals
