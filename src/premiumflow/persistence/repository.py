@@ -129,6 +129,18 @@ class AssignmentStockLotRecord:
     source_transaction_id: int
 
 
+@dataclass
+class StockLotFilters:
+    """Bundle optional filter parameters for stock lot queries."""
+
+    account_name: Optional[str] = None
+    account_number: Optional[str] = None
+    ticker: Optional[str] = None
+    status: StockLotStatusFilter = "all"
+    limit: Optional[int] = None
+    offset: int = 0
+
+
 class SQLiteRepository:
     """High-level read accessors for the SQLite persistence layer."""
 
@@ -419,18 +431,44 @@ class SQLiteRepository:
             rows = conn.execute(sql, params).fetchall()
         return [_row_to_stored_stock_transaction(row) for row in rows]
 
-    def fetch_stock_lots(  # noqa: PLR0913
+    def fetch_stock_lots(
         self,
-        *,
-        account_name: Optional[str] = None,
-        account_number: Optional[str] = None,
-        ticker: Optional[str] = None,
-        status: StockLotStatusFilter = "all",
-        limit: Optional[int] = None,
-        offset: int = 0,
+        **kwargs: object,
     ) -> List[StoredStockLot]:
-        """Return persisted stock lots applying the requested filters."""
+        """Return persisted stock lots applying the requested filters.
 
+        Parameters
+        ----------
+        **kwargs
+            account_name (str): Filter by account name
+            account_number (str): Filter by account number
+            ticker (str): Filter by ticker symbol
+            status (str): Filter by status ("all", "open", "closed") - default: "all"
+            limit (int): Maximum number of results to return
+            offset (int): Number of results to skip - default: 0
+        """
+        account_name: Optional[str] = kwargs.get("account_name")  # type: ignore[assignment]
+        account_number: Optional[str] = kwargs.get("account_number")  # type: ignore[assignment]
+        ticker: Optional[str] = kwargs.get("ticker")  # type: ignore[assignment]
+        status: StockLotStatusFilter = kwargs.get("status", "all")  # type: ignore[assignment]
+        limit: Optional[int] = kwargs.get("limit")  # type: ignore[assignment]
+        offset: int = kwargs.get("offset", 0)  # type: ignore[assignment]
+
+        filters = StockLotFilters(
+            account_name=account_name,
+            account_number=account_number,
+            ticker=ticker,
+            status=status,
+            limit=limit,
+            offset=offset,
+        )
+        return self._fetch_stock_lots_impl(filters)
+
+    def _fetch_stock_lots_impl(
+        self,
+        filters: StockLotFilters,
+    ) -> List[StoredStockLot]:
+        """Internal implementation for fetching stock lots."""
         self._storage._ensure_initialized()  # type: ignore[attr-defined]
         query = [
             "SELECT",
@@ -463,18 +501,18 @@ class SQLiteRepository:
         clauses: list[str] = []
         params: list[object] = []
 
-        if account_name is not None:
+        if filters.account_name is not None:
             clauses.append("a.name = ?")
-            params.append(account_name)
-        if account_number is not None:
+            params.append(filters.account_name)
+        if filters.account_number is not None:
             clauses.append("IFNULL(a.number, '') = IFNULL(?, '')")
-            params.append(account_number)
-        if ticker is not None:
+            params.append(filters.account_number)
+        if filters.ticker is not None:
             clauses.append("UPPER(l.symbol) = ?")
-            params.append(ticker.strip().upper())
-        normalized_status = status.lower()
+            params.append(filters.ticker.strip().upper())
+        normalized_status = filters.status.lower()
         if normalized_status not in {"all", "open", "closed"}:
-            raise ValueError(f"Unsupported stock lot status filter: {status}")
+            raise ValueError(f"Unsupported stock lot status filter: {filters.status}")
         if normalized_status != "all":
             clauses.append("LOWER(l.status) = ?")
             params.append(normalized_status)
@@ -484,15 +522,15 @@ class SQLiteRepository:
 
         query.append("ORDER BY l.opened_at ASC, l.id ASC")
 
-        if limit is not None:
+        if filters.limit is not None:
             query.append("LIMIT ?")
-            params.append(limit)
-            if offset:
+            params.append(filters.limit)
+            if filters.offset:
                 query.append("OFFSET ?")
-                params.append(offset)
-        elif offset:
+                params.append(filters.offset)
+        elif filters.offset:
             query.append("LIMIT -1 OFFSET ?")
-            params.append(offset)
+            params.append(filters.offset)
 
         sql = "\n".join(query)
         with self._storage._connect() as conn:  # type: ignore[attr-defined]
