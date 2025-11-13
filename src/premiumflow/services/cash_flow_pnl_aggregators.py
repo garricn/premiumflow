@@ -91,35 +91,34 @@ def _aggregate_realized_pnl(  # noqa: C901, PLR0913
                     period_data[period_key]["realized_pnl_net"] += net_realized
 
 
-def _aggregate_opening_fees(  # noqa: C901, PLR0913
+def _aggregate_opening_fees(  # noqa: C901
     matched_legs: List[MatchedLeg],
     period_type: PeriodType,
     period_data: Dict[str, Dict[str, Decimal]],
-    *,
-    since: Optional[date] = None,
-    until: Optional[date] = None,
-    clamp_periods_to_range: bool = True,
+    options: Optional[_UnrealizedExposureOptions] = None,
 ) -> None:
+    if options is None:
+        options = _UnrealizedExposureOptions()
     for leg in matched_legs:
         for lot in leg.lots:
             if lot.opened_at is None:
                 continue
-            if since is not None and lot.closed_at and lot.closed_at < since:
+            if options.since is not None and lot.closed_at and lot.closed_at < options.since:
                 continue
 
             period_key, _ = _group_date_to_period_key(lot.opened_at, period_type)
-            if since is not None and lot.opened_at < since:
-                if not clamp_periods_to_range:
+            if options.since is not None and lot.opened_at < options.since:
+                if not options.clamp_periods_to_range:
                     continue
-                period_key = _clamp_period_to_range(period_key, period_type, since)
-            elif not _date_in_range(lot.opened_at, since, until):
+                period_key = _clamp_period_to_range(period_key, period_type, options.since)
+            elif not _date_in_range(lot.opened_at, options.since, options.until):
                 continue
 
             open_fees = Decimal(lot.open_fees)
             if open_fees == ZERO:
                 continue
             if period_key not in period_data:
-                if not clamp_periods_to_range:
+                if not options.clamp_periods_to_range:
                     continue
                 period_data[period_key] = _empty_period_entry()
             period_data[period_key]["opening_fees"] += open_fees
@@ -201,13 +200,16 @@ def _aggregate_pnl_by_period(  # noqa: PLR0913
         assignment_handling=assignment_handling,
     )
 
+    opening_fees_options = _UnrealizedExposureOptions(
+        since=since,
+        until=until,
+        clamp_periods_to_range=clamp_periods_to_range,
+    )
     _aggregate_opening_fees(
         matched_legs,
         period_type,
         period_data,
-        since=since,
-        until=until,
-        clamp_periods_to_range=clamp_periods_to_range,
+        opening_fees_options,
     )
     _aggregate_closing_fees(matched_legs, period_type, period_data, since=since, until=until)
     exposure_options = _UnrealizedExposureOptions(
