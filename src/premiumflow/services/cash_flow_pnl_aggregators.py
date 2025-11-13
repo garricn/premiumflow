@@ -39,6 +39,15 @@ class _PnlAggregationOptions:
     assignment_handling: Literal["include", "exclude"] = "include"
 
 
+@dataclass
+class _RealizedPnlOptions:
+    """Bundle optional parameters for realized P&L aggregation."""
+
+    since: Optional[date] = None
+    until: Optional[date] = None
+    assignment_handling: Literal["include", "exclude"] = "include"
+
+
 def _empty_period_entry() -> Dict[str, Decimal]:
     """Return a zeroed-out holder for per-period P&L components."""
     return {
@@ -57,25 +66,26 @@ def _empty_period_entry() -> Dict[str, Decimal]:
     }
 
 
-def _aggregate_realized_pnl(  # noqa: C901, PLR0913
+def _aggregate_realized_pnl(  # noqa: C901
     matched_legs: List[MatchedLeg],
     period_type: PeriodType,
     period_data: Dict[str, Dict[str, Decimal]],
-    *,
-    since: Optional[date] = None,
-    until: Optional[date] = None,
-    assignment_handling: Literal["include", "exclude"] = "include",
+    options: Optional[_RealizedPnlOptions] = None,
 ) -> None:
+    if options is None:
+        options = _RealizedPnlOptions()
     for leg in matched_legs:
         for lot in leg.lots:
             if lot.is_closed and lot.realized_pnl is not None and lot.closed_at:
-                if not _date_in_range(lot.closed_at, since, until):
+                if not _date_in_range(lot.closed_at, options.since, options.until):
                     continue
 
                 period_key, _ = _group_date_to_period_key(lot.closed_at, period_type)
 
                 is_assignment_close = _lot_closed_by_assignment(lot)
-                include_assignment = not (is_assignment_close and assignment_handling == "exclude")
+                include_assignment = not (
+                    is_assignment_close and options.assignment_handling == "exclude"
+                )
 
                 gross_realized = Decimal(lot.realized_pnl)
                 if is_assignment_close:
@@ -200,13 +210,16 @@ def _aggregate_pnl_by_period(
     for period_key in all_period_keys:
         period_data[period_key] = _empty_period_entry()
 
+    realized_pnl_options = _RealizedPnlOptions(
+        since=options.since,
+        until=options.until,
+        assignment_handling=options.assignment_handling,
+    )
     _aggregate_realized_pnl(
         matched_legs,
         period_type,
         period_data,
-        since=options.since,
-        until=options.until,
-        assignment_handling=options.assignment_handling,
+        realized_pnl_options,
     )
 
     opening_fees_options = _UnrealizedExposureOptions(
