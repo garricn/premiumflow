@@ -9,7 +9,12 @@ from .cash_flow_periods import _group_date_to_period_key, _parse_period_key_to_d
 from .cash_flow_pnl_aggregators import _empty_period_entry
 
 if TYPE_CHECKING:
-    from .cash_flow import PeriodMetrics, PeriodType, RealizedView, RealizedViewTotals
+    from .cash_flow import (
+        PeriodMetrics,
+        PeriodType,
+        RealizedView,
+        RealizedViewTotals,
+    )
 
 
 def _generate_period_label(
@@ -73,7 +78,12 @@ def _build_period_metrics(
     period_type: "PeriodType",
 ) -> List["PeriodMetrics"]:
     """Combine cash flow, P&L, and stock data into `PeriodMetrics` objects."""
-    from .cash_flow import PeriodMetrics, _build_realized_breakdowns
+    from .cash_flow import (
+        PeriodMetrics,
+        _build_realized_breakdowns,
+        _OptionsRealizedTotals,
+        _StockRealizedTotals,
+    )
 
     all_period_keys = (
         set(cash_flow_by_period.keys())
@@ -109,15 +119,19 @@ def _build_period_metrics(
         stock_net = Decimal(stock_realized["net"])
 
         realized_breakdowns = _build_realized_breakdowns(
-            options_profits_gross=realized_profits_gross,
-            options_losses_gross=realized_losses_gross,
-            options_pnl_gross=realized_pnl_gross,
-            options_profits_net=realized_profits_net,
-            options_losses_net=realized_losses_net,
-            options_pnl_net=realized_pnl_net,
-            stock_profits=stock_profits,
-            stock_losses=stock_losses,
-            stock_net=stock_net,
+            options=_OptionsRealizedTotals(
+                profits_gross=realized_profits_gross,
+                losses_gross=realized_losses_gross,
+                pnl_gross=realized_pnl_gross,
+                profits_net=realized_profits_net,
+                losses_net=realized_losses_net,
+                pnl_net=realized_pnl_net,
+            ),
+            stock=_StockRealizedTotals(
+                profits=stock_profits,
+                losses=stock_losses,
+                net=stock_net,
+            ),
         )
 
         periods.append(

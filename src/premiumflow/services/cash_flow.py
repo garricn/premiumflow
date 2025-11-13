@@ -106,42 +106,56 @@ def _empty_realized_breakdowns() -> Dict[RealizedView, RealizedViewTotals]:
     return breakdowns
 
 
-def _build_realized_breakdowns(  # noqa: PLR0913
+@dataclass
+class _OptionsRealizedTotals:
+    """Bundle options realized P&L metrics."""
+
+    profits_gross: Decimal
+    losses_gross: Decimal
+    pnl_gross: Decimal
+    profits_net: Decimal
+    losses_net: Decimal
+    pnl_net: Decimal
+
+
+@dataclass
+class _StockRealizedTotals:
+    """Bundle stock realized P&L metrics."""
+
+    profits: Decimal
+    losses: Decimal
+    net: Decimal
+
+
+def _build_realized_breakdowns(
     *,
-    options_profits_gross: Decimal,
-    options_losses_gross: Decimal,
-    options_pnl_gross: Decimal,
-    options_profits_net: Decimal,
-    options_losses_net: Decimal,
-    options_pnl_net: Decimal,
-    stock_profits: Decimal,
-    stock_losses: Decimal,
-    stock_net: Decimal,
+    options: _OptionsRealizedTotals,
+    stock: _StockRealizedTotals,
 ) -> Dict[RealizedView, RealizedViewTotals]:
     """Construct realized breakdowns for options, stock, and combined views."""
     options_totals = RealizedViewTotals(
-        profits_gross=options_profits_gross,
-        losses_gross=options_losses_gross,
-        net_gross=options_pnl_gross,
-        profits_net=options_profits_net,
-        losses_net=options_losses_net,
-        net_net=options_pnl_net,
+        profits_gross=options.profits_gross,
+        losses_gross=options.losses_gross,
+        net_gross=options.pnl_gross,
+        profits_net=options.profits_net,
+        losses_net=options.losses_net,
+        net_net=options.pnl_net,
     )
     stock_totals = RealizedViewTotals(
-        profits_gross=stock_profits,
-        losses_gross=stock_losses,
-        net_gross=stock_net,
-        profits_net=stock_profits,
-        losses_net=stock_losses,
-        net_net=stock_net,
+        profits_gross=stock.profits,
+        losses_gross=stock.losses,
+        net_gross=stock.net,
+        profits_net=stock.profits,
+        losses_net=stock.losses,
+        net_net=stock.net,
     )
     combined_totals = RealizedViewTotals(
-        profits_gross=options_profits_gross + stock_profits,
-        losses_gross=options_losses_gross + stock_losses,
-        net_gross=options_pnl_gross + stock_net,
-        profits_net=options_profits_net + stock_profits,
-        losses_net=options_losses_net + stock_losses,
-        net_net=options_pnl_net + stock_net,
+        profits_gross=options.profits_gross + stock.profits,
+        losses_gross=options.losses_gross + stock.losses,
+        net_gross=options.pnl_gross + stock.net,
+        profits_net=options.profits_net + stock.profits,
+        losses_net=options.losses_net + stock.losses,
+        net_net=options.pnl_net + stock.net,
     )
     breakdowns: Dict[RealizedView, RealizedViewTotals] = {
         "options": options_totals,
