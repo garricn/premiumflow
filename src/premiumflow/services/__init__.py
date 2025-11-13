@@ -7,8 +7,8 @@ from .cash_flow import (
     PeriodMetrics,
     PeriodType,
     RealizedView,
-    generate_cash_flow_pnl_report,
 )
+from .cash_flow_report import generate_cash_flow_pnl_report
 from .chain_builder import detect_roll_chains
 from .cli_helpers import (
     create_target_label,
