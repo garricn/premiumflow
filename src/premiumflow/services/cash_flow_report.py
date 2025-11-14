@@ -203,21 +203,46 @@ def _generate_cash_flow_pnl_report_impl(
     )
 
 
-def generate_cash_flow_pnl_report(  # noqa: PLR0913
+def generate_cash_flow_pnl_report(
     repository: SQLiteRepository,
     account_name: str,
     account_number: Optional[str] = None,
     period_type: PeriodType = "total",
-    *,
-    ticker: Optional[str] = None,
-    since: Optional[date] = None,
-    until: Optional[date] = None,
-    clamp_periods_to_range: bool = True,
-    assignment_handling: AssignmentHandling = "include",
+    **kwargs: object,
 ) -> CashFlowPnlReport:
     """
     Generate account-level cash flow and P&L report with period-based grouping.
+
+    Parameters
+    ----------
+    repository
+        SQLite repository for fetching transactions
+    account_name
+        Account name to filter by
+    account_number
+        Optional account number for disambiguation
+    period_type
+        Time period for grouping: "daily", "weekly", "monthly", or "total"
+    **kwargs
+        Optional filtering and behavioral options:
+        ticker (str): ticker symbol to filter by
+        since (date): start date for filtering
+        until (date): end date for filtering
+        clamp_periods_to_range (bool): whether to clamp unrealized exposure
+            periods (default: True)
+        assignment_handling (str): "include" or "exclude" assignment-derived
+            P&L (default: "include")
     """
+    ticker: Optional[str] = kwargs.get("ticker")  # type: ignore[assignment]
+    since: Optional[date] = kwargs.get("since")  # type: ignore[assignment]
+    until: Optional[date] = kwargs.get("until")  # type: ignore[assignment]
+    clamp_periods_to_range: bool = kwargs.get(
+        "clamp_periods_to_range", True  # type: ignore[assignment]
+    )
+    assignment_handling: AssignmentHandling = kwargs.get(
+        "assignment_handling", "include"  # type: ignore[assignment]
+    )
+
     params = _CashFlowPnlReportParams(
         ticker=ticker,
         since=since,
